@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "meal-prep": {
+      "type": "streamable-http",
+      "url": "https://meal-prep-swart.vercel.app/mcp"
+    }
+  }
+}

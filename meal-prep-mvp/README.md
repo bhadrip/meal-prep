@@ -15,6 +15,14 @@ Meal Prep is a private, persistent meal-planning plugin for ChatGPT and Codex. I
 
 The service never calls a model to make domain writes. ChatGPT or Codex creates the plan, the MCP tools validate and persist it, and Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
 
+## Deployed resources
+
+- Private source repository: `https://github.com/bhadrip/meal-prep`
+- Production app and MCP server: `https://meal-prep-swart.vercel.app`
+- Supabase project: `svdcbpcndqmocecyymav` in `bhadrip's Org`
+
+These resources are owned by the personal `bhadrip` accounts and are separate from Magik Mindz.
+
 ## Run locally
 
 ```bash
