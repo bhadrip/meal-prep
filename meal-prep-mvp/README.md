@@ -1,0 +1,120 @@
+# Meal Prep plugin
+
+Meal Prep is a private, persistent meal-planning plugin for ChatGPT and Codex. It keeps reasoning in the model while the service owns authenticated household data, validation, Row-Level Security, and structured presentation.
+
+## What is included
+
+- FastAPI household dashboard with deterministic fallback behavior
+- Streamable HTTP MCP endpoint at `/mcp`
+- Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
+- Separate render tools and MCP Apps resources for the weekly plan and shopping checklist
+- Supabase Auth bearer-token validation and OAuth 2.1 discovery through the MCP SDK
+- Supabase schema, transactional functions, and RLS policies
+- Vercel serverless entrypoint and deployment configuration
+- Packaged `meal-prep` Agent Plugin with workflow guidance
+
+The service never calls a model to make domain writes. ChatGPT or Codex creates the plan, the MCP tools validate and persist it, and Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
+
+## Run locally
+
+```bash
+cd meal-prep-mvp
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+cp .env.example .env
+uvicorn app.main:app --reload
+```
+
+Open http://localhost:8000.
+
+With no Supabase credentials, both the dashboard and MCP tools use deterministic demo data. The optional dashboard-ranking model still defaults to local Ollama:
+
+```bash
+ollama pull qwen3:4b
+ollama serve
+```
+
+The app continues with governed fallback views if Ollama is stopped or the configured model is unavailable.
+
+## Switch to OpenRouter
+
+Update `.env`:
+
+```dotenv
+MODEL_PROVIDER=openrouter
+OPENROUTER_API_KEY=your_key_here
+OPENROUTER_MODEL=openai/gpt-4o-mini
+```
+
+No application code changes are needed. Both providers return structured output that is validated before it reaches the component registry.
+
+## Test and inspect
+
+```bash
+pytest
+npx -y @modelcontextprotocol/inspector
+```
+
+Choose Streamable HTTP in the Inspector and use `http://localhost:8000/mcp`.
+
+## Supabase setup
+
+1. Create a Supabase project.
+2. Link the project and apply the checked-in schema:
+
+   ```bash
+   supabase link --project-ref YOUR_PROJECT_REF
+   supabase db push
+   ```
+
+3. In Authentication, set the Site URL to the Vercel production URL and add `/login` as an allowed redirect.
+4. In Authentication > OAuth Server, enable OAuth 2.1, set the authorization path to `/oauth/consent`, and enable dynamic client registration.
+5. Use an asymmetric JWT signing key (ES256 or RS256) so OAuth clients can validate tokens through JWKS.
+6. Copy the project URL and anon key to `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Vercel. Do not expose a service-role key.
+7. Set `AUTH_REQUIRED=true` only after the consent screen and redirect URLs work.
+
+The first authenticated request creates a household through `bootstrap_my_household`. Every subsequent database operation uses the caller's access token, so RLS remains the authority for ownership.
+
+## Vercel setup
+
+Create the Vercel project from the repository and set its Root Directory to `meal-prep-mvp`. Configure:
+
+```dotenv
+APP_BASE_URL=https://YOUR_PROJECT.vercel.app
+SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+SUPABASE_ANON_KEY=YOUR_ANON_KEY
+AUTH_REQUIRED=true
+MODEL_PROVIDER=disabled
+MODEL_ENABLED=false
+```
+
+Deploy, then verify:
+
+- `GET /api/health` reports `persistence: supabase`.
+- `/login` can create a valid session.
+- `/oauth/consent` displays an OAuth client request.
+- MCP initialization and `tools/list` succeed at `/mcp` after authorization.
+
+## Tool contract
+
+Data tools:
+
+- `get_household_context`
+- `update_household_preferences`
+- `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
+- `get_pantry`, `update_pantry_item`
+- `save_meal_plan`, `get_meal_plan`
+- `save_shopping_list`, `get_shopping_list`, `mark_item_purchased`
+
+Presentation tools:
+
+- `render_meal_plan`
+- `render_shopping_list`
+
+## Boundaries
+
+- Demo mode is intentionally in memory; production MCP data is durable in Supabase.
+- The dashboard includes meal swap, scoped plan recovery, prep task toggles, confirmation, undo, and deterministic model fallback.
+- The plugin stores plans and shopping lists but never places orders. Commerce remains a separate, explicitly confirmed tool flow.
+- The service does not provide medical guidance or fabricate food-safety dates.

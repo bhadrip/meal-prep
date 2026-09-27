@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="A local-first, AI-orchestrated household meal planner." />
+    <title>Meal Prep</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">Skip to meal plan</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand" aria-label="Meal Prep home">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span class="brand-name">Meal Prep</span>
+        </div>
+        <nav class="nav-list">
+          <button class="nav-item active" type="button" data-nav="home" aria-current="page"><span aria-hidden="true">⌂</span><span>Today</span></button>
+          <button class="nav-item" type="button" data-nav="show_plan"><span aria-hidden="true">▦</span><span>Plan</span></button>
+          <button class="nav-item" type="button" data-nav="show_shopping"><span aria-hidden="true">✓</span><span>Shopping</span></button>
+          <button class="nav-item" type="button" data-nav="home"><span aria-hidden="true">◫</span><span>Pantry</span></button>
+          <button class="nav-item" type="button" data-nav="home"><span aria-hidden="true">◇</span><span>Recipes</span></button>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="household-avatar" aria-hidden="true"><span>P</span><span>A</span><span>M</span></div>
+          <div><strong>The Parkers</strong><small>3 members</small></div>
+        </div>
+      </aside>
+
+      <div class="app-main">
+        <header class="topbar">
+          <button class="mobile-brand" type="button" data-nav="home" aria-label="Go to today"><span class="brand-mark">M</span><span>Meal Prep</span></button>
+          <div class="topbar-actions">
+            <div class="model-status" id="model-status" aria-live="polite"><span class="status-dot"></span><span>Checking local model…</span></div>
+            <button class="icon-button" type="button" aria-label="Notifications"><span aria-hidden="true">♢</span><span class="notification-dot"></span></button>
+            <a class="profile-button" href="/login" aria-label="Open account">BP</a>
+          </div>
+        </header>
+
+        <main id="workspace" tabindex="-1">
+          <div class="page-intro">
+            <div>
+              <p class="eyebrow">Tuesday · September 23</p>
+              <h1>Good afternoon, Ben</h1>
+              <p class="intro-note">Dinner is covered. One ingredient needs attention today.</p>
+            </div>
+            <div class="date-rail" aria-label="This week">
+              <button type="button"><span>Mon</span><strong>22</strong></button>
+              <button type="button" class="selected" aria-current="date"><span>Tue</span><strong>23</strong></button>
+              <button type="button"><span>Wed</span><strong>24</strong></button>
+              <button type="button"><span>Thu</span><strong>25</strong></button>
+              <button type="button"><span>Fri</span><strong>26</strong></button>
+            </div>
+          </div>
+
+          <div id="view-root" class="view-grid" aria-live="polite" aria-busy="true">
+            <section class="skeleton skeleton-hero" aria-label="Loading meal plan"></section>
+            <section class="skeleton skeleton-card"></section>
+            <section class="skeleton skeleton-wide"></section>
+          </div>
+        </main>
+
+        <nav class="mobile-nav" aria-label="Mobile navigation">
+          <button class="active" type="button" data-nav="home"><span>⌂</span><small>Today</small></button>
+          <button type="button" data-nav="show_plan"><span>▦</span><small>Plan</small></button>
+          <button type="button" data-nav="show_shopping"><span>✓</span><small>Shop</small></button>
+          <button type="button" data-nav="home"><span>◫</span><small>Pantry</small></button>
+        </nav>
+      </div>
+    </div>
+  </body>
+</html>

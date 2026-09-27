@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; --accent:#1e5a49; --line:color-mix(in srgb, CanvasText 15%, transparent); }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 14px; background: Canvas; color: CanvasText; }
+      header { display:flex; justify-content:space-between; gap:12px; align-items:end; margin-bottom:12px; }
+      h1 { margin:0; font-size:1.05rem; }
+      p { margin:.25rem 0 0; opacity:.7; font-size:.82rem; }
+      .grid { display:grid; grid-template-columns:repeat(7,minmax(110px,1fr)); gap:8px; overflow-x:auto; padding-bottom:4px; }
+      .day,.group { border:1px solid var(--line); border-radius:14px; padding:12px; background:color-mix(in srgb, Canvas 96%, var(--accent)); }
+      .day small,.group h2 { display:block; margin:0 0 9px; opacity:.65; text-transform:uppercase; letter-spacing:.08em; font-size:.68rem; }
+      .day strong { display:block; line-height:1.25; }
+      .day span { display:block; margin-top:6px; opacity:.72; font-size:.76rem; }
+      .groups { display:grid; gap:10px; }
+      .items { display:grid; gap:7px; }
+      label { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:9px; }
+      label.done span { text-decoration:line-through; opacity:.55; }
+      button { border:0; border-radius:10px; padding:8px 11px; background:var(--accent); color:white; font-weight:650; cursor:pointer; }
+      .empty { padding:22px; border:1px dashed var(--line); border-radius:14px; text-align:center; opacity:.72; }
+      @media (max-width:700px) { .grid { grid-template-columns:repeat(7,150px); } }
+    </style>
+  </head>
+  <body>
+    <main id="root"><div class="empty">Loading meal-prep data…</div></main>
+    <script type="module">
+      const root = document.querySelector('#root');
+      let requestId = 0;
+      const pending = new Map();
+      const escapeHtml = (value) => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+
+      function rpc(method, params = {}) {
+        const id = ++requestId;
+        parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+        return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+      }
+
+      function renderPlan(plan) {
+        if (!plan) return '<div class="empty">No meal plan has been saved yet.</div>';
+        const entries = (plan.entries || []).map((entry) => `<article class="day"><small>${escapeHtml(entry.day || entry.date)}</small><strong>${escapeHtml(entry.meal || entry.title)}</strong><span>${escapeHtml(entry.servings || '')}${entry.servings ? ' servings' : ''}</span></article>`).join('');
+        return `<header><div><h1>Weekly meal plan</h1><p>Week of ${escapeHtml(plan.weekStart || plan.week_start || '')}</p></div></header><section class="grid">${entries}</section>`;
+      }
+
+      function renderShopping(list) {
+        if (!list) return '<div class="empty">No shopping list has been saved yet.</div>';
+        const grouped = Object.groupBy(list.items || [], (item) => item.store || item.store_name || 'Other');
+        const groups = Object.entries(grouped).map(([store, items]) => `<section class="group"><h2>${escapeHtml(store)}</h2><div class="items">${items.map((item) => `<label class="${item.purchased ? 'done' : ''}"><input type="checkbox" data-item-id="${escapeHtml(item.id)}" ${item.purchased ? 'checked' : ''}><span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.quantity || '')} ${escapeHtml(item.unit || '')}</small></label>`).join('')}</div></section>`).join('');
+        return `<header><div><h1>${escapeHtml(list.name || 'Shopping list')}</h1><p>Grouped in household store-priority order</p></div></header><section class="groups">${groups}</section>`;
+      }
+
+      function applyResult(result) {
+        const data = result?.structuredContent || result;
+        if (!data) return;
+        root.innerHTML = data.kind === 'shopping_list' ? renderShopping(data.shoppingList) : renderPlan(data.plan);
+      }
+
+      window.addEventListener('message', (event) => {
+        const message = event.data;
+        if (!message || message.jsonrpc !== '2.0') return;
+        if (message.id && pending.has(message.id)) {
+          const job = pending.get(message.id); pending.delete(message.id);
+          message.error ? job.reject(message.error) : job.resolve(message.result);
+        }
+        if (message.method === 'ui/notifications/tool-result') applyResult(message.params);
+      });
+
+      root.addEventListener('change', async (event) => {
+        const input = event.target.closest('input[data-item-id]');
+        if (!input) return;
+        input.disabled = true;
+        try {
+          await rpc('tools/call', { name: 'mark_item_purchased', arguments: { item_id: input.dataset.itemId, purchased: input.checked } });
+          input.closest('label').classList.toggle('done', input.checked);
+        } finally { input.disabled = false; }
+      });
+
+      rpc('ui/initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'meal-prep-ui', version: '1.0.0' } }).catch(() => {});
+    </script>
+  </body>
+</html>
