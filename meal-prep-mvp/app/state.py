@@ -85,6 +85,21 @@ class HouseholdState:
     pantry_status: str = "mostly_current"
     stressors: list[str] = field(default_factory=list)
     successful_strategies: list[str] = field(default_factory=list)
+    previous_schedule: list[dict] = field(
+        default_factory=lambda: [
+            {"day": "Monday", "mode": "quick"},
+            {"day": "Tuesday", "mode": "cook"},
+            {"day": "Wednesday", "mode": "quick"},
+            {"day": "Thursday", "mode": "leftovers"},
+            {"day": "Friday", "mode": "flexible"},
+            {"day": "Saturday", "mode": "cook"},
+            {"day": "Sunday", "mode": "prep"},
+        ]
+    )
+    current_schedule: list[dict] = field(default_factory=list)
+    schedule_confirmed: bool = False
+    schedule_is_normal: bool = True
+    remember_schedule: bool = True
 
     def reset(self) -> None:
         fresh = type(self)()
@@ -106,6 +121,25 @@ class HouseholdState:
             str(value)[:80] for value in values.get("successfulStrategies", [])
         ][:8]
         self.onboarding_complete = True
+        self.version += 1
+
+    def save_week_schedule(self, values: dict) -> None:
+        allowed_modes = {"cook", "quick", "leftovers", "flexible", "out", "prep"}
+        incoming = values.get("days", [])
+        rows = []
+        for item in incoming[:7]:
+            day = str(item.get("day", ""))[:12]
+            mode = str(item.get("mode", "flexible"))
+            if day and mode in allowed_modes:
+                rows.append({"day": day, "mode": mode})
+        if len(rows) != 7:
+            raise ValueError("a schedule requires seven valid days")
+        self.current_schedule = rows
+        self.schedule_is_normal = bool(values.get("isNormalWeek", True))
+        self.remember_schedule = bool(values.get("rememberRhythm", True))
+        if self.remember_schedule:
+            self.previous_schedule = deepcopy(rows)
+        self.schedule_confirmed = True
         self.version += 1
 
     def meal(self, meal_id: str | None = None) -> dict:

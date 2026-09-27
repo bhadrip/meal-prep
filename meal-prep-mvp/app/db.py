@@ -209,6 +209,33 @@ class SupabaseRepository:
             raise RepositoryError("Shopping item was not found")
         return rows[0]
 
+    async def get_weekly_schedule(self, week_start: str | None = None) -> dict[str, Any] | None:
+        household_id = await self.household_id()
+        params = {
+            "select": "id,week_start,days,is_normal_week,remember_rhythm,created_at,updated_at",
+            "household_id": f"eq.{household_id}",
+            "order": "week_start.desc",
+            "limit": "1",
+        }
+        if week_start:
+            params["week_start"] = f"eq.{week_start}"
+        rows = await self.request("GET", "weekly_schedules", params=params)
+        return rows[0] if rows else None
+
+    async def save_weekly_schedule(self, schedule: dict[str, Any]) -> dict[str, Any]:
+        household_id = await self.household_id()
+        row = {
+            "household_id": household_id,
+            "week_start": schedule["weekStart"],
+            "days": schedule["days"],
+            "is_normal_week": schedule.get("isNormalWeek", True),
+            "remember_rhythm": schedule.get("rememberRhythm", True),
+        }
+        rows = await self.request(
+            "POST", "weekly_schedules", params={"on_conflict": "household_id,week_start"}, json=row
+        )
+        return rows[0]
+
 
 class DemoRepository:
     """Deterministic local state used when Supabase is not configured."""
@@ -273,6 +300,18 @@ class DemoRepository:
             {"id": "55555555-5555-5555-5555-555555555552", "name": "Cilantro", "quantity": 1, "unit": "bunch", "store": "Safeway", "purchased": False},
         ],
     }
+    _weekly_schedule = {
+        "id": "66666666-6666-6666-6666-666666666666",
+        "week_start": date.today().isoformat(),
+        "days": [
+            {"day": "Monday", "mode": "quick"}, {"day": "Tuesday", "mode": "cook"},
+            {"day": "Wednesday", "mode": "quick"}, {"day": "Thursday", "mode": "leftovers"},
+            {"day": "Friday", "mode": "flexible"}, {"day": "Saturday", "mode": "cook"},
+            {"day": "Sunday", "mode": "prep"},
+        ],
+        "is_normal_week": True,
+        "remember_rhythm": True,
+    }
 
     async def get_household_context(self, **_: Any) -> dict[str, Any]:
         return deepcopy(self._context)
@@ -331,6 +370,23 @@ class DemoRepository:
         item["purchased"] = purchased
         item["purchasedQuantity"] = purchased_quantity
         return deepcopy(item)
+
+    async def get_weekly_schedule(self, week_start: str | None = None) -> dict[str, Any] | None:
+        value = type(self)._weekly_schedule
+        if week_start and value.get("week_start") != week_start:
+            return None
+        return deepcopy(value)
+
+    async def save_weekly_schedule(self, schedule: dict[str, Any]) -> dict[str, Any]:
+        value = {
+            "id": type(self)._weekly_schedule.get("id") or str(uuid4()),
+            "week_start": schedule["weekStart"],
+            "days": deepcopy(schedule["days"]),
+            "is_normal_week": schedule.get("isNormalWeek", True),
+            "remember_rhythm": schedule.get("rememberRhythm", True),
+        }
+        type(self)._weekly_schedule = value
+        return deepcopy(value)
 
 
 def repository_for_request() -> SupabaseRepository | DemoRepository:

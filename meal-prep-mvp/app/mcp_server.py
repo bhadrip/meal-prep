@@ -35,6 +35,7 @@ mcp = FastMCP(
     "meal-prep",
     instructions=(
         "Load get_household_context before planning. Respect hard dietary restrictions. "
+        "Load the weekly schedule and any prior retrospective before drafting a new plan. "
         "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
         "Never place or imply an order; external commerce requires a separate confirmation flow."
     ),
@@ -215,6 +216,26 @@ async def mark_item_purchased(
     """Mark a shopping item purchased or unpurchased. This does not place an order."""
     try:
         return await _repo().mark_item_purchased(item_id, purchased, purchased_quantity)
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_weekly_schedule(week_start: str | None = None) -> dict[str, Any]:
+    """Return the requested weekly rhythm, or the latest remembered schedule."""
+    try:
+        return {"schedule": await _repo().get_weekly_schedule(week_start)}
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_weekly_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
+    """Save an explicitly confirmed seven-day planning rhythm for one week."""
+    if not schedule.get("weekStart") or len(schedule.get("days", [])) != 7:
+        raise ValueError("schedule.weekStart and seven schedule.days are required")
+    try:
+        return await _repo().save_weekly_schedule(schedule)
     except RepositoryError as exc:
         raise _error(exc) from exc
 

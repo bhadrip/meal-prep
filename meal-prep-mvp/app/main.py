@@ -13,6 +13,8 @@ from .orchestrator import (
     dashboard_view,
     easier_choices_view,
     onboarding_view,
+    plan_review_view,
+    schedule_check_view,
     scoped_request_view,
     swap_options_view,
 )
@@ -131,6 +133,18 @@ async def interact(event: InteractionEvent) -> ViewSpec:
             event,
             "execute",
         )
+    if action == "review_schedule":
+        return decided(schedule_check_view(STATE), event, "review")
+    if action == "save_schedule":
+        try:
+            STATE.save_week_schedule(event.parameters)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return decided(
+            plan_review_view(STATE, toast="The week's rhythm is confirmed and reflected in this plan."),
+            event,
+            "execute",
+        )
     if action == "swap_meal":
         return decided(await swap_options_view(STATE, provider), event, "choose")
     if action == "make_easier":
@@ -183,7 +197,10 @@ async def interact(event: InteractionEvent) -> ViewSpec:
         if not text:
             raise HTTPException(422, "text is required")
         return decided(await scoped_request_view(STATE, provider, text[:600]), event, "ask")
-    if action in {"start_cooking", "show_plan", "show_shopping"}:
+    if action == "show_plan":
+        view = plan_review_view(STATE) if STATE.schedule_confirmed else schedule_check_view(STATE)
+        return decided(view, event, "review")
+    if action in {"start_cooking", "show_shopping"}:
         return decided(
             dashboard_view(STATE, source="policy", model_label=provider.label if provider else None, toast="That focused workflow is outside this small MVP."),
             event,

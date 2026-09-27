@@ -47,6 +47,26 @@ def test_first_visit_collects_practical_onboarding_context():
     assert STATE.successful_strategies == ["Planned leftovers"]
 
 
+def test_plan_flow_reuses_and_confirms_weekly_schedule():
+    complete_onboarding()
+    response = client.post("/api/interactions", json={"action": "show_plan"})
+    assert response.status_code == 200
+    assert response.json()["view_id"] == "schedule-check"
+    schedule = next(item for item in response.json()["components"] if item["type"] == "schedule_check")
+    assert schedule["data"]["days"][0] == {"day": "Monday", "mode": "quick"}
+
+    changed = [dict(item) for item in schedule["data"]["days"]]
+    changed[0]["mode"] = "out"
+    saved = client.post(
+        "/api/interactions",
+        json={"action": "save_schedule", "parameters": {"days": changed, "isNormalWeek": False, "rememberRhythm": True}},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["view_id"] == "plan-review"
+    assert STATE.previous_schedule[0]["mode"] == "out"
+    assert STATE.schedule_confirmed is True
+
+
 def test_dashboard_is_a_valid_view_spec():
     complete_onboarding()
     response = client.get("/api/dashboard")

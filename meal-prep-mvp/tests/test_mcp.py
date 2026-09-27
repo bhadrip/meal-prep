@@ -43,9 +43,22 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "save_shopping_list",
         "render_meal_plan",
         "render_shopping_list",
+        "get_weekly_schedule",
+        "save_weekly_schedule",
     }.issubset(names)
     render_tool = next(tool for tool in tools if tool["name"] == "render_meal_plan")
     assert render_tool["_meta"]["ui"]["resourceUri"].startswith("ui://meal-prep/")
+
+
+def test_demo_weekly_schedule_can_be_saved_and_read(client: TestClient):
+    days = [
+        {"day": day, "mode": "quick" if index < 5 else "flexible"}
+        for index, day in enumerate(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    ]
+    saved = rpc(client, "tools/call", {"name": "save_weekly_schedule", "arguments": {"schedule": {"weekStart": "2026-09-28", "days": days, "isNormalWeek": False}}})["structuredContent"]
+    assert saved["days"] == days
+    loaded = rpc(client, "tools/call", {"name": "get_weekly_schedule", "arguments": {"week_start": "2026-09-28"}}, request_id=2)["structuredContent"]
+    assert loaded["schedule"]["is_normal_week"] is False
 
 
 def test_demo_household_context_and_plan_render_are_structured(client: TestClient):

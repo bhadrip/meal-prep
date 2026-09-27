@@ -149,6 +149,69 @@ def onboarding_view(state: HouseholdState, *, editing: bool = False) -> ViewSpec
     )
 
 
+def schedule_check_view(state: HouseholdState) -> ViewSpec:
+    schedule = state.current_schedule or state.previous_schedule
+    return ViewSpec(
+        view_id="schedule-check",
+        purpose="Confirm the coming week's rhythm before planning meals",
+        state_version=state.version,
+        source="policy",
+        generated_at=now_iso(),
+        components=[
+            ComponentSpec(
+                id="schedule-status",
+                type="status_row",
+                data={
+                    "eyebrow": "Before we plan",
+                    "title": "Is this a normal week?",
+                    "description": "We started with the last rhythm you used. Adjust only the nights that changed.",
+                },
+                actions=[action("Back", "home", style="quiet")],
+            ),
+            ComponentSpec(
+                id="schedule-form",
+                type="schedule_check",
+                data={
+                    "days": schedule,
+                    "isNormalWeek": state.schedule_is_normal,
+                    "rememberRhythm": state.remember_schedule,
+                    "hasPrevious": bool(state.previous_schedule),
+                },
+            ),
+        ],
+    )
+
+
+def plan_review_view(state: HouseholdState, *, toast: str | None = None) -> ViewSpec:
+    components = [
+        ComponentSpec(
+            id="plan-status",
+            type="status_row",
+            data={
+                "eyebrow": "Weekly plan",
+                "title": "A plan shaped around your week",
+                "description": "Busy nights stay light, flexible nights can absorb changes, and the rest remains movable.",
+            },
+            actions=[action("Check schedule", "review_schedule", style="quiet"), action("Done", "home", style="secondary")],
+        ),
+        ComponentSpec(
+            id="full-week-plan",
+            type="plan_strip",
+            data={"title": "This week", "days": state.week},
+        ),
+    ]
+    if toast:
+        components.insert(0, ComponentSpec(id="plan-toast", type="toast", data={"message": toast}))
+    return ViewSpec(
+        view_id="plan-review",
+        purpose="Review the weekly meal plan against the confirmed schedule",
+        state_version=state.version,
+        source="policy",
+        generated_at=now_iso(),
+        components=components,
+    )
+
+
 def _validated_order(ids: Iterable[str], allowed: list[str]) -> list[str]:
     result = []
     for item_id in ids:

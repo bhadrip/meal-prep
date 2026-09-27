@@ -35,6 +35,7 @@ class ComponentSpec(BaseModel):
         "scoped_prompt",
         "toast",
         "onboarding_form",
+        "schedule_check",
     ]
     data: dict[str, Any]
     actions: list[ActionSpec] = Field(default_factory=list)

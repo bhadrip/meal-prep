@@ -332,6 +332,15 @@ h1 { margin: 0; font-size: clamp(2rem, 3.6vw, 3.55rem); line-height: 1.02; }
 .form-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 22px; }
 .form-footer p { max-width: 520px; margin: 0; color: var(--muted); font-size: .8rem; }
 .guided-form .btn.primary { color: white; background: var(--forest); }
+.schedule-question { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding-bottom: 22px; border-bottom: 1px solid var(--border); }
+.schedule-question h3, .schedule-question p { margin: 0; }
+.schedule-question p { margin-top: 5px; color: var(--muted); font-size: .8rem; }
+.schedule-grid { display: grid; gap: 8px; padding: 20px 0; }
+.schedule-row { display: grid; grid-template-columns: 1fr minmax(180px, 260px); align-items: center; gap: 14px; padding: 8px 12px; border-radius: 12px; background: var(--surface-soft); }
+.schedule-row strong { color: var(--ink); }
+.schedule-row select { margin-top: 0; }
+.plain-check { display: flex; align-items: center; gap: 8px; color: var(--ink) !important; }
+.plain-check input { width: 18px; height: 18px; accent-color: var(--forest); }
 
 .error-card { grid-column: 1 / -1; padding: 30px; text-align: center; }
 .error-card h2 { margin-top: 0; }
@@ -384,6 +393,8 @@ h1 { margin: 0; font-size: clamp(2rem, 3.6vw, 3.55rem); line-height: 1.02; }
   .scope-form { display: grid; }
   .form-pair { grid-template-columns: 1fr; }
   .form-footer { display: grid; }
+  .schedule-question { display: grid; }
+  .schedule-row { grid-template-columns: 1fr; }
   .mobile-nav { position: fixed; inset: auto 10px 10px; z-index: 40; display: grid; grid-template-columns: repeat(4,1fr); padding: 7px; border: 1px solid rgba(255,255,255,.6); border-radius: 19px; background: rgba(255,255,255,.92); box-shadow: 0 16px 40px rgba(29,56,47,.18); backdrop-filter: blur(14px); }
   .mobile-nav button { display: grid; place-items: center; gap: 2px; padding: 7px; border: 0; border-radius: 12px; color: var(--muted); background: transparent; }
   .mobile-nav button.active { color: white; background: var(--forest); }

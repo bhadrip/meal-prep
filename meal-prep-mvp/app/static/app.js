@@ -184,6 +184,29 @@ function renderOnboarding(component) {
     </form>`;
 }
 
+function renderScheduleCheck(component) {
+  const modeOptions = [
+    ["cook", "Cook"], ["quick", "Quick meal"], ["leftovers", "Leftovers"],
+    ["flexible", "Flexible / backup"], ["out", "Eating out"], ["prep", "Prep day"],
+  ];
+  const days = component.data.days.map((item) => `
+    <label class="schedule-row" data-day="${escapeHtml(item.day)}">
+      <strong>${escapeHtml(item.day)}</strong>
+      <select name="scheduleMode">${modeOptions.map(([value, label]) => `<option value="${value}"${value === item.mode ? " selected" : ""}>${label}</option>`).join("")}</select>
+    </label>`).join("");
+  return `
+    <form class="card guided-form schedule-form" id="schedule-form">
+      <div class="schedule-question"><div><h3>Week outlook</h3><p>Specific nights override the usual rhythm for this week.</p></div>
+        <div class="radio-row">
+          <label><input type="radio" name="isNormalWeek" value="true"${component.data.isNormalWeek ? " checked" : ""} /><span>Mostly normal</span></label>
+          <label><input type="radio" name="isNormalWeek" value="false"${!component.data.isNormalWeek ? " checked" : ""} /><span>Different this week</span></label>
+        </div>
+      </div>
+      <div class="schedule-grid">${days}</div>
+      <div class="form-footer"><label class="plain-check"><input type="checkbox" name="rememberRhythm"${component.data.rememberRhythm ? " checked" : ""} /> Use this as the starting point next week</label><button class="btn primary" type="submit">Use this schedule</button></div>
+    </form>`;
+}
+
 const renderers = {
   hero_meal: renderHero,
   use_soon: renderUseSoon,
@@ -197,6 +220,7 @@ const renderers = {
   confirmation: renderConfirmation,
   toast: renderToast,
   onboarding_form: renderOnboarding,
+  schedule_check: renderScheduleCheck,
 };
 
 function updateModelStatus(view) {
@@ -303,6 +327,17 @@ document.addEventListener("submit", (event) => {
       pantryStatus: form.get("pantryStatus"),
       stressors: form.getAll("stressors"),
       successfulStrategies: form.getAll("successfulStrategies"),
+    }}).catch(() => {});
+    return;
+  }
+  if (event.target.matches("#schedule-form")) {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const days = [...event.target.querySelectorAll(".schedule-row")].map((row) => ({ day: row.dataset.day, mode: row.querySelector("select").value }));
+    requestView({ action: "save_schedule", parameters: {
+      isNormalWeek: form.get("isNormalWeek") === "true",
+      rememberRhythm: form.get("rememberRhythm") === "on",
+      days,
     }}).catch(() => {});
     return;
   }
