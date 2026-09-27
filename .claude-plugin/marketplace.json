@@ -1,0 +1,14 @@
+{
+  "name": "bhadrip-plugins",
+  "description": "Personal plugins published by BhadriP",
+  "owner": {
+    "name": "BhadriP"
+  },
+  "plugins": [
+    {
+      "name": "meal-prep",
+      "source": "./meal-prep-plugin",
+      "description": "Plan meals from household preferences and pantry data, then save plans and shopping lists."
+    }
+  ]
+}

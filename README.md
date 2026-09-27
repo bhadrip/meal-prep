@@ -35,6 +35,24 @@ codex plugin marketplace add bhadrip/meal-prep --ref main
 
 Restart the ChatGPT desktop app, open the Plugins Directory, choose **BhadriP Plugins**, and install **Meal Prep**.
 
+## Add to Claude
+
+Claude can install the full plugin—skill plus remote MCP connector—directly from this GitHub repository:
+
+1. In Claude, open **Customize → Plugins**.
+2. Select **Add → Add marketplace**.
+3. Enter `bhadrip/meal-prep` or `https://github.com/bhadrip/meal-prep`.
+4. Open the new **bhadrip-plugins** marketplace and add **Meal Prep**.
+5. Open the plugin's **Connectors** tab and connect the Meal Prep service through OAuth.
+
+For connector-only use, open **Customize → Connectors → Add custom connector** and enter:
+
+```text
+https://meal-prep-swart.vercel.app/mcp
+```
+
+Marketplace installations receive new plugin versions from GitHub. In Claude, use **Check for updates** or enable **Sync automatically** for this GitHub marketplace.
+
 ## MCP UI
 
 The MCP server currently exposes two interactive presentation resources:

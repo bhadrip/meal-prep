@@ -1,0 +1,13 @@
+{
+  "name": "meal-prep",
+  "displayName": "Meal Prep",
+  "version": "0.3.0",
+  "description": "Plan household meals with durable preferences, recipes, pantry state, meal plans, and shopping lists.",
+  "author": {
+    "name": "BhadriP",
+    "url": "https://github.com/bhadrip"
+  },
+  "homepage": "https://meal-prep-swart.vercel.app",
+  "repository": "https://github.com/bhadrip/meal-prep",
+  "keywords": ["meal-planning", "recipes", "pantry", "shopping-list"]
+}
