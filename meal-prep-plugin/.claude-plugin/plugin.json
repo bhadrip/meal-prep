@@ -1,7 +1,7 @@
 {
   "name": "meal-prep",
   "displayName": "Meal Prep",
-  "version": "0.3.0",
+  "version": "0.3.0+codex.20260927232315",
   "description": "Plan household meals with durable preferences, recipes, pantry state, meal plans, and shopping lists.",
   "author": {
     "name": "BhadriP",

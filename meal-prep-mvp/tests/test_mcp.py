@@ -1,10 +1,15 @@
 from fastapi.testclient import TestClient
 import pytest
 
+from app.config import MCP_AUTH_SCOPES
 from app.main import app
 
 
 HEADERS = {"Accept": "application/json, text/event-stream"}
+
+
+def test_oauth_requests_only_identity_and_refresh_scopes():
+    assert MCP_AUTH_SCOPES == ("openid", "email", "offline_access")
 
 
 @pytest.fixture(scope="module")

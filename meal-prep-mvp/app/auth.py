@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 
-from .config import Settings
+from .config import MCP_AUTH_SCOPES, Settings
 
 
 class SupabaseTokenVerifier(TokenVerifier):
@@ -38,7 +38,7 @@ class SupabaseTokenVerifier(TokenVerifier):
             return None
         metadata = user.get("user_metadata") or {}
         app_metadata = user.get("app_metadata") or {}
-        scopes = str(app_metadata.get("scope", "openid email profile")).split()
+        scopes = str(app_metadata.get("scope", " ".join(MCP_AUTH_SCOPES))).split()
         return AccessToken(
             token=token,
             client_id=str(app_metadata.get("client_id", "supabase-oauth")),

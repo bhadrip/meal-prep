@@ -10,7 +10,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from .auth import SupabaseTokenVerifier
-from .config import get_settings
+from .config import MCP_AUTH_SCOPES, get_settings
 from .db import RepositoryError, repository_for_request
 
 
@@ -26,7 +26,7 @@ if settings.auth_required and settings.supabase_configured:
     auth_settings = AuthSettings(
         issuer_url=settings.supabase_auth_issuer,
         resource_server_url=settings.mcp_resource_url,
-        required_scopes=[],
+        required_scopes=list(MCP_AUTH_SCOPES),
         validate_token_resource=False,
     )
     token_verifier = SupabaseTokenVerifier(settings)

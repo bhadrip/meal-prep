@@ -30,7 +30,16 @@ async function setup() {
       ? await client.auth.oauth.approveAuthorization(authorizationId)
       : await client.auth.oauth.denyAuthorization(authorizationId);
     if (result.error) throw result.error;
-    location.href = result.data.redirect_url;
+    const redirectUrl = new URL(result.data.redirect_url);
+    const isLoopback = redirectUrl.protocol === 'http:'
+      && ['127.0.0.1', 'localhost', '[::1]'].includes(redirectUrl.hostname);
+    if (redirectUrl.protocol !== 'https:' && !isLoopback) {
+      throw new Error('The OAuth client returned an unsupported callback URL.');
+    }
+    message.textContent = decision === 'approve'
+      ? 'Access allowed. Returning to Codex…'
+      : 'Access denied. Returning to Codex…';
+    location.replace(redirectUrl.toString());
   });
 }
 
