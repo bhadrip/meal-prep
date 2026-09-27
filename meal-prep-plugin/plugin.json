@@ -1,18 +1,22 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "meal-prep",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Plan household meals with durable preferences, recipes, pantry state, meal plans, and shopping lists.",
   "author": {
-    "name": "Bhadrip"
+    "name": "Badri P.",
+    "url": "https://github.com/bhadrip"
   },
+  "homepage": "https://meal-prep-swart.vercel.app",
+  "repository": "https://github.com/bhadrip/meal-prep",
+  "keywords": ["meal-planning", "recipes", "pantry", "shopping-list"],
   "extensions": {
     "com.openai": {
       "interface": {
         "displayName": "Meal Prep",
         "shortDescription": "Plan meals from household context",
         "longDescription": "Create practical meal plans, remember household preferences, track pantry items, and save shopping lists while keeping orders behind explicit confirmation.",
-        "developerName": "Bhadrip",
+        "developerName": "Badri P.",
         "category": "Lifestyle",
         "capabilities": ["Interactive"],
         "defaultPrompt": [

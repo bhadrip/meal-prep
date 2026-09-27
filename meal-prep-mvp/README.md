@@ -1,6 +1,6 @@
 # Meal Prep plugin
 
-Meal Prep is a private, persistent meal-planning plugin for ChatGPT and Codex. It keeps reasoning in the model while the service owns authenticated household data, validation, Row-Level Security, and structured presentation.
+Meal Prep is a persistent meal-planning plugin for ChatGPT and Codex. It keeps reasoning in the model while the service owns authenticated household data, validation, Row-Level Security, and structured presentation.
 
 ## What is included
 
@@ -17,7 +17,7 @@ The service never calls a model to make domain writes. ChatGPT or Codex creates 
 
 ## Deployed resources
 
-- Private source repository: `https://github.com/bhadrip/meal-prep`
+- Source repository: `https://github.com/bhadrip/meal-prep`
 - Production app and MCP server: `https://meal-prep-swart.vercel.app`
 - Supabase project: `svdcbpcndqmocecyymav` in `bhadrip's Org`
 
