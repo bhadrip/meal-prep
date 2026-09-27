@@ -12,6 +12,8 @@ food, update household food preferences, or create a shopping list.
 
 1. Call `get_household_context` before planning. Treat dietary restrictions as
    hard constraints and planning preferences as defaults the user may override.
+   Also load `get_weekly_schedule`, `get_latest_retro`, and
+   `get_household_memory` before drafting when those tools are available.
 2. Call `get_pantry` and `search_recipes` when existing food or saved recipes
    affect the request. Do not fabricate pantry quantities, freshness, prices,
    inventory, or recipe provenance.
@@ -35,6 +37,9 @@ food, update household food preferences, or create a shopping list.
 - Explicit preference changes may be saved with
   `update_household_preferences`. Never turn a one-time situation or inferred
   behavior into a durable preference without asking.
+- Retrospective observations are evidence, not permanent preferences. Save them
+  as suggested memories and use `review_household_memory` only after the user
+  confirms, corrects, or asks to forget one.
 - Recipe archival and external purchases require explicit confirmation.
 - `mark_item_purchased` records shopping progress; it does not buy anything.
 - If a proposed recipe conflicts with a hard restriction, reject it and offer

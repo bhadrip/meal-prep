@@ -111,6 +111,7 @@ class HouseholdState:
         ]
     )
     latest_retro: dict | None = None
+    memories: list[dict] = field(default_factory=list)
 
     def reset(self) -> None:
         fresh = type(self)()
@@ -133,6 +134,12 @@ class HouseholdState:
         ][:8]
         self.onboarding_complete = True
         self.retro_due = False
+        for restriction in self.dietary_restrictions:
+            self.add_memory("constraint", f"Dietary restriction: {restriction}", "You told us", "confirmed")
+        for stressor in self.stressors:
+            self.add_memory("pressure", f"Planning stress: {stressor}", "You told us", "confirmed")
+        for strategy in self.successful_strategies:
+            self.add_memory("success", f"Works well: {strategy}", "You told us", "confirmed")
         self.version += 1
 
     def save_week_schedule(self, values: dict) -> None:
@@ -151,6 +158,7 @@ class HouseholdState:
         self.remember_schedule = bool(values.get("rememberRhythm", True))
         if self.remember_schedule:
             self.previous_schedule = deepcopy(rows)
+            self.add_memory("schedule", "Start each week from the saved household rhythm", "Schedule check", "confirmed")
         self.schedule_confirmed = True
         self.version += 1
 
@@ -174,8 +182,50 @@ class HouseholdState:
             "stressors": [str(value)[:80] for value in values.get("stressors", [])][:8],
             "note": str(values.get("note", "")).strip()[:600],
         }
+        for value in self.latest_retro["workedWell"]:
+            self.add_memory("success", f"Worked last week: {value}", "Weekly retro", "suggested")
+        for value in self.latest_retro["stressors"]:
+            self.add_memory("pressure", f"Made last week harder: {value}", "Weekly retro", "suggested")
         self.retro_due = False
         self.schedule_confirmed = False
+        self.version += 1
+
+    def add_memory(self, category: str, content: str, source: str, status: str, scope: str = "persistent") -> dict:
+        existing = next(
+            (item for item in self.memories if item["active"] and item["category"] == category and item["content"].casefold() == content.casefold()),
+            None,
+        )
+        if existing:
+            existing["evidenceCount"] += 1
+            return existing
+        item = {
+            "id": str(uuid4()),
+            "category": category[:40],
+            "content": content.strip()[:240],
+            "source": source[:80],
+            "status": status if status in {"suggested", "confirmed"} else "suggested",
+            "scope": scope if scope in {"persistent", "this_week"} else "persistent",
+            "evidenceCount": 1,
+            "active": True,
+        }
+        self.memories.append(item)
+        return item
+
+    def review_memory(self, memory_id: str, action: str, content: str | None = None) -> None:
+        item = next(value for value in self.memories if value["id"] == memory_id and value["active"])
+        if action == "confirm":
+            item["status"] = "confirmed"
+        elif action == "forget":
+            item["active"] = False
+        elif action == "update":
+            normalized = str(content or "").strip()
+            if not normalized:
+                raise ValueError("memory text is required")
+            item["content"] = normalized[:240]
+            item["status"] = "confirmed"
+            item["source"] = "You corrected this"
+        else:
+            raise ValueError("unsupported memory action")
         self.version += 1
 
     def meal(self, meal_id: str | None = None) -> dict:

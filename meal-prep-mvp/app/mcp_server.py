@@ -260,6 +260,38 @@ async def save_weekly_retro(retro: dict[str, Any]) -> dict[str, Any]:
         raise _error(exc) from exc
 
 
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_household_memory(include_inactive: bool = False) -> dict[str, Any]:
+    """List visible household memories with source, review status, scope, and evidence count."""
+    try:
+        items = await _repo().get_household_memory(include_inactive)
+        return {"items": items, "count": len(items)}
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_household_memory(memory: dict[str, Any]) -> dict[str, Any]:
+    """Save an explicit user memory or a reviewable suggestion with source provenance."""
+    if not str(memory.get("content", "")).strip():
+        raise ValueError("memory.content is required")
+    try:
+        return await _repo().save_household_memory(memory)
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def review_household_memory(memory_id: str, action: str, content: str | None = None) -> dict[str, Any]:
+    """Confirm, correct, or forget one visible memory after the user requests that action."""
+    if action not in {"confirm", "update", "forget"}:
+        raise ValueError("action must be confirm, update, or forget")
+    try:
+        return await _repo().review_household_memory(memory_id, action, content)
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
 @mcp.tool(
     annotations=READ_ONLY,
     meta={"ui": {"resourceUri": MEAL_PLAN_UI_URI}},

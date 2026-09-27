@@ -27,7 +27,14 @@ def action(label: str, name: str, *, target_id: str | None = None, style: str = 
     return ActionSpec(label=label, action=name, target_id=target_id, style=style, parameters=parameters)
 
 
-def dashboard_view(state: HouseholdState, *, source: str = "fallback", model_label: str | None = None, toast: str | None = None) -> ViewSpec:
+def dashboard_view(
+    state: HouseholdState,
+    *,
+    source: str = "fallback",
+    model_label: str | None = None,
+    toast: str | None = None,
+    undo_available: bool = False,
+) -> ViewSpec:
     if not state.onboarding_complete:
         return onboarding_view(state)
     meal = state.meal()
@@ -93,7 +100,7 @@ def dashboard_view(state: HouseholdState, *, source: str = "fallback", model_lab
                 id="result-toast",
                 type="toast",
                 data={"message": toast},
-                actions=[action("Undo", "undo_swap", style="quiet")],
+                actions=[action("Undo", "undo_swap", style="quiet")] if undo_available else [],
             ),
         )
     return ViewSpec(
@@ -249,6 +256,34 @@ def plan_review_view(state: HouseholdState, *, toast: str | None = None) -> View
     return ViewSpec(
         view_id="plan-review",
         purpose="Review the weekly meal plan against the confirmed schedule",
+        state_version=state.version,
+        source="policy",
+        generated_at=now_iso(),
+        components=components,
+    )
+
+
+def memory_view(state: HouseholdState, *, toast: str | None = None) -> ViewSpec:
+    active = [item for item in state.memories if item["active"]]
+    suggested = sum(item["status"] == "suggested" for item in active)
+    components = [
+        ComponentSpec(
+            id="memory-status",
+            type="status_row",
+            data={
+                "eyebrow": "Household memory",
+                "title": "What Meal Prep remembers",
+                "description": f"{len(active)} active memories · {suggested} waiting for your review. Nothing inferred becomes permanent without confirmation.",
+            },
+            actions=[action("Review setup", "review_onboarding", style="quiet"), action("Done", "home", style="secondary")],
+        ),
+        ComponentSpec(id="memory-items", type="memory_list", data={"items": active}),
+    ]
+    if toast:
+        components.insert(0, ComponentSpec(id="memory-toast", type="toast", data={"message": toast}))
+    return ViewSpec(
+        view_id="household-memory",
+        purpose="Inspect, confirm, correct, or forget household planning memory",
         state_version=state.version,
         source="policy",
         generated_at=now_iso(),

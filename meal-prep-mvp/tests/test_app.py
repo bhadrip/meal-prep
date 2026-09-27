@@ -45,6 +45,9 @@ def test_first_visit_collects_practical_onboarding_context():
     assert STATE.household_size == 3
     assert STATE.stressors == ["Too much prep"]
     assert STATE.successful_strategies == ["Planned leftovers"]
+    toast = completed.json()["components"][0]
+    assert toast["type"] == "toast"
+    assert toast["actions"] == []
 
 
 def test_plan_flow_reuses_and_confirms_weekly_schedule():
@@ -83,6 +86,26 @@ def test_retro_captures_evidence_before_next_schedule_check():
     assert saved.json()["view_id"] == "schedule-check"
     assert STATE.latest_retro["stressors"] == ["Too much chopping"]
     assert STATE.retro_due is False
+    suggestions = [item for item in STATE.memories if item["status"] == "suggested"]
+    assert {item["source"] for item in suggestions} == {"Weekly retro"}
+
+
+def test_household_memory_is_visible_confirmable_correctable_and_forgettable():
+    complete_onboarding()
+    memory = STATE.add_memory("pressure", "Made last week harder: Too many dishes", "Weekly retro", "suggested")
+    response = client.post("/api/interactions", json={"action": "show_memory"})
+    assert response.status_code == 200
+    assert response.json()["view_id"] == "household-memory"
+
+    confirmed = client.post("/api/interactions", json={"action": "confirm_memory", "target_id": memory["id"]})
+    assert confirmed.status_code == 200
+    assert memory["status"] == "confirmed"
+    corrected = client.post("/api/interactions", json={"action": "update_memory", "target_id": memory["id"], "parameters": {"content": "Keep cleanup to one pan"}})
+    assert corrected.status_code == 200
+    assert memory["content"] == "Keep cleanup to one pan"
+    forgotten = client.post("/api/interactions", json={"action": "forget_memory", "target_id": memory["id"]})
+    assert forgotten.status_code == 200
+    assert memory["active"] is False
 
 
 def test_dashboard_is_a_valid_view_spec():
@@ -124,3 +147,5 @@ def test_swap_requires_confirmation_and_is_idempotent():
     second = client.post("/api/interactions", json=payload)
     assert first.status_code == second.status_code == 200
     assert STATE.version == version
+    toast = next(item for item in first.json()["components"] if item["type"] == "toast")
+    assert toast["actions"][0]["action"] == "undo_swap"

@@ -8,6 +8,8 @@ Meal Prep is a persistent meal-planning plugin for ChatGPT. It keeps reasoning i
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
 - Separate render tools and MCP Apps resources for the weekly plan and shopping checklist
+- Conversational onboarding for household constraints, pantry confidence, stressors, and proven strategies
+- Remembered weekly rhythms, pre-planning retrospectives, and user-reviewable household memory
 - Supabase Auth bearer-token validation and OAuth 2.1 discovery through the MCP SDK
 - Supabase schema, transactional functions, and RLS policies
 - Vercel serverless entrypoint and deployment configuration
@@ -112,6 +114,9 @@ Data tools:
 - `update_household_preferences`
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
 - `get_pantry`, `update_pantry_item`
+- `get_weekly_schedule`, `save_weekly_schedule`
+- `get_latest_retro`, `save_weekly_retro`
+- `get_household_memory`, `save_household_memory`, `review_household_memory`
 - `save_meal_plan`, `get_meal_plan`
 - `save_shopping_list`, `get_shopping_list`, `mark_item_purchased`
 

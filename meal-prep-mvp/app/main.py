@@ -13,6 +13,7 @@ from .orchestrator import (
     dashboard_view,
     easier_choices_view,
     onboarding_view,
+    memory_view,
     plan_review_view,
     retro_view,
     schedule_check_view,
@@ -158,6 +159,27 @@ async def interact(event: InteractionEvent) -> ViewSpec:
         STATE.retro_due = False
         STATE.version += 1
         return decided(schedule_check_view(STATE), event, "skip")
+    if action == "show_memory":
+        return decided(memory_view(STATE), event, "review")
+    if action in {"confirm_memory", "forget_memory", "update_memory"}:
+        if not event.target_id:
+            raise HTTPException(422, "target_id is required")
+        try:
+            STATE.review_memory(
+                event.target_id,
+                action.removesuffix("_memory"),
+                str(event.parameters.get("content", "")),
+            )
+        except StopIteration as exc:
+            raise HTTPException(404, "memory not found") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        messages = {
+            "confirm_memory": "Memory confirmed.",
+            "forget_memory": "Memory forgotten.",
+            "update_memory": "Memory corrected and confirmed.",
+        }
+        return decided(memory_view(STATE, toast=messages[action]), event, "execute")
     if action == "swap_meal":
         return decided(await swap_options_view(STATE, provider), event, "choose")
     if action == "make_easier":
@@ -181,7 +203,13 @@ async def interact(event: InteractionEvent) -> ViewSpec:
             raise HTTPException(404, "meal not found") from exc
         message = f"Tonight is now {STATE.meal()['name']}." if changed else "That change was already applied."
         return decided(
-            dashboard_view(STATE, source="policy", model_label=provider.label if provider else None, toast=message),
+            dashboard_view(
+                STATE,
+                source="policy",
+                model_label=provider.label if provider else None,
+                toast=message,
+                undo_available=changed,
+            ),
             event,
             "execute" if changed else "idempotent_replay",
         )

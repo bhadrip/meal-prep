@@ -47,6 +47,9 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "save_weekly_schedule",
         "get_latest_retro",
         "save_weekly_retro",
+        "get_household_memory",
+        "save_household_memory",
+        "review_household_memory",
     }.issubset(names)
     render_tool = next(tool for tool in tools if tool["name"] == "render_meal_plan")
     assert render_tool["_meta"]["ui"]["resourceUri"].startswith("ui://meal-prep/")
@@ -69,6 +72,15 @@ def test_demo_retro_is_saved_as_evidence(client: TestClient):
     assert saved["stressors"] == ["Too many dishes"]
     loaded = rpc(client, "tools/call", {"name": "get_latest_retro", "arguments": {}}, request_id=4)["structuredContent"]
     assert loaded["retro"]["note"] == "Keep Wednesday light."
+
+
+def test_demo_memory_requires_explicit_review(client: TestClient):
+    saved = rpc(client, "tools/call", {"name": "save_household_memory", "arguments": {"memory": {"content": "Keep Wednesday meals quick", "category": "schedule", "status": "suggested", "sourceType": "retro"}}}, request_id=5)["structuredContent"]
+    assert saved["status"] == "suggested"
+    confirmed = rpc(client, "tools/call", {"name": "review_household_memory", "arguments": {"memory_id": saved["id"], "action": "confirm"}}, request_id=6)["structuredContent"]
+    assert confirmed["status"] == "confirmed"
+    memories = rpc(client, "tools/call", {"name": "get_household_memory", "arguments": {}}, request_id=7)["structuredContent"]
+    assert any(item["id"] == saved["id"] for item in memories["items"])
 
 
 def test_demo_household_context_and_plan_render_are_structured(client: TestClient):

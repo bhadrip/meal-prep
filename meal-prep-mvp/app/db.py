@@ -38,6 +38,9 @@ class SupabaseRepository:
         params: dict[str, str] | None = None,
         json: Any = None,
     ) -> Any:
+        headers = self.headers
+        if params and "on_conflict" in params:
+            headers["Prefer"] = "resolution=merge-duplicates,return=representation"
         try:
             async with httpx.AsyncClient(timeout=12) as client:
                 response = await client.request(
@@ -45,7 +48,7 @@ class SupabaseRepository:
                     f"{self.base_url}/{path.lstrip('/')}",
                     params=params,
                     json=json,
-                    headers=self.headers,
+                    headers=headers,
                 )
             response.raise_for_status()
             if not response.content:
@@ -259,6 +262,49 @@ class SupabaseRepository:
         )
         return rows[0]
 
+    async def get_household_memory(self, include_inactive: bool = False) -> list[dict[str, Any]]:
+        household_id = await self.household_id()
+        params = {
+            "select": "*",
+            "household_id": f"eq.{household_id}",
+            "order": "status.desc,updated_at.desc",
+        }
+        if not include_inactive:
+            params["active"] = "eq.true"
+        return await self.request("GET", "household_memories", params=params) or []
+
+    async def save_household_memory(self, memory: dict[str, Any]) -> dict[str, Any]:
+        household_id = await self.household_id()
+        row = {
+            "id": memory.get("id") or str(uuid4()),
+            "household_id": household_id,
+            "category": memory.get("category", "planning"),
+            "content": memory["content"],
+            "source_type": memory.get("sourceType", "user"),
+            "source_detail": memory.get("sourceDetail", "You told us"),
+            "status": memory.get("status", "confirmed"),
+            "scope": memory.get("scope", "persistent"),
+            "evidence_count": memory.get("evidenceCount", 1),
+            "active": memory.get("active", True),
+        }
+        rows = await self.request("POST", "household_memories", params={"on_conflict": "id"}, json=row)
+        return rows[0]
+
+    async def review_household_memory(self, memory_id: str, action: str, content: str | None = None) -> dict[str, Any]:
+        patch: dict[str, Any]
+        if action == "confirm":
+            patch = {"status": "confirmed"}
+        elif action == "forget":
+            patch = {"active": False, "status": "forgotten"}
+        elif action == "update" and content and content.strip():
+            patch = {"content": content.strip()[:240], "status": "confirmed", "source_type": "user", "source_detail": "You corrected this"}
+        else:
+            raise RepositoryError("Unsupported memory review")
+        rows = await self.request("PATCH", "household_memories", params={"id": f"eq.{memory_id}"}, json=patch)
+        if not rows:
+            raise RepositoryError("Memory was not found")
+        return rows[0]
+
 
 class DemoRepository:
     """Deterministic local state used when Supabase is not configured."""
@@ -336,6 +382,14 @@ class DemoRepository:
         "remember_rhythm": True,
     }
     _latest_retro = None
+    _memories = [
+        {
+            "id": "77777777-7777-7777-7777-777777777777",
+            "category": "success", "content": "Planned leftovers work well", "source_type": "user",
+            "source_detail": "You told us", "status": "confirmed", "scope": "persistent",
+            "evidence_count": 1, "active": True,
+        }
+    ]
 
     async def get_household_context(self, **_: Any) -> dict[str, Any]:
         return deepcopy(self._context)
@@ -426,6 +480,35 @@ class DemoRepository:
         }
         type(self)._latest_retro = value
         return deepcopy(value)
+
+    async def get_household_memory(self, include_inactive: bool = False) -> list[dict[str, Any]]:
+        items = type(self)._memories
+        return deepcopy(items if include_inactive else [item for item in items if item.get("active", True)])
+
+    async def save_household_memory(self, memory: dict[str, Any]) -> dict[str, Any]:
+        value = {
+            "id": memory.get("id") or str(uuid4()), "category": memory.get("category", "planning"),
+            "content": memory["content"], "source_type": memory.get("sourceType", "user"),
+            "source_detail": memory.get("sourceDetail", "You told us"), "status": memory.get("status", "confirmed"),
+            "scope": memory.get("scope", "persistent"), "evidence_count": memory.get("evidenceCount", 1),
+            "active": memory.get("active", True),
+        }
+        type(self)._memories = [item for item in type(self)._memories if item["id"] != value["id"]] + [value]
+        return deepcopy(value)
+
+    async def review_household_memory(self, memory_id: str, action: str, content: str | None = None) -> dict[str, Any]:
+        item = next((item for item in type(self)._memories if item["id"] == memory_id), None)
+        if not item:
+            raise RepositoryError("Memory was not found")
+        if action == "confirm":
+            item["status"] = "confirmed"
+        elif action == "forget":
+            item.update({"active": False, "status": "forgotten"})
+        elif action == "update" and content and content.strip():
+            item.update({"content": content.strip()[:240], "status": "confirmed", "source_type": "user", "source_detail": "You corrected this"})
+        else:
+            raise RepositoryError("Unsupported memory review")
+        return deepcopy(item)
 
 
 def repository_for_request() -> SupabaseRepository | DemoRepository:

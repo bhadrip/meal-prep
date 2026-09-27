@@ -1,5 +1,6 @@
 const root = document.querySelector("#view-root");
 const modelStatus = document.querySelector("#model-status");
+const pageIntro = document.querySelector(".page-intro");
 let currentView = null;
 
 const authHeaders = () => {
@@ -225,6 +226,27 @@ function renderRetro(component) {
     </form>`;
 }
 
+function renderMemoryList(component) {
+  if (!component.data.items.length) {
+    return `<section class="card empty-memory"><h3>Nothing saved yet</h3><p>Complete household setup or a weekly retro to start building transparent planning memory.</p></section>`;
+  }
+  const labels = { constraint: "Household rule", pressure: "Stress signal", success: "What works", schedule: "Weekly rhythm" };
+  const items = component.data.items.map((item) => `
+    <article class="memory-card ${item.status}">
+      <div class="memory-meta"><span>${escapeHtml(labels[item.category] || item.category)}</span><span>${item.scope === "this_week" ? "This week only" : "Ongoing"}</span></div>
+      <form class="memory-edit-form" data-target="${escapeHtml(item.id)}">
+        <input name="content" maxlength="240" value="${escapeHtml(item.content)}" aria-label="Memory text" />
+        <button class="btn quiet" type="submit">Save correction</button>
+      </form>
+      <p>Source: ${escapeHtml(item.source)}${item.evidenceCount > 1 ? ` · seen ${escapeHtml(item.evidenceCount)} times` : ""}</p>
+      <div class="memory-actions">
+        ${item.status === "suggested" ? `<span class="suggested-badge">Suggested</span><button class="btn primary" type="button" data-action="confirm_memory" data-target="${escapeHtml(item.id)}">Confirm</button>` : `<span class="confirmed-badge">Confirmed</span>`}
+        <button class="btn quiet" type="button" data-action="forget_memory" data-target="${escapeHtml(item.id)}">Forget</button>
+      </div>
+    </article>`).join("");
+  return `<section class="memory-grid" aria-label="Household memories">${items}</section>`;
+}
+
 const renderers = {
   hero_meal: renderHero,
   use_soon: renderUseSoon,
@@ -240,6 +262,7 @@ const renderers = {
   onboarding_form: renderOnboarding,
   schedule_check: renderScheduleCheck,
   retro_form: renderRetro,
+  memory_list: renderMemoryList,
 };
 
 function updateModelStatus(view) {
@@ -268,6 +291,18 @@ function renderView(view) {
   }).join("");
   root.className = isFlow ? "view-grid flow-view" : "view-grid";
   root.innerHTML = content;
+  const introCopy = {
+    onboarding: ["Welcome to Meal Prep", "Let’s set up your household", "A useful first plan starts with a few real-life signals."],
+    "weekly-retro": ["Weekly reset", "Plan from what actually happened", "A quick reflection keeps next week realistic."],
+    "schedule-check": ["Next week", "Shape the plan around your time", "Confirm the rhythm before choosing meals."],
+    "plan-review": ["Next week", "Your household plan", "Built around the rhythm you just confirmed."],
+    "household-memory": ["Your household", "Planning memory you control", "Review what is saved, suggested, or no longer useful."],
+  };
+  const intro = introCopy[view.view_id] || ["Tuesday · September 23", "Good afternoon, Ben", "Dinner is covered. One ingredient needs attention today."];
+  pageIntro.querySelector(".eyebrow").textContent = intro[0];
+  pageIntro.querySelector("h1").textContent = intro[1];
+  pageIntro.querySelector(".intro-note").textContent = intro[2];
+  pageIntro.classList.toggle("flow-context", view.view_id !== "home");
   root.setAttribute("aria-busy", "false");
   updateModelStatus(view);
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -374,6 +409,12 @@ document.addEventListener("submit", (event) => {
       stressors: form.getAll("retroStressors"),
       note: form.get("retroNote"),
     }}).catch(() => {});
+    return;
+  }
+  if (event.target.matches(".memory-edit-form")) {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    requestView({ action: "update_memory", target_id: event.target.dataset.target, parameters: { content: form.get("content") } }).catch(() => {});
     return;
   }
   if (!event.target.matches("#scope-form")) return;
