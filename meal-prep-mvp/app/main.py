@@ -14,6 +14,7 @@ from .orchestrator import (
     easier_choices_view,
     onboarding_view,
     plan_review_view,
+    retro_view,
     schedule_check_view,
     scoped_request_view,
     swap_options_view,
@@ -145,6 +146,18 @@ async def interact(event: InteractionEvent) -> ViewSpec:
             event,
             "execute",
         )
+    if action == "start_retro":
+        return decided(retro_view(STATE), event, "review")
+    if action == "save_retro":
+        try:
+            STATE.save_retro(event.parameters)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return decided(schedule_check_view(STATE), event, "execute")
+    if action == "skip_retro":
+        STATE.retro_due = False
+        STATE.version += 1
+        return decided(schedule_check_view(STATE), event, "skip")
     if action == "swap_meal":
         return decided(await swap_options_view(STATE, provider), event, "choose")
     if action == "make_easier":
@@ -198,7 +211,10 @@ async def interact(event: InteractionEvent) -> ViewSpec:
             raise HTTPException(422, "text is required")
         return decided(await scoped_request_view(STATE, provider, text[:600]), event, "ask")
     if action == "show_plan":
-        view = plan_review_view(STATE) if STATE.schedule_confirmed else schedule_check_view(STATE)
+        if STATE.retro_due:
+            view = retro_view(STATE)
+        else:
+            view = plan_review_view(STATE) if STATE.schedule_confirmed else schedule_check_view(STATE)
         return decided(view, event, "review")
     if action in {"start_cooking", "show_shopping"}:
         return decided(

@@ -55,7 +55,10 @@ def dashboard_view(state: HouseholdState, *, source: str = "fallback", model_lab
             id="week-plan",
             type="plan_strip",
             data={"title": "This week", "days": state.week},
-            actions=[action("Review full plan", "show_plan", style="quiet")],
+            actions=[
+                action("Review full plan", "show_plan", style="quiet"),
+                action("Reflect on last week", "start_retro", style="quiet"),
+            ],
         ),
         ComponentSpec(
             id="weekend-prep",
@@ -176,6 +179,47 @@ def schedule_check_view(state: HouseholdState) -> ViewSpec:
                     "isNormalWeek": state.schedule_is_normal,
                     "rememberRhythm": state.remember_schedule,
                     "hasPrevious": bool(state.previous_schedule),
+                },
+            ),
+        ],
+    )
+
+
+def retro_view(state: HouseholdState) -> ViewSpec:
+    previous = state.latest_retro or {}
+    return ViewSpec(
+        view_id="weekly-retro",
+        purpose="Reflect briefly on the last plan before planning the next week",
+        state_version=state.version,
+        source="policy",
+        generated_at=now_iso(),
+        components=[
+            ComponentSpec(
+                id="retro-status",
+                type="status_row",
+                data={
+                    "eyebrow": "A 30-second reset",
+                    "title": "How did last week actually go?",
+                    "description": "This is planning evidence, not a permanent preference. You choose what becomes a lasting memory later.",
+                },
+                actions=[action("Skip for now", "skip_retro", style="quiet")],
+            ),
+            ComponentSpec(
+                id="retro-form",
+                type="retro_form",
+                data={
+                    "meals": state.previous_week_meals,
+                    "workedWell": previous.get("workedWell", []),
+                    "stressors": previous.get("stressors", []),
+                    "note": previous.get("note", ""),
+                    "workedOptions": [
+                        "Quick meals", "Planned leftovers", "Repeating favorites",
+                        "Weekend prep", "Flexible nights", "Freezer backup",
+                    ],
+                    "stressOptions": [
+                        "Too much chopping", "Too many dishes", "Plans changed",
+                        "Meals took too long", "Shopping gaps", "Food went unused",
+                    ],
                 },
             ),
         ],

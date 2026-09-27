@@ -240,6 +240,26 @@ async def save_weekly_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
         raise _error(exc) from exc
 
 
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_latest_retro() -> dict[str, Any]:
+    """Return the most recent weekly reflection as planning evidence, if one exists."""
+    try:
+        return {"retro": await _repo().get_latest_retro()}
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_weekly_retro(retro: dict[str, Any]) -> dict[str, Any]:
+    """Save a weekly reflection. Do not promote its observations to durable preferences automatically."""
+    if not retro.get("weekStart") or not isinstance(retro.get("outcomes", []), list):
+        raise ValueError("retro.weekStart and retro.outcomes are required")
+    try:
+        return await _repo().save_weekly_retro(retro)
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
 @mcp.tool(
     annotations=READ_ONLY,
     meta={"ui": {"resourceUri": MEAL_PLAN_UI_URI}},

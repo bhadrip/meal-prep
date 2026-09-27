@@ -207,6 +207,24 @@ function renderScheduleCheck(component) {
     </form>`;
 }
 
+function renderRetro(component) {
+  const outcomeOptions = [["cooked", "Cooked"], ["swapped", "Swapped"], ["skipped", "Skipped"]];
+  const meals = component.data.meals.map((item) => `
+    <div class="retro-meal" data-id="${escapeHtml(item.id)}" data-meal="${escapeHtml(item.meal)}">
+      <div><small>${escapeHtml(item.day)}</small><strong>${escapeHtml(item.meal)}</strong></div>
+      <div class="segmented">${outcomeOptions.map(([value, label]) => `<label><input type="radio" name="outcome-${escapeHtml(item.id)}" value="${value}"${value === item.outcome ? " checked" : ""} /><span>${label}</span></label>`).join("")}</div>
+    </div>`).join("");
+  const chips = (name, options, selected) => options.map((option) => `<label class="select-chip"><input type="checkbox" name="${name}" value="${escapeHtml(option)}"${checked(option, selected)} /><span>${escapeHtml(option)}</span></label>`).join("");
+  return `
+    <form class="card guided-form retro-form" id="retro-form">
+      <fieldset><legend>What happened to the plan?</legend><div class="retro-meals">${meals}</div></fieldset>
+      <fieldset><legend>What worked?</legend><div class="chip-picker">${chips("workedWell", component.data.workedOptions, component.data.workedWell)}</div></fieldset>
+      <fieldset><legend>What felt stressful?</legend><div class="chip-picker">${chips("retroStressors", component.data.stressOptions, component.data.stressors)}</div></fieldset>
+      <fieldset><legend>Anything else worth carrying forward?</legend><textarea name="retroNote" maxlength="600" placeholder="Optional — e.g. Wednesday ran late, but the freezer meal saved us.">${escapeHtml(component.data.note)}</textarea></fieldset>
+      <div class="form-footer"><p>We’ll use this for the next draft. Lasting memories still require confirmation.</p><button class="btn primary" type="submit">Continue to next week</button></div>
+    </form>`;
+}
+
 const renderers = {
   hero_meal: renderHero,
   use_soon: renderUseSoon,
@@ -221,6 +239,7 @@ const renderers = {
   toast: renderToast,
   onboarding_form: renderOnboarding,
   schedule_check: renderScheduleCheck,
+  retro_form: renderRetro,
 };
 
 function updateModelStatus(view) {
@@ -338,6 +357,22 @@ document.addEventListener("submit", (event) => {
       isNormalWeek: form.get("isNormalWeek") === "true",
       rememberRhythm: form.get("rememberRhythm") === "on",
       days,
+    }}).catch(() => {});
+    return;
+  }
+  if (event.target.matches("#retro-form")) {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const outcomes = [...event.target.querySelectorAll(".retro-meal")].map((row) => ({
+      id: row.dataset.id,
+      meal: row.dataset.meal,
+      outcome: row.querySelector("input[type=radio]:checked").value,
+    }));
+    requestView({ action: "save_retro", parameters: {
+      outcomes,
+      workedWell: form.getAll("workedWell"),
+      stressors: form.getAll("retroStressors"),
+      note: form.get("retroNote"),
     }}).catch(() => {});
     return;
   }

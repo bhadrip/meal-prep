@@ -236,6 +236,29 @@ class SupabaseRepository:
         )
         return rows[0]
 
+    async def get_latest_retro(self) -> dict[str, Any] | None:
+        household_id = await self.household_id()
+        rows = await self.request(
+            "GET", "weekly_retros",
+            params={"select": "*", "household_id": f"eq.{household_id}", "order": "week_start.desc", "limit": "1"},
+        )
+        return rows[0] if rows else None
+
+    async def save_weekly_retro(self, retro: dict[str, Any]) -> dict[str, Any]:
+        household_id = await self.household_id()
+        row = {
+            "household_id": household_id,
+            "week_start": retro["weekStart"],
+            "outcomes": retro.get("outcomes", []),
+            "worked_well": retro.get("workedWell", []),
+            "stressors": retro.get("stressors", []),
+            "note": str(retro.get("note", ""))[:600],
+        }
+        rows = await self.request(
+            "POST", "weekly_retros", params={"on_conflict": "household_id,week_start"}, json=row
+        )
+        return rows[0]
+
 
 class DemoRepository:
     """Deterministic local state used when Supabase is not configured."""
@@ -312,6 +335,7 @@ class DemoRepository:
         "is_normal_week": True,
         "remember_rhythm": True,
     }
+    _latest_retro = None
 
     async def get_household_context(self, **_: Any) -> dict[str, Any]:
         return deepcopy(self._context)
@@ -386,6 +410,21 @@ class DemoRepository:
             "remember_rhythm": schedule.get("rememberRhythm", True),
         }
         type(self)._weekly_schedule = value
+        return deepcopy(value)
+
+    async def get_latest_retro(self) -> dict[str, Any] | None:
+        return deepcopy(type(self)._latest_retro)
+
+    async def save_weekly_retro(self, retro: dict[str, Any]) -> dict[str, Any]:
+        value = {
+            "id": str(uuid4()),
+            "week_start": retro["weekStart"],
+            "outcomes": deepcopy(retro.get("outcomes", [])),
+            "worked_well": deepcopy(retro.get("workedWell", [])),
+            "stressors": deepcopy(retro.get("stressors", [])),
+            "note": str(retro.get("note", ""))[:600],
+        }
+        type(self)._latest_retro = value
         return deepcopy(value)
 
 

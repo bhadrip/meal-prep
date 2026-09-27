@@ -45,6 +45,8 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "render_shopping_list",
         "get_weekly_schedule",
         "save_weekly_schedule",
+        "get_latest_retro",
+        "save_weekly_retro",
     }.issubset(names)
     render_tool = next(tool for tool in tools if tool["name"] == "render_meal_plan")
     assert render_tool["_meta"]["ui"]["resourceUri"].startswith("ui://meal-prep/")
@@ -59,6 +61,14 @@ def test_demo_weekly_schedule_can_be_saved_and_read(client: TestClient):
     assert saved["days"] == days
     loaded = rpc(client, "tools/call", {"name": "get_weekly_schedule", "arguments": {"week_start": "2026-09-28"}}, request_id=2)["structuredContent"]
     assert loaded["schedule"]["is_normal_week"] is False
+
+
+def test_demo_retro_is_saved_as_evidence(client: TestClient):
+    retro = {"weekStart": "2026-09-21", "outcomes": [{"meal": "Pasta", "outcome": "cooked"}], "workedWell": ["Quick meals"], "stressors": ["Too many dishes"], "note": "Keep Wednesday light."}
+    saved = rpc(client, "tools/call", {"name": "save_weekly_retro", "arguments": {"retro": retro}}, request_id=3)["structuredContent"]
+    assert saved["stressors"] == ["Too many dishes"]
+    loaded = rpc(client, "tools/call", {"name": "get_latest_retro", "arguments": {}}, request_id=4)["structuredContent"]
+    assert loaded["retro"]["note"] == "Keep Wednesday light."
 
 
 def test_demo_household_context_and_plan_render_are_structured(client: TestClient):

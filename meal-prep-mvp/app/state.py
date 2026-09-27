@@ -100,6 +100,17 @@ class HouseholdState:
     schedule_confirmed: bool = False
     schedule_is_normal: bool = True
     remember_schedule: bool = True
+    retro_due: bool = True
+    previous_week_meals: list[dict] = field(
+        default_factory=lambda: [
+            {"id": "retro-mon", "day": "Monday", "meal": "Tomato pasta", "outcome": "cooked"},
+            {"id": "retro-tue", "day": "Tuesday", "meal": "Paneer rice bowls", "outcome": "cooked"},
+            {"id": "retro-wed", "day": "Wednesday", "meal": "Lemon chicken tray bake", "outcome": "swapped"},
+            {"id": "retro-thu", "day": "Thursday", "meal": "Leftovers", "outcome": "cooked"},
+            {"id": "retro-fri", "day": "Friday", "meal": "Taco night", "outcome": "skipped"},
+        ]
+    )
+    latest_retro: dict | None = None
 
     def reset(self) -> None:
         fresh = type(self)()
@@ -121,6 +132,7 @@ class HouseholdState:
             str(value)[:80] for value in values.get("successfulStrategies", [])
         ][:8]
         self.onboarding_complete = True
+        self.retro_due = False
         self.version += 1
 
     def save_week_schedule(self, values: dict) -> None:
@@ -140,6 +152,30 @@ class HouseholdState:
         if self.remember_schedule:
             self.previous_schedule = deepcopy(rows)
         self.schedule_confirmed = True
+        self.version += 1
+
+    def save_retro(self, values: dict) -> None:
+        allowed_outcomes = {"cooked", "swapped", "skipped"}
+        outcomes = []
+        for item in values.get("outcomes", [])[:14]:
+            outcome = str(item.get("outcome", ""))
+            if outcome not in allowed_outcomes:
+                raise ValueError("invalid meal outcome")
+            outcomes.append(
+                {
+                    "id": str(item.get("id", ""))[:80],
+                    "meal": str(item.get("meal", ""))[:180],
+                    "outcome": outcome,
+                }
+            )
+        self.latest_retro = {
+            "outcomes": outcomes,
+            "workedWell": [str(value)[:80] for value in values.get("workedWell", [])][:8],
+            "stressors": [str(value)[:80] for value in values.get("stressors", [])][:8],
+            "note": str(values.get("note", "")).strip()[:600],
+        }
+        self.retro_due = False
+        self.schedule_confirmed = False
         self.version += 1
 
     def meal(self, meal_id: str | None = None) -> dict:

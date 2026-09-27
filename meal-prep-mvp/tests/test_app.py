@@ -67,6 +67,24 @@ def test_plan_flow_reuses_and_confirms_weekly_schedule():
     assert STATE.schedule_confirmed is True
 
 
+def test_retro_captures_evidence_before_next_schedule_check():
+    complete_onboarding()
+    STATE.retro_due = True
+    response = client.post("/api/interactions", json={"action": "show_plan"})
+    assert response.status_code == 200
+    assert response.json()["view_id"] == "weekly-retro"
+    meals = next(item for item in response.json()["components"] if item["type"] == "retro_form")["data"]["meals"]
+    outcomes = [{"id": item["id"], "meal": item["meal"], "outcome": item["outcome"]} for item in meals]
+    saved = client.post(
+        "/api/interactions",
+        json={"action": "save_retro", "parameters": {"outcomes": outcomes, "workedWell": ["Planned leftovers"], "stressors": ["Too much chopping"], "note": "Wednesday ran late."}},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["view_id"] == "schedule-check"
+    assert STATE.latest_retro["stressors"] == ["Too much chopping"]
+    assert STATE.retro_due is False
+
+
 def test_dashboard_is_a_valid_view_spec():
     complete_onboarding()
     response = client.get("/api/dashboard")
