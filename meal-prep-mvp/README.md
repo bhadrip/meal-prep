@@ -1,6 +1,6 @@
 # Meal Prep plugin
 
-Meal Prep is a persistent meal-planning plugin for ChatGPT and Codex. It keeps reasoning in the model while the service owns authenticated household data, validation, Row-Level Security, and structured presentation.
+Meal Prep is a persistent meal-planning plugin for ChatGPT. It keeps reasoning in ChatGPT while the service owns authenticated household data, validation, Row-Level Security, and structured presentation.
 
 ## What is included
 
@@ -13,7 +13,7 @@ Meal Prep is a persistent meal-planning plugin for ChatGPT and Codex. It keeps r
 - Vercel serverless entrypoint and deployment configuration
 - Packaged `meal-prep` Agent Plugin with workflow guidance
 
-The service never calls a model to make domain writes. ChatGPT or Codex creates the plan, the MCP tools validate and persist it, and Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
+The service never calls a model to make domain writes. ChatGPT creates the plan, the MCP tools validate and persist it, and Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
 
 ## Deployed resources
 

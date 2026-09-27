@@ -1,6 +1,6 @@
 # Meal Prep
 
-This repository contains a persistent Meal Prep plugin for ChatGPT and Codex, its FastAPI/MCP service, the Supabase data model, and the original product-design brief.
+This repository contains a persistent Meal Prep plugin for ChatGPT, its FastAPI/MCP service, the Supabase data model, and the original product-design brief.
 
 - [`meal-prep-mvp/`](meal-prep-mvp/) — dashboard, MCP server, Supabase migrations, tests, and Vercel configuration
 - [`meal-prep-plugin/`](meal-prep-plugin/) — portable Agent Plugin manifest and workflow skill
@@ -8,21 +8,32 @@ This repository contains a persistent Meal Prep plugin for ChatGPT and Codex, it
 
 See [`meal-prep-mvp/README.md`](meal-prep-mvp/README.md) for local development and deployment instructions.
 
-## Add the plugin from GitHub
+## Add to ChatGPT
 
-Add this repository as a plugin marketplace source:
+You do not need Codex or a command-line installation. In ChatGPT:
+
+1. Open **Settings → Security and login** and turn on **Developer mode**.
+2. Open **ChatGPT Plugins** and select the **+** button.
+3. Name the connection **Meal Prep** and paste this MCP URL:
+
+   ```text
+   https://meal-prep-swart.vercel.app/mcp
+   ```
+
+4. Create the connection, review its discovered tools, and complete the BhadriP/Supabase login when prompted.
+5. Start a new ChatGPT conversation and select **Meal Prep** from the tools or More menu.
+
+The GitHub repository contains the installable package and source, but ChatGPT connects to the live `/mcp` endpoint above.
+
+## Optional GitHub marketplace installation
+
+For ChatGPT desktop development or other compatible local clients, the repository can also be added as a marketplace source:
 
 ```bash
 codex plugin marketplace add bhadrip/meal-prep --ref main
 ```
 
-Restart the ChatGPT desktop app, open the Plugins Directory, choose **Badri P. Plugins**, and install **Meal Prep**.
-
-For a direct ChatGPT developer-mode connection, use the deployed MCP endpoint:
-
-```text
-https://meal-prep-swart.vercel.app/mcp
-```
+Restart the ChatGPT desktop app, open the Plugins Directory, choose **BhadriP Plugins**, and install **Meal Prep**.
 
 ## MCP UI
 
@@ -31,4 +42,4 @@ The MCP server currently exposes two interactive presentation resources:
 - **Weekly meal plan** — a responsive seven-column calendar of saved meals with day/date, meal title, and servings.
 - **Shopping list** — store-priority groups with quantities and interactive purchased checkboxes that call `mark_item_purchased` and persist progress.
 
-Both have empty states, adapt to light/dark mode, and remain separate from the underlying structured-data tools so the plugin also works headlessly in Codex.
+Both have empty states, adapt to light/dark mode, and remain separate from the underlying structured-data tools.
