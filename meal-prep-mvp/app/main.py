@@ -12,6 +12,7 @@ from .orchestrator import (
     confirm_swap_view,
     dashboard_view,
     easier_choices_view,
+    onboarding_view,
     scoped_request_view,
     swap_options_view,
 )
@@ -113,6 +114,23 @@ async def interact(event: InteractionEvent) -> ViewSpec:
 
     if action == "home":
         return decided(dashboard_view(STATE, model_label=provider.label if provider else None), event, "fallback")
+    if action == "review_onboarding":
+        return decided(onboarding_view(STATE, editing=True), event, "review")
+    if action == "complete_onboarding":
+        try:
+            STATE.complete_onboarding(event.parameters)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, "household size and planned dinners must be numbers") from exc
+        return decided(
+            dashboard_view(
+                STATE,
+                source="policy",
+                model_label=provider.label if provider else None,
+                toast="Your household setup is saved. Here is a practical starting plan.",
+            ),
+            event,
+            "execute",
+        )
     if action == "swap_meal":
         return decided(await swap_options_view(STATE, provider), event, "choose")
     if action == "make_easier":

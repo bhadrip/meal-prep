@@ -81,6 +81,7 @@ class SupabaseRepository:
             "dietary_restrictions": "dietaryRestrictions",
             "store_priority": "storePriority",
             "planning_preferences": "planningPreferences",
+            "onboarding_completed_at": "onboardingCompletedAt",
         }
         row = {column: patch[key] for column, key in allowed.items() if key in patch}
         if not row:

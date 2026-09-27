@@ -77,6 +77,36 @@ class HouseholdState:
     )
     seen_keys: set[str] = field(default_factory=set)
     decision_records: list[dict] = field(default_factory=list)
+    onboarding_complete: bool = False
+    household_size: int = 4
+    dietary_restrictions: list[str] = field(default_factory=lambda: ["No shellfish"])
+    planned_dinners: int = 5
+    week_shape: str = "normal"
+    pantry_status: str = "mostly_current"
+    stressors: list[str] = field(default_factory=list)
+    successful_strategies: list[str] = field(default_factory=list)
+
+    def reset(self) -> None:
+        fresh = type(self)()
+        self.__dict__.clear()
+        self.__dict__.update(fresh.__dict__)
+
+    def complete_onboarding(self, values: dict) -> None:
+        self.household_size = min(max(int(values.get("householdSize", 1)), 1), 30)
+        self.dietary_restrictions = [
+            str(value).strip()[:120]
+            for value in values.get("dietaryRestrictions", [])
+            if str(value).strip()
+        ][:12]
+        self.planned_dinners = min(max(int(values.get("plannedDinners", 5)), 1), 7)
+        self.week_shape = str(values.get("weekShape", "normal"))[:40]
+        self.pantry_status = str(values.get("pantryStatus", "mostly_current"))[:40]
+        self.stressors = [str(value)[:80] for value in values.get("stressors", [])][:8]
+        self.successful_strategies = [
+            str(value)[:80] for value in values.get("successfulStrategies", [])
+        ][:8]
+        self.onboarding_complete = True
+        self.version += 1
 
     def meal(self, meal_id: str | None = None) -> dict:
         selected = meal_id or self.active_meal_id

@@ -28,6 +28,8 @@ def action(label: str, name: str, *, target_id: str | None = None, style: str = 
 
 
 def dashboard_view(state: HouseholdState, *, source: str = "fallback", model_label: str | None = None, toast: str | None = None) -> ViewSpec:
+    if not state.onboarding_complete:
+        return onboarding_view(state)
     meal = state.meal()
     components = [
         ComponentSpec(
@@ -99,6 +101,51 @@ def dashboard_view(state: HouseholdState, *, source: str = "fallback", model_lab
         model_label=model_label,
         generated_at=now_iso(),
         components=components,
+    )
+
+
+def onboarding_view(state: HouseholdState, *, editing: bool = False) -> ViewSpec:
+    return ViewSpec(
+        view_id="onboarding",
+        purpose="Learn enough about the household to create a practical first plan",
+        state_version=state.version,
+        source="policy",
+        generated_at=now_iso(),
+        components=[
+            ComponentSpec(
+                id="onboarding-status",
+                type="status_row",
+                data={
+                    "eyebrow": "Household setup",
+                    "title": "Let’s make the plan fit real life",
+                    "description": "A few useful signals now; everything stays visible and editable later.",
+                },
+                actions=[action("Back", "home", style="quiet")] if editing else [],
+            ),
+            ComponentSpec(
+                id="onboarding-form",
+                type="onboarding_form",
+                data={
+                    "householdSize": state.household_size,
+                    "dietaryRestrictions": ", ".join(state.dietary_restrictions),
+                    "plannedDinners": state.planned_dinners,
+                    "weekShape": state.week_shape,
+                    "pantryStatus": state.pantry_status,
+                    "stressors": state.stressors,
+                    "successfulStrategies": state.successful_strategies,
+                    "stressOptions": [
+                        "Deciding what to cook", "Shopping takes too long", "Food gets wasted",
+                        "Weeknights change", "Too much prep", "Cleanup", "Different preferences",
+                        "Plans are too ambitious",
+                    ],
+                    "successOptions": [
+                        "Repeating favorites", "Cooking only 3–4 nights", "Planned leftovers",
+                        "Weekend prep", "Quick weeknight meals", "Flexible meal nights",
+                        "Freezer or takeout backups",
+                    ],
+                },
+            ),
+        ],
     )
 
 

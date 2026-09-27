@@ -150,6 +150,40 @@ function renderToast(component) {
   return `<section class="toast-card" role="status"><p>${escapeHtml(component.data.message)}</p><div>${component.actions.map(button).join("")}</div></section>`;
 }
 
+function checked(value, selected) {
+  return selected.includes(value) ? " checked" : "";
+}
+
+function renderOnboarding(component) {
+  const data = component.data;
+  const stressors = data.stressOptions.map((option) => `
+    <label class="select-chip"><input type="checkbox" name="stressors" value="${escapeHtml(option)}"${checked(option, data.stressors)} /><span>${escapeHtml(option)}</span></label>`).join("");
+  const successes = data.successOptions.map((option) => `
+    <label class="select-chip"><input type="checkbox" name="successfulStrategies" value="${escapeHtml(option)}"${checked(option, data.successfulStrategies)} /><span>${escapeHtml(option)}</span></label>`).join("");
+  return `
+    <form class="card guided-form" id="onboarding-form">
+      <fieldset><legend>Who are we feeding?</legend><div class="form-pair">
+        <label>People in the household<input name="householdSize" type="number" min="1" max="30" required value="${escapeHtml(data.householdSize)}" /></label>
+        <label>Dietary restrictions <small>Comma separated; leave blank if none</small><input name="dietaryRestrictions" value="${escapeHtml(data.dietaryRestrictions)}" placeholder="No shellfish, vegetarian…" /></label>
+      </div></fieldset>
+      <fieldset><legend>What does the coming week need?</legend><div class="form-pair">
+        <label>Dinners to plan<select name="plannedDinners">${[1,2,3,4,5,6,7].map((count) => `<option value="${count}"${count === data.plannedDinners ? " selected" : ""}>${count}</option>`).join("")}</select></label>
+        <label>Week outlook<select name="weekShape">
+          <option value="normal"${data.weekShape === "normal" ? " selected" : ""}>Normal week</option>
+          <option value="busy"${data.weekShape === "busy" ? " selected" : ""}>Busy week</option>
+          <option value="unpredictable"${data.weekShape === "unpredictable" ? " selected" : ""}>Unpredictable week</option>
+          <option value="specific"${data.weekShape === "specific" ? " selected" : ""}>I’ll set specific nights next</option>
+        </select></label>
+      </div></fieldset>
+      <fieldset><legend>How current is the pantry?</legend><div class="radio-row">
+        ${[["mostly_current","Mostly current"],["important_items","I’ll add key items"],["skip","Plan without it"]].map(([value,label]) => `<label><input type="radio" name="pantryStatus" value="${value}"${value === data.pantryStatus ? " checked" : ""} /><span>${label}</span></label>`).join("")}
+      </div></fieldset>
+      <fieldset><legend>What makes meal planning stressful?</legend><div class="chip-picker">${stressors}</div></fieldset>
+      <fieldset><legend>What has worked well before?</legend><div class="chip-picker">${successes}</div></fieldset>
+      <div class="form-footer"><p>We’ll treat restrictions as rules. Everything else is an editable preference.</p><button class="btn primary" type="submit">Create my starting plan</button></div>
+    </form>`;
+}
+
 const renderers = {
   hero_meal: renderHero,
   use_soon: renderUseSoon,
@@ -162,6 +196,7 @@ const renderers = {
   meal_options: renderMealOptions,
   confirmation: renderConfirmation,
   toast: renderToast,
+  onboarding_form: renderOnboarding,
 };
 
 function updateModelStatus(view) {
@@ -256,6 +291,21 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.matches("#onboarding-form")) {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const restrictions = String(form.get("dietaryRestrictions") || "").split(",").map((value) => value.trim()).filter(Boolean);
+    requestView({ action: "complete_onboarding", parameters: {
+      householdSize: Number(form.get("householdSize")),
+      dietaryRestrictions: restrictions,
+      plannedDinners: Number(form.get("plannedDinners")),
+      weekShape: form.get("weekShape"),
+      pantryStatus: form.get("pantryStatus"),
+      stressors: form.getAll("stressors"),
+      successfulStrategies: form.getAll("successfulStrategies"),
+    }}).catch(() => {});
+    return;
+  }
   if (!event.target.matches("#scope-form")) return;
   event.preventDefault();
   const text = new FormData(event.target).get("text");

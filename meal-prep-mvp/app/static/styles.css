@@ -315,6 +315,24 @@ h1 { margin: 0; font-size: clamp(2rem, 3.6vw, 3.55rem); line-height: 1.02; }
 .toast-card p { margin: 0; font-weight: 600; }
 .toast-card .btn { min-height: 36px; padding: 7px 11px; border-color: rgba(255,255,255,.3); }
 
+.guided-form { grid-column: 1 / -1; padding: clamp(22px, 4vw, 38px); }
+.guided-form fieldset { margin: 0; padding: 22px 0; border: 0; border-bottom: 1px solid var(--border); }
+.guided-form fieldset:first-child { padding-top: 0; }
+.guided-form legend { margin-bottom: 14px; font-family: "Fraunces", serif; font-size: 1.25rem; font-weight: 700; }
+.form-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.guided-form label { color: var(--muted); font-size: .8rem; font-weight: 700; }
+.guided-form label small { display: block; margin-top: 3px; font-weight: 400; }
+.guided-form input[type="text"], .guided-form input[type="number"], .guided-form input:not([type]), .guided-form select { width: 100%; min-height: 46px; margin-top: 7px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 11px; background: white; color: var(--ink); font: inherit; }
+.radio-row, .chip-picker { display: flex; flex-wrap: wrap; gap: 9px; }
+.radio-row label, .select-chip { position: relative; cursor: pointer; }
+.radio-row input, .select-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.radio-row span, .select-chip span { display: block; padding: 10px 13px; border: 1px solid var(--border); border-radius: 999px; background: white; color: var(--ink); }
+.radio-row input:checked + span, .select-chip input:checked + span { border-color: var(--forest-2); background: var(--mint); color: var(--forest); box-shadow: inset 0 0 0 1px var(--forest-2); }
+.radio-row input:focus-visible + span, .select-chip input:focus-visible + span { outline: 3px solid rgba(244,201,93,.45); }
+.form-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 22px; }
+.form-footer p { max-width: 520px; margin: 0; color: var(--muted); font-size: .8rem; }
+.guided-form .btn.primary { color: white; background: var(--forest); }
+
 .error-card { grid-column: 1 / -1; padding: 30px; text-align: center; }
 .error-card h2 { margin-top: 0; }
 .loading-overlay { pointer-events: none; opacity: .58; }
@@ -364,6 +382,8 @@ h1 { margin: 0; font-size: clamp(2rem, 3.6vw, 3.55rem); line-height: 1.02; }
   .flow-header { display: block; }
   .flow-header .btn { margin-top: 18px; }
   .scope-form { display: grid; }
+  .form-pair { grid-template-columns: 1fr; }
+  .form-footer { display: grid; }
   .mobile-nav { position: fixed; inset: auto 10px 10px; z-index: 40; display: grid; grid-template-columns: repeat(4,1fr); padding: 7px; border: 1px solid rgba(255,255,255,.6); border-radius: 19px; background: rgba(255,255,255,.92); box-shadow: 0 16px 40px rgba(29,56,47,.18); backdrop-filter: blur(14px); }
   .mobile-nav button { display: grid; place-items: center; gap: 2px; padding: 7px; border: 0; border-radius: 12px; color: var(--muted); background: transparent; }
   .mobile-nav button.active { color: white; background: var(--forest); }
