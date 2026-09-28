@@ -4,14 +4,26 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; --accent:#1e5a49; --line:color-mix(in srgb, CanvasText 15%, transparent); }
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --accent: #1d5a49;
+        --accent-soft: color-mix(in srgb, Canvas 88%, #9ed7bc);
+        --gold-soft: color-mix(in srgb, Canvas 86%, #f2cf66);
+        --clay-soft: color-mix(in srgb, Canvas 87%, #e7a484);
+        --line: color-mix(in srgb, CanvasText 14%, transparent);
+        --muted: color-mix(in srgb, CanvasText 64%, transparent);
+        --surface: color-mix(in srgb, Canvas 96%, var(--accent));
+      }
       * { box-sizing: border-box; }
       body { margin: 0; padding: 14px; background: Canvas; color: CanvasText; }
+      button, input { font: inherit; }
+      h1, h2, h3, p { margin: 0; }
       header { display:flex; justify-content:space-between; gap:12px; align-items:end; margin-bottom:12px; }
-      h1 { margin:0; font-size:1.05rem; }
-      p { margin:.25rem 0 0; opacity:.7; font-size:.82rem; }
+      header h1 { font-size:1.05rem; }
+      header p { margin:.25rem 0 0; opacity:.7; font-size:.82rem; }
       .grid { display:grid; grid-template-columns:repeat(7,minmax(110px,1fr)); gap:8px; overflow-x:auto; padding-bottom:4px; }
-      .day,.group { border:1px solid var(--line); border-radius:14px; padding:12px; background:color-mix(in srgb, Canvas 96%, var(--accent)); }
+      .day,.group { border:1px solid var(--line); border-radius:14px; padding:12px; background:var(--surface); }
       .day small,.group h2 { display:block; margin:0 0 9px; opacity:.65; text-transform:uppercase; letter-spacing:.08em; font-size:.68rem; }
       .day strong { display:block; line-height:1.25; }
       .day span { display:block; margin-top:6px; opacity:.72; font-size:.76rem; }
@@ -20,8 +32,68 @@
       label { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:9px; }
       label.done span { text-decoration:line-through; opacity:.55; }
       button { border:0; border-radius:10px; padding:8px 11px; background:var(--accent); color:white; font-weight:650; cursor:pointer; }
-      .empty { padding:22px; border:1px dashed var(--line); border-radius:14px; text-align:center; opacity:.72; }
-      @media (max-width:700px) { .grid { grid-template-columns:repeat(7,150px); } }
+      .empty { padding:22px; border:1px dashed var(--line); border-radius:14px; text-align:center; color:var(--muted); }
+      .snapshot { display:grid; gap:12px; }
+      .snapshot-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+      .identity { display:flex; align-items:center; gap:11px; min-width:0; }
+      .identity-mark { display:grid; place-items:center; flex:0 0 auto; width:42px; height:42px; border-radius:14px; background:var(--accent); color:white; font-weight:800; }
+      .identity h1 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:1.08rem; }
+      .identity p { margin-top:3px; color:var(--muted); font-size:.76rem; }
+      .owner-badge { flex:0 0 auto; padding:5px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:.68rem; font-weight:750; }
+      .tabs { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; padding:4px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+      .tabs button { padding:7px 8px; border-radius:8px; background:transparent; color:var(--muted); font-size:.75rem; }
+      .tabs button.active { background:var(--accent); color:white; }
+      .tab-panel { display:grid; gap:10px; }
+      .signal-grid { display:grid; grid-template-columns:1.15fr .85fr; gap:10px; }
+      .signal-card { min-width:0; padding:13px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+      .signal-title { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:9px; }
+      .signal-title div { display:flex; align-items:center; gap:7px; }
+      .signal-icon { display:grid; place-items:center; width:25px; height:25px; border-radius:8px; background:var(--accent-soft); color:var(--accent); font-weight:800; }
+      .signal-card h2 { font-size:.82rem; }
+      .count-badge { padding:3px 7px; border-radius:999px; background:color-mix(in srgb, CanvasText 7%, transparent); color:var(--muted); font-size:.64rem; font-weight:700; }
+      .chip-cloud { display:flex; flex-wrap:wrap; gap:6px; }
+      .chip { padding:5px 7px; border-radius:999px; background:var(--clay-soft); font-size:.69rem; font-weight:650; }
+      .chip.allow { background:var(--accent-soft); color:var(--accent); }
+      .fact-list { display:grid; gap:7px; margin:0; padding:0; list-style:none; }
+      .fact-list li { display:flex; align-items:flex-start; gap:7px; color:var(--muted); font-size:.73rem; line-height:1.35; }
+      .fact-list li::before { content:"✓"; color:var(--accent); font-weight:800; }
+      .store-row { display:flex; align-items:center; gap:7px; margin-top:9px; }
+      .store { display:flex; align-items:center; gap:5px; min-width:0; padding:5px 7px; border:1px solid var(--line); border-radius:9px; font-size:.69rem; }
+      .store b { display:grid; place-items:center; width:16px; height:16px; border-radius:50%; background:var(--gold-soft); font-size:.6rem; }
+      .data-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; }
+      .data-tile { min-width:0; padding:9px; border:1px solid var(--line); border-radius:11px; background:Canvas; color:CanvasText; text-align:left; }
+      .data-tile strong,.data-tile small { display:block; }
+      .data-tile strong { font-size:.86rem; }
+      .data-tile small { margin-top:2px; overflow:hidden; color:var(--muted); font-size:.63rem; text-overflow:ellipsis; white-space:nowrap; }
+      .data-tile.unavailable strong { color:var(--muted); }
+      .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+      .section-head h2 { font-size:.88rem; }
+      .section-head span { color:var(--muted); font-size:.68rem; }
+      .compact-list { display:grid; gap:6px; }
+      .compact-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; padding:9px 10px; border:1px solid var(--line); border-radius:11px; background:var(--surface); }
+      .compact-row strong,.compact-row small { display:block; }
+      .compact-row strong { overflow:hidden; font-size:.77rem; text-overflow:ellipsis; white-space:nowrap; }
+      .compact-row small { margin-top:2px; color:var(--muted); font-size:.67rem; }
+      .row-meta { color:var(--muted); font-size:.68rem; white-space:nowrap; }
+      .week-grid { display:grid; grid-template-columns:repeat(7,minmax(70px,1fr)); gap:6px; overflow-x:auto; }
+      .week-day { min-width:70px; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+      .week-day strong,.week-day small { display:block; }
+      .week-day strong { font-size:.7rem; }
+      .week-day small { margin-top:6px; color:var(--muted); font-size:.64rem; text-transform:capitalize; }
+      .memory-row { padding:10px; border:1px solid var(--line); border-radius:11px; background:var(--surface); }
+      .memory-row p { margin-top:6px; font-size:.76rem; line-height:1.35; }
+      .memory-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .memory-meta span { color:var(--muted); font-size:.63rem; text-transform:capitalize; }
+      .status { padding:3px 6px; border-radius:999px; background:var(--accent-soft); color:var(--accent)!important; font-weight:750; }
+      .status.suggested { background:var(--gold-soft); color:color-mix(in srgb, CanvasText 80%, #8b6a00)!important; }
+      .callout { padding:14px; border:1px dashed var(--line); border-radius:13px; text-align:center; }
+      .callout strong { display:block; font-size:.82rem; }
+      .callout p { max-width:420px; margin:4px auto 0; color:var(--muted); font-size:.72rem; line-height:1.4; }
+      @media (max-width:700px) {
+        .grid { grid-template-columns:repeat(7,150px); }
+        .signal-grid { grid-template-columns:1fr; }
+        .data-strip { grid-template-columns:repeat(2,1fr); }
+      }
     </style>
   </head>
   <body>
@@ -29,8 +101,12 @@
     <script type="module">
       const root = document.querySelector('#root');
       let requestId = 0;
+      let householdSnapshot = null;
       const pending = new Map();
       const escapeHtml = (value) => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+      const pick = (object, ...keys) => keys.map((key) => object?.[key]).find((value) => value !== undefined && value !== null);
+      const asArray = (value) => Array.isArray(value) ? value : [];
+      const humanize = (value) => String(value || '').replaceAll('_', ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (letter) => letter.toUpperCase());
 
       function rpc(method, params = {}) {
         const id = ++requestId;
@@ -46,15 +122,123 @@
 
       function renderShopping(list) {
         if (!list) return '<div class="empty">No shopping list has been saved yet.</div>';
-        const grouped = Object.groupBy(list.items || [], (item) => item.store || item.store_name || 'Other');
+        const grouped = (list.items || []).reduce((result, item) => {
+          const store = item.store || item.store_name || 'Other';
+          (result[store] ||= []).push(item);
+          return result;
+        }, {});
         const groups = Object.entries(grouped).map(([store, items]) => `<section class="group"><h2>${escapeHtml(store)}</h2><div class="items">${items.map((item) => `<label class="${item.purchased ? 'done' : ''}"><input type="checkbox" data-item-id="${escapeHtml(item.id)}" ${item.purchased ? 'checked' : ''}><span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.quantity || '')} ${escapeHtml(item.unit || '')}</small></label>`).join('')}</div></section>`).join('');
         return `<header><div><h1>${escapeHtml(list.name || 'Shopping list')}</h1><p>Grouped in household store-priority order</p></div></header><section class="groups">${groups}</section>`;
+      }
+
+      function sectionValue(name) { return householdSnapshot?.sections?.[name]?.value; }
+      function sectionStatus(name) { return householdSnapshot?.sections?.[name]?.status || 'unavailable'; }
+      function dataCount(name) {
+        const value = sectionValue(name);
+        if (Array.isArray(value)) return value.length;
+        if (Array.isArray(value?.items)) return value.items.length;
+        if (Array.isArray(value?.entries)) return value.entries.length;
+        return value ? 1 : 0;
+      }
+
+      function planningFacts(preferences) {
+        const facts = [];
+        const maxMinutes = pick(preferences, 'weeknightMaxMinutes', 'weeknight_max_minutes');
+        const leftovers = pick(preferences, 'leftoversForLunch', 'leftovers_for_lunch');
+        if (maxMinutes) facts.push(`${maxMinutes} minute weeknight maximum`);
+        if (leftovers === true) facts.push('Plan dinner leftovers for lunch');
+        if (leftovers === false) facts.push('Lunch leftovers are optional');
+        [preferences.mealPriorities, preferences.meal_priorities, preferences.everyMealIncludes, preferences.every_meal_includes]
+          .flatMap(asArray).slice(0, 3).forEach((item) => facts.push(typeof item === 'string' ? item : item.title || item.name));
+        [preferences.weekdayStyle, preferences.weekday_style, preferences.proteinPreference, preferences.protein_preference]
+          .filter(Boolean).slice(0, 2).forEach((item) => facts.push(String(item)));
+        return [...new Set(facts.filter(Boolean))].slice(0, 5);
+      }
+
+      function renderOverview() {
+        const household = householdSnapshot.household || {};
+        const restrictions = asArray(pick(household, 'dietaryRestrictions', 'dietary_restrictions'));
+        const preferences = pick(household, 'planningPreferences', 'planning_preferences') || {};
+        const facts = planningFacts(preferences);
+        const stores = asArray(pick(household, 'storePriority', 'store_priority'));
+        const ruleChips = restrictions.slice(0, 4).map((rule) => `<span class="chip">${escapeHtml(rule)}</span>`).join('') + (restrictions.length > 4 ? `<span class="chip">+${restrictions.length - 4} more</span>` : '');
+        const storeMarkup = stores.slice(0, 3).map((item, index) => `<span class="store"><b>${escapeHtml(item.priority || index + 1)}</b>${escapeHtml(item.store || item.name || item)}</span>`).join('');
+        const tiles = [
+          ['pantry', dataCount('pantry'), 'Pantry'],
+          [null, dataCount('recipes'), 'Recipes'],
+          ['week', sectionStatus('schedule') === 'unavailable' ? '—' : dataCount('schedule'), 'Schedule'],
+          ['week', dataCount('mealPlan'), 'Meal plan'],
+          [null, dataCount('shoppingList'), 'Shopping lists'],
+          ['memory', sectionStatus('memories') === 'unavailable' ? '—' : dataCount('memories'), 'Memories'],
+        ].map(([tab, count, label]) => {
+          const content = `<strong>${count}</strong><small>${label}</small>`;
+          return tab ? `<button class="data-tile ${count === '—' ? 'unavailable' : ''}" data-tab="${tab}">${content}</button>` : `<div class="data-tile">${content}</div>`;
+        }).join('');
+        return `<section class="tab-panel">
+          <div class="signal-grid">
+            <article class="signal-card"><div class="signal-title"><div><span class="signal-icon">✓</span><h2>Food rules</h2></div><span class="count-badge">${restrictions.length} saved</span></div><div class="chip-cloud">${ruleChips || '<span class="chip allow">No restrictions saved</span>'}</div></article>
+            <article class="signal-card"><div class="signal-title"><div><span class="signal-icon">◷</span><h2>Planning defaults</h2></div></div><ul class="fact-list">${(facts.length ? facts : ['No planning defaults saved']).map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}</ul></article>
+          </div>
+          <article class="signal-card"><div class="signal-title"><div><span class="signal-icon">⌂</span><h2>Preferred stores</h2></div><span class="count-badge">in order</span></div><div class="store-row">${storeMarkup || '<span class="store">None saved</span>'}</div></article>
+          <div class="data-strip">${tiles}</div>
+        </section>`;
+      }
+
+      function unavailable(title) {
+        return `<div class="callout"><strong>${escapeHtml(title)} is not available yet</strong><p>The household profile is still usable. This section will appear once its database table is installed.</p></div>`;
+      }
+
+      function renderPantry() {
+        if (sectionStatus('pantry') === 'unavailable') return unavailable('Pantry');
+        const items = asArray(sectionValue('pantry'));
+        if (!items.length) return '<div class="callout"><strong>No pantry items saved</strong><p>Add ingredients as they arrive; Meal Prep can then use them in plans and avoid duplicate shopping.</p></div>';
+        const rows = items.slice(0, 8).map((item) => `<div class="compact-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.storage_location || item.storageLocation || 'Pantry')} · ${escapeHtml(item.quantity_confidence || item.quantityConfidence || 'quantity not verified')}</small></div><span class="row-meta">${escapeHtml(item.quantity || '')} ${escapeHtml(item.unit || '')}</span></div>`).join('');
+        return `<section class="tab-panel"><div class="section-head"><h2>Pantry inventory</h2><span>${items.length} item${items.length === 1 ? '' : 's'}</span></div><div class="compact-list">${rows}</div></section>`;
+      }
+
+      function renderWeek() {
+        const scheduleState = sectionStatus('schedule');
+        const schedule = sectionValue('schedule');
+        const plan = sectionValue('mealPlan');
+        const scheduleMarkup = scheduleState === 'unavailable' ? unavailable('Weekly schedule') : !schedule ? '<div class="callout"><strong>No weekly rhythm saved</strong><p>Meal Prep will ask before using a schedule as a recurring default.</p></div>' : `<div class="week-grid">${asArray(schedule.days).map((day) => `<div class="week-day"><strong>${escapeHtml(String(day.day || '').slice(0, 3))}</strong><small>${escapeHtml(humanize(day.mode))}</small></div>`).join('')}</div>`;
+        const planRows = asArray(plan?.entries).slice(0, 4).map((entry) => `<div class="compact-row"><div><strong>${escapeHtml(entry.meal || entry.title)}</strong><small>${escapeHtml(entry.day || entry.date)}</small></div><span class="row-meta">${escapeHtml(entry.servings || '')}${entry.servings ? ' servings' : ''}</span></div>`).join('');
+        return `<section class="tab-panel"><div class="section-head"><h2>Weekly rhythm</h2><span>${schedule?.is_normal_week === false ? 'Different week' : 'Usual week'}</span></div>${scheduleMarkup}<div class="section-head"><h2>Saved meal plan</h2><span>${planRows ? `${asArray(plan.entries).length} meals` : 'Empty'}</span></div>${planRows ? `<div class="compact-list">${planRows}</div>` : '<div class="callout"><strong>No meal plan saved</strong><p>Approved weekly plans will appear here.</p></div>'}</section>`;
+      }
+
+      function renderMemory() {
+        if (sectionStatus('memories') === 'unavailable') return unavailable('Learned memory');
+        const memories = asArray(sectionValue('memories'));
+        if (!memories.length) return '<div class="callout"><strong>No learned memories yet</strong><p>Confirmed patterns and reviewable suggestions from retrospectives will appear here.</p></div>';
+        const rows = memories.slice(0, 6).map((item) => `<article class="memory-row"><div class="memory-meta"><span>${escapeHtml(humanize(item.category || 'planning'))}</span><span class="status ${item.status === 'suggested' ? 'suggested' : ''}">${escapeHtml(item.status || 'confirmed')}</span></div><p>${escapeHtml(item.content)}</p></article>`).join('');
+        return `<section class="tab-panel"><div class="section-head"><h2>Learned memory</h2><span>${memories.length} active</span></div><div class="compact-list">${rows}</div></section>`;
+      }
+
+      function renderSnapshotTab(tab) {
+        const panel = root.querySelector('#snapshot-body');
+        if (!panel || !householdSnapshot) return;
+        panel.innerHTML = tab === 'pantry' ? renderPantry() : tab === 'week' ? renderWeek() : tab === 'memory' ? renderMemory() : renderOverview();
+        root.querySelectorAll('[data-tab].tab-button').forEach((button) => {
+          const active = button.dataset.tab === tab;
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-selected', String(active));
+        });
+      }
+
+      function renderHouseholdSnapshot(data) {
+        householdSnapshot = data;
+        const household = data.household || {};
+        const name = pick(household, 'householdName', 'household_name', 'name') || 'My household';
+        const size = pick(household, 'householdSize', 'household_size');
+        const role = pick(household, 'role', 'householdRole', 'household_role') || 'Owner';
+        root.innerHTML = `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><nav class="tabs" aria-label="Household data"><button class="tab-button active" data-tab="overview" aria-selected="true">Overview</button><button class="tab-button" data-tab="pantry" aria-selected="false">Pantry</button><button class="tab-button" data-tab="week" aria-selected="false">Week</button><button class="tab-button" data-tab="memory" aria-selected="false">Memory</button></nav><div id="snapshot-body"></div></section>`;
+        renderSnapshotTab('overview');
       }
 
       function applyResult(result) {
         const data = result?.structuredContent || result;
         if (!data) return;
-        root.innerHTML = data.kind === 'shopping_list' ? renderShopping(data.shoppingList) : renderPlan(data.plan);
+        if (data.kind === 'household_snapshot') renderHouseholdSnapshot(data);
+        else root.innerHTML = data.kind === 'shopping_list' ? renderShopping(data.shoppingList) : renderPlan(data.plan);
       }
 
       window.addEventListener('message', (event) => {
@@ -67,6 +251,11 @@
         if (message.method === 'ui/notifications/tool-result') applyResult(message.params);
       });
 
+      root.addEventListener('click', (event) => {
+        const tab = event.target.closest('[data-tab]');
+        if (tab) renderSnapshotTab(tab.dataset.tab);
+      });
+
       root.addEventListener('change', async (event) => {
         const input = event.target.closest('input[data-item-id]');
         if (!input) return;
@@ -77,7 +266,7 @@
         } finally { input.disabled = false; }
       });
 
-      rpc('ui/initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'meal-prep-ui', version: '1.0.0' } }).catch(() => {});
+      rpc('ui/initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'meal-prep-ui', version: '1.1.0' } }).catch(() => {});
     </script>
   </body>
 </html>

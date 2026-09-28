@@ -48,6 +48,7 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "save_shopping_list",
         "render_meal_plan",
         "render_shopping_list",
+        "render_household_snapshot",
         "get_weekly_schedule",
         "save_weekly_schedule",
         "get_planning_context",
@@ -60,6 +61,8 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     }.issubset(names)
     render_tool = next(tool for tool in tools if tool["name"] == "render_meal_plan")
     assert render_tool["_meta"]["ui"]["resourceUri"].startswith("ui://meal-prep/")
+    household_render_tool = next(tool for tool in tools if tool["name"] == "render_household_snapshot")
+    assert household_render_tool["_meta"]["ui"]["resourceUri"].endswith("household-snapshot-v1.html")
     preferences_tool = next(tool for tool in tools if tool["name"] == "update_household_preferences")
     assert "complete_onboarding" in preferences_tool["inputSchema"]["properties"]
 
@@ -143,6 +146,22 @@ def test_demo_household_context_and_plan_render_are_structured(client: TestClien
     )["structuredContent"]
     assert rendered["kind"] == "meal_plan"
     assert rendered["plan"]["entries"]
+
+
+def test_household_snapshot_collects_chatgpt_ui_data_without_flattening_it_to_text(client: TestClient):
+    rendered = rpc(
+        client,
+        "tools/call",
+        {"name": "render_household_snapshot", "arguments": {}},
+        request_id=10,
+    )["structuredContent"]
+
+    assert rendered["kind"] == "household_snapshot"
+    assert rendered["household"]["householdSize"] == 4
+    assert set(rendered["sections"]) == {
+        "pantry", "recipes", "schedule", "memories", "mealPlan", "shoppingList"
+    }
+    assert rendered["sections"]["pantry"]["status"] in {"ready", "empty", "unavailable"}
 
 
 def test_household_onboarding_can_be_completed_only_with_full_answers(client: TestClient):

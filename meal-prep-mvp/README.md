@@ -153,6 +153,7 @@ Data tools:
 
 Presentation tools:
 
+- `render_household_snapshot`
 - `render_meal_plan`
 - `render_shopping_list`
 

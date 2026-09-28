@@ -266,16 +266,46 @@ def plan_review_view(state: HouseholdState, *, toast: str | None = None) -> View
 def memory_view(state: HouseholdState, *, toast: str | None = None) -> ViewSpec:
     active = [item for item in state.memories if item["active"]]
     suggested = sum(item["status"] == "suggested" for item in active)
+    stored_signals = (
+        len(state.dietary_restrictions)
+        + len(state.dietary_allowances)
+        + len(state.planning_priorities)
+        + len(state.planning_defaults)
+        + sum(len(person.get("likes", [])) for person in state.individual_preferences)
+        + len(state.preferred_stores)
+    )
     components = [
         ComponentSpec(
             id="memory-status",
             type="status_row",
             data={
-                "eyebrow": "Household memory",
+                "eyebrow": "Saved household data",
                 "title": "What Meal Prep remembers",
-                "description": f"{len(active)} active memories · {suggested} waiting for your review. Nothing inferred becomes permanent without confirmation.",
+                "description": f"{stored_signals} saved planning signals · {len(active)} learned memories · {suggested} waiting for review. You stay in control of what is kept.",
             },
             actions=[action("Review setup", "review_onboarding", style="quiet"), action("Done", "home", style="secondary")],
+        ),
+        ComponentSpec(
+            id="memory-overview",
+            type="memory_overview",
+            data={
+                "household": {
+                    "name": state.household,
+                    "id": state.household_id,
+                    "role": state.household_role,
+                    "size": state.household_size,
+                    "members": state.household_members,
+                },
+                "foodRules": {
+                    "restrictions": state.dietary_restrictions,
+                    "allowances": state.dietary_allowances,
+                },
+                "planningPriorities": state.planning_priorities,
+                "planningDefaults": state.planning_defaults,
+                "people": state.individual_preferences,
+                "stores": state.preferred_stores,
+                "collections": state.data_collections,
+            },
         ),
         ComponentSpec(id="memory-items", type="memory_list", data={"items": active}),
     ]
@@ -283,11 +313,75 @@ def memory_view(state: HouseholdState, *, toast: str | None = None) -> ViewSpec:
         components.insert(0, ComponentSpec(id="memory-toast", type="toast", data={"message": toast}))
     return ViewSpec(
         view_id="household-memory",
-        purpose="Inspect, confirm, correct, or forget household planning memory",
+        purpose="Inspect household data and confirm, correct, or forget learned planning memory",
         state_version=state.version,
         source="policy",
         generated_at=now_iso(),
         components=components,
+    )
+
+
+def collection_view(state: HouseholdState, collection: str) -> ViewSpec:
+    definitions = {
+        "pantry": {
+            "eyebrow": "Pantry inventory",
+            "title": "Your kitchen, at a glance",
+            "description": "Track what is on hand so plans can use food before another shopping trip.",
+            "metric": "0 items",
+            "emptyTitle": "Your pantry is ready to fill",
+            "emptyDescription": "No pantry items are saved yet. Once added, ingredients can be grouped by storage area and surfaced when they should be used soon.",
+            "groups": [
+                {"label": "Fridge", "count": 0, "icon": "❄"},
+                {"label": "Freezer", "count": 0, "icon": "✦"},
+                {"label": "Cupboard", "count": 0, "icon": "▤"},
+            ],
+            "benefits": ["Use-what-you-have meal ideas", "Freshness ranges without invented expiry dates", "More accurate shopping lists"],
+        },
+        "recipes": {
+            "eyebrow": "Recipe library",
+            "title": "Recipes your family can return to",
+            "description": "Keep trusted meals together with their ingredients, timing, and family-fit notes.",
+            "metric": "0 recipes",
+            "emptyTitle": "No recipes saved yet",
+            "emptyDescription": "Saved recipes will appear here with dietary-fit and time signals, making it easier to build a week around known wins.",
+            "groups": [
+                {"label": "Favorites", "count": 0, "icon": "♡"},
+                {"label": "Quick", "count": 0, "icon": "◷"},
+                {"label": "Recently saved", "count": 0, "icon": "＋"},
+            ],
+            "benefits": ["Vegetarian constraint checks", "Weeknight-time filtering", "Family preference matching"],
+        },
+        "shopping": {
+            "eyebrow": "Shopping lists",
+            "title": "Store-aware shopping",
+            "description": "Lists follow your store priority: Costco first, then Safeway for the rest.",
+            "metric": "0 lists",
+            "emptyTitle": "No shopping lists yet",
+            "emptyDescription": "A list will appear here after a meal plan is approved. Saving a list records it; it never places an order.",
+            "groups": [
+                {"label": "Costco", "count": 0, "icon": "1"},
+                {"label": "Safeway", "count": 0, "icon": "2"},
+                {"label": "Purchased", "count": 0, "icon": "✓"},
+            ],
+            "benefits": ["Pantry-aware quantities", "Store-priority grouping", "Visible substitutions"],
+        },
+    }
+    data = definitions[collection]
+    return ViewSpec(
+        view_id=f"{collection}-collection",
+        purpose=f"Inspect the household's {collection} data",
+        state_version=state.version,
+        source="policy",
+        generated_at=now_iso(),
+        components=[
+            ComponentSpec(
+                id=f"{collection}-status",
+                type="status_row",
+                data={"eyebrow": data["eyebrow"], "title": data["title"], "description": data["description"]},
+                actions=[action("Household data", "show_memory", style="quiet"), action("Done", "home", style="secondary")],
+            ),
+            ComponentSpec(id=f"{collection}-overview", type="collection_overview", data={"kind": collection, **data}),
+        ],
     )
 
 

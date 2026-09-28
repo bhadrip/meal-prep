@@ -19,6 +19,7 @@ settings = get_settings()
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 MEAL_PLAN_UI_URI = "ui://meal-prep/meal-plan-v1.html"
 SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v1.html"
+HOUSEHOLD_UI_URI = "ui://meal-prep/household-snapshot-v1.html"
 
 auth_settings = None
 token_verifier = None
@@ -44,6 +45,8 @@ mcp = FastMCP(
         "Use confirmed memories as preferences; treat suggested memories and retrospectives only as evidence. "
         "A null schedule or retrospective means no record exists, not permission to invent one. "
         "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
+        "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
+        "a compact interactive view instead of a long text inventory. "
         "Never place or imply an order; external commerce requires a separate confirmation flow."
     ),
     stateless_http=True,
@@ -354,6 +357,48 @@ async def review_household_memory(memory_id: str, action: str, content: str | No
         raise _error(exc) from exc
 
 
+async def _snapshot_section(loader) -> dict[str, Any]:
+    try:
+        value = await loader()
+    except RepositoryError:
+        return {"status": "unavailable", "value": None}
+    is_empty = value is None or value == [] or value == {}
+    return {"status": "empty" if is_empty else "ready", "value": value}
+
+
+@mcp.tool(
+    annotations=READ_ONLY,
+    meta={"ui": {"resourceUri": HOUSEHOLD_UI_URI}},
+    structured_output=True,
+)
+async def render_household_snapshot() -> dict[str, Any]:
+    """Render a compact in-chat view of household rules, pantry, schedule, saved data, and memory."""
+    repo = _repo()
+    try:
+        household = await repo.get_household_context()
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+    pantry = await _snapshot_section(repo.get_pantry)
+    recipes = await _snapshot_section(lambda: repo.search_recipes(query="", limit=25))
+    schedule = await _snapshot_section(repo.get_weekly_schedule)
+    memories = await _snapshot_section(repo.get_household_memory)
+    meal_plan = await _snapshot_section(repo.get_meal_plan)
+    shopping = await _snapshot_section(repo.get_shopping_list)
+    return {
+        "kind": "household_snapshot",
+        "household": household,
+        "sections": {
+            "pantry": pantry,
+            "recipes": recipes,
+            "schedule": schedule,
+            "memories": memories,
+            "mealPlan": meal_plan,
+            "shoppingList": shopping,
+        },
+    }
+
+
 @mcp.tool(
     annotations=READ_ONLY,
     meta={"ui": {"resourceUri": MEAL_PLAN_UI_URI}},
@@ -403,6 +448,18 @@ def meal_plan_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def shopping_list_resource() -> str:
+    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    HOUSEHOLD_UI_URI,
+    name="household-snapshot-ui",
+    title="Household meal-prep snapshot",
+    description="A compact, tabbed view of household rules and saved meal-prep data.",
+    mime_type="text/html;profile=mcp-app",
+    meta={"ui": {"prefersBorder": True}},
+)
+def household_snapshot_resource() -> str:
     return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
 
 

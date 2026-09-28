@@ -226,9 +226,105 @@ function renderRetro(component) {
     </form>`;
 }
 
+function renderMemoryOverview(component) {
+  const data = component.data;
+  const household = data.household;
+  const restrictions = data.foodRules.restrictions.map((item) => `<span class="rule-chip restriction">${escapeHtml(item)}</span>`).join("");
+  const allowances = data.foodRules.allowances.map((item) => `<span class="rule-chip allowance">${escapeHtml(item)} allowed</span>`).join("");
+  const priorities = data.planningPriorities.map((item, index) => `
+    <li><span class="priority-number">${index + 1}</span><div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p></div></li>`).join("");
+  const defaults = data.planningDefaults.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const people = data.people.length ? data.people.map((person) => `
+    <article class="person-preference">
+      <div class="person-heading"><span class="person-avatar" aria-hidden="true">${escapeHtml(person.name).slice(0, 1)}</span><div><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.detail)}</small></div></div>
+      <div class="preference-tags">${person.likes.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+    </article>`).join("") : `<p class="empty-copy">No individual likes or dislikes are saved yet.</p>`;
+  const stores = data.stores.map((store, index) => `
+    <li><span>${index + 1}</span><strong>${escapeHtml(store)}</strong><small>${index === 0 ? "First stop" : "Next stop"}</small></li>`).join("");
+  const collections = data.collections.map((item) => `
+    <li class="collection-row ${escapeHtml(item.status)}">
+      <span class="collection-status" aria-hidden="true">${item.status === "empty" ? "0" : "!"}</span>
+      <div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.detail)}</small></div>
+      <span class="collection-label">${item.status === "empty" ? "Empty" : "Unavailable"}</span>
+    </li>`).join("");
+  const memberSummary = household.members.map((member) => `<span>${escapeHtml(member)}</span>`).join("");
+
+  return `
+    <section class="memory-overview" aria-label="Saved household profile">
+      <article class="household-profile-card">
+        <div class="household-icon" aria-hidden="true"><span>2</span><span>8</span><span>3½</span></div>
+        <div class="household-profile-copy">
+          <div class="section-label">Household profile</div>
+          <div class="household-title-row"><h2>${escapeHtml(household.name)}</h2><span class="role-badge">${escapeHtml(household.role)}</span></div>
+          <p>${escapeHtml(household.size)} people in this household</p>
+          <div class="member-summary">${memberSummary}</div>
+        </div>
+        <div class="household-id"><span>Household ID</span><code>${escapeHtml(household.id)}</code></div>
+      </article>
+
+      <div class="memory-columns">
+        <article class="card memory-section food-rules-card">
+          <div class="memory-section-heading"><span class="memory-section-icon rules" aria-hidden="true">✓</span><div><p class="section-label">Hard constraints</p><h3>Food rules</h3></div></div>
+          <p class="section-copy">Every recommendation must respect these rules.</p>
+          <div class="rule-chips">${restrictions}${allowances}</div>
+        </article>
+
+        <article class="card memory-section planning-card">
+          <div class="memory-section-heading"><span class="memory-section-icon planning" aria-hidden="true">◇</span><div><p class="section-label">Meal balance</p><h3>Every meal should include</h3></div></div>
+          <ol class="priority-list">${priorities}</ol>
+        </article>
+      </div>
+
+      <div class="memory-columns secondary">
+        <article class="card memory-section defaults-card">
+          <div class="memory-section-heading"><span class="memory-section-icon timing" aria-hidden="true">◷</span><div><p class="section-label">Planning defaults</p><h3>What works for this family</h3></div></div>
+          <ul class="default-list">${defaults}</ul>
+        </article>
+
+        <article class="card memory-section people-card">
+          <div class="memory-section-heading"><span class="memory-section-icon people" aria-hidden="true">☺</span><div><p class="section-label">People</p><h3>Individual preferences</h3></div></div>
+          <div class="people-list">${people}</div>
+          <p class="empty-copy preference-note">No other individual preferences are saved yet.</p>
+        </article>
+      </div>
+
+      <div class="memory-columns secondary">
+        <article class="card memory-section stores-card">
+          <div class="memory-section-heading"><span class="memory-section-icon stores" aria-hidden="true">⌂</span><div><p class="section-label">Shopping order</p><h3>Preferred stores</h3></div></div>
+          <ol class="store-list">${stores}</ol>
+        </article>
+
+        <article class="card memory-section collections-card">
+          <div class="memory-section-heading"><span class="memory-section-icon data" aria-hidden="true">▦</span><div><p class="section-label">Data coverage</p><h3>What else is stored</h3></div></div>
+          <ul class="collection-list">${collections}</ul>
+        </article>
+      </div>
+    </section>`;
+}
+
+function renderCollectionOverview(component) {
+  const data = component.data;
+  const groups = data.groups.map((group) => `
+    <article class="collection-stat">
+      <span class="collection-stat-icon" aria-hidden="true">${escapeHtml(group.icon)}</span>
+      <div><strong>${escapeHtml(group.count)}</strong><small>${escapeHtml(group.label)}</small></div>
+    </article>`).join("");
+  const benefits = data.benefits.map((benefit) => `<li>${escapeHtml(benefit)}</li>`).join("");
+  return `
+    <section class="collection-overview" aria-label="${escapeHtml(data.title)}">
+      <div class="collection-metric-row"><span class="section-label">Current saved data</span><strong>${escapeHtml(data.metric)}</strong></div>
+      <div class="collection-stats">${groups}</div>
+      <article class="card collection-empty-state">
+        <div class="collection-illustration ${escapeHtml(data.kind)}" aria-hidden="true"><span>＋</span></div>
+        <div class="collection-empty-copy"><p class="section-label">Nothing stored here yet</p><h2>${escapeHtml(data.emptyTitle)}</h2><p>${escapeHtml(data.emptyDescription)}</p></div>
+        <aside><strong>When data is added</strong><ul>${benefits}</ul></aside>
+      </article>
+    </section>`;
+}
+
 function renderMemoryList(component) {
   if (!component.data.items.length) {
-    return `<section class="card empty-memory"><h3>Nothing saved yet</h3><p>Complete household setup or a weekly retro to start building transparent planning memory.</p></section>`;
+    return `<section class="card empty-memory"><div class="empty-memory-icon" aria-hidden="true">◎</div><div><p class="section-label">Learned memory</p><h3>No learned memories yet</h3><p>Household settings above are saved. Patterns from weekly retros will appear here for you to confirm, correct, or forget once memory storage is available.</p></div></section>`;
   }
   const labels = { constraint: "Household rule", pressure: "Stress signal", success: "What works", schedule: "Weekly rhythm" };
   const items = component.data.items.map((item) => `
@@ -262,7 +358,9 @@ const renderers = {
   onboarding_form: renderOnboarding,
   schedule_check: renderScheduleCheck,
   retro_form: renderRetro,
+  memory_overview: renderMemoryOverview,
   memory_list: renderMemoryList,
+  collection_overview: renderCollectionOverview,
 };
 
 function updateModelStatus(view) {
@@ -296,13 +394,28 @@ function renderView(view) {
     "weekly-retro": ["Weekly reset", "Plan from what actually happened", "A quick reflection keeps next week realistic."],
     "schedule-check": ["Next week", "Shape the plan around your time", "Confirm the rhythm before choosing meals."],
     "plan-review": ["Next week", "Your household plan", "Built around the rhythm you just confirmed."],
-    "household-memory": ["Your household", "Planning memory you control", "Review what is saved, suggested, or no longer useful."],
+    "household-memory": ["Meal Prep memory", "What Meal Prep knows", "A clear view of the household data shaping every recommendation."],
+    "pantry-collection": ["Kitchen inventory", "Pantry", "See what is on hand, what to use soon, and what should not be added to the list."],
+    "recipes-collection": ["Family library", "Recipes", "Trusted meals, saved with the context that makes them useful."],
+    "shopping-collection": ["Store priority", "Shopping", "A clear, pantry-aware list grouped around where you prefer to shop."],
   };
   const intro = introCopy[view.view_id] || ["Tuesday · September 23", "Good afternoon, Ben", "Dinner is covered. One ingredient needs attention today."];
   pageIntro.querySelector(".eyebrow").textContent = intro[0];
   pageIntro.querySelector("h1").textContent = intro[1];
   pageIntro.querySelector(".intro-note").textContent = intro[2];
   pageIntro.classList.toggle("flow-context", view.view_id !== "home");
+  const activeNav = view.view_id === "household-memory" ? "show_memory"
+    : view.view_id === "pantry-collection" ? "show_pantry"
+    : view.view_id === "recipes-collection" ? "show_recipes"
+    : view.view_id === "shopping-collection" ? "show_shopping"
+    : view.view_id.includes("plan") || view.view_id.includes("schedule") || view.view_id.includes("retro") ? "show_plan"
+    : "home";
+  document.querySelectorAll("[data-nav]").forEach((item) => {
+    const selected = item.dataset.nav === activeNav;
+    item.classList.toggle("active", selected);
+    if (selected) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
   root.setAttribute("aria-busy", "false");
   updateModelStatus(view);
   window.scrollTo({ top: 0, behavior: "smooth" });
