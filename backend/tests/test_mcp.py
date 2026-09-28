@@ -207,6 +207,23 @@ def test_onboarding_is_served_as_an_mcp_app(client: TestClient):
     assert "update_household_preferences" in html
 
 
+def test_mcp_app_completes_the_standard_ui_handshake(client: TestClient):
+    contents = rpc(
+        client,
+        "resources/read",
+        {"uri": "ui://meal-prep/household-snapshot-v1.html"},
+        request_id=18,
+    )["contents"]
+    html = contents[0]["text"]
+
+    assert "protocolVersion: '2026-01-26'" in html
+    assert "appCapabilities: {}" in html
+    assert "appInfo: { name: 'meal-prep-ui', version: '1.3.0' }" in html
+    assert "notify('ui/notifications/initialized')" in html
+    assert html.index("await rpc('ui/initialize'") < html.index("notify('ui/notifications/initialized')")
+    assert "clientInfo:" not in html
+
+
 def test_household_onboarding_can_be_completed_only_with_full_answers(client: TestClient):
     incomplete = rpc(
         client,
