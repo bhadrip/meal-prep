@@ -78,6 +78,11 @@ Choose Streamable HTTP in the Inspector and use `http://localhost:8000/mcp`.
    supabase db push
    ```
 
+   For the Supabase GitHub integration, set **Working directory** to
+   `meal-prep-mvp` because the `supabase/` directory is nested in this
+   repository. Enable **Deploy to production** if merges to `main` should apply
+   new migrations automatically.
+
 3. In Authentication, set the Site URL to the Vercel production URL and add `/login` as an allowed redirect.
 4. In Authentication > OAuth Server, enable OAuth 2.1, set the authorization path to `/oauth/consent`, and enable dynamic client registration.
 5. Use an asymmetric JWT signing key (ES256 or RS256) so OAuth clients can validate tokens through JWKS.
@@ -90,6 +95,26 @@ It does not request profile or phone access. Codex loopback callbacks such as
 used unchanged while the corresponding Codex configure command is still running.
 
 The first authenticated request creates an unconfigured household through `bootstrap_my_household`. It does not assume a household size, stores, cooking limit, or leftovers preference. The plugin asks for those values and marks onboarding complete only after the user answers. Every subsequent database operation uses the caller's access token, so RLS remains the authority for ownership.
+
+### Repair an existing project's migration history without a CLI
+
+If the project schema was initially applied outside the migration runner, the
+GitHub deployment may fail on migration `001` with an “already exists” error.
+That means the database objects and `supabase_migrations.schema_migrations`
+history disagree. Open the Supabase Dashboard's SQL Editor and run
+[`supabase/manual/repair_initial_migration_history.sql`](supabase/manual/repair_initial_migration_history.sql).
+Its preflight checks verify the tables, functions, grants, and onboarding
+column from migrations `001`–`003` before it changes migration history. If a
+check fails, stop and reconcile the missing schema instead of bypassing it.
+
+After the repair succeeds, rerun the failed Supabase GitHub check or push the
+next commit. The integration should skip `001`–`003` and apply the remaining
+migrations in order.
+
+Do not make migrations `004`–`008` applied unless their tables and indexes
+already exist; those migrations must run to install schedule, retrospective,
+and household-memory storage. A successful push should leave local and remote
+columns aligned in `supabase migration list --linked`.
 
 ## Vercel setup
 
@@ -116,11 +141,12 @@ Deploy, then verify:
 Data tools:
 
 - `get_household_context`
+- `get_planning_context`
 - `update_household_preferences`
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
 - `get_pantry`, `update_pantry_item`
 - `get_weekly_schedule`, `save_weekly_schedule`
-- `get_latest_retro`, `save_weekly_retro`
+- `get_latest_retro`, `get_weekly_retro`, `save_weekly_retro`
 - `get_household_memory`, `save_household_memory`, `review_household_memory`
 - `save_meal_plan`, `get_meal_plan`
 - `save_shopping_list`, `get_shopping_list`, `mark_item_purchased`

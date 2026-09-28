@@ -50,7 +50,9 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "render_shopping_list",
         "get_weekly_schedule",
         "save_weekly_schedule",
+        "get_planning_context",
         "get_latest_retro",
+        "get_weekly_retro",
         "save_weekly_retro",
         "get_household_memory",
         "save_household_memory",
@@ -79,6 +81,10 @@ def test_demo_retro_is_saved_as_evidence(client: TestClient):
     assert saved["stressors"] == ["Too many dishes"]
     loaded = rpc(client, "tools/call", {"name": "get_latest_retro", "arguments": {}}, request_id=4)["structuredContent"]
     assert loaded["retro"]["note"] == "Keep Wednesday light."
+    exact = rpc(client, "tools/call", {"name": "get_weekly_retro", "arguments": {"week_start": "2026-09-21"}}, request_id=10)["structuredContent"]
+    assert exact["retro"]["week_start"] == "2026-09-21"
+    missing = rpc(client, "tools/call", {"name": "get_weekly_retro", "arguments": {"week_start": "2026-09-14"}}, request_id=11)["structuredContent"]
+    assert missing["retro"] is None
 
 
 def test_demo_memory_requires_explicit_review(client: TestClient):
@@ -88,6 +94,36 @@ def test_demo_memory_requires_explicit_review(client: TestClient):
     assert confirmed["status"] == "confirmed"
     memories = rpc(client, "tools/call", {"name": "get_household_memory", "arguments": {}}, request_id=7)["structuredContent"]
     assert any(item["id"] == saved["id"] for item in memories["items"])
+
+
+def test_memory_defaults_to_suggested_and_can_be_filtered(client: TestClient):
+    saved = rpc(
+        client,
+        "tools/call",
+        {"name": "save_household_memory", "arguments": {"memory": {"content": "Tuesday may need a quick dinner", "scope": "this_week"}}},
+        request_id=12,
+    )["structuredContent"]
+    assert saved["status"] == "suggested"
+    filtered = rpc(
+        client,
+        "tools/call",
+        {"name": "get_household_memory", "arguments": {"status": "suggested", "scope": "this_week"}},
+        request_id=13,
+    )["structuredContent"]
+    assert [item["id"] for item in filtered["items"]] == [saved["id"]]
+
+
+def test_planning_context_returns_all_durable_inputs(client: TestClient):
+    context = rpc(
+        client,
+        "tools/call",
+        {"name": "get_planning_context", "arguments": {"week_start": "2026-09-28"}},
+        request_id=14,
+    )["structuredContent"]
+    assert context["household"]["householdId"]
+    assert context["schedule"]["week_start"] == "2026-09-28"
+    assert context["retro"]["week_start"] == "2026-09-21"
+    assert any(item["status"] == "confirmed" for item in context["memories"])
 
 
 def test_demo_household_context_and_plan_render_are_structured(client: TestClient):

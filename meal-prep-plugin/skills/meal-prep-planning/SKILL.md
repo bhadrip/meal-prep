@@ -10,16 +10,19 @@ food, update household food preferences, or create a shopping list.
 
 ## Required sequence
 
-1. Call `get_household_context` before planning. If `onboardingComplete` is
-   false, stop planning and ask the user for household size, dietary
+1. Call `get_planning_context` before drafting or revising a weekly plan,
+   passing the requested `week_start` when known. It returns household
+   preferences, the relevant weekly schedule and retrospective, and active
+   household memories in one read. If `household.onboardingComplete` is false,
+   stop planning and ask the user for household size, dietary
    restrictions (including an explicit "none"), preferred stores in order,
    maximum weeknight cooking time, and whether dinner should make lunch
    leftovers. Do not present null or empty onboarding fields as an existing
    starter profile. Save the answers together with `update_household_preferences`
    using `complete_onboarding: true`. Treat recorded dietary restrictions as
    hard constraints and planning preferences as defaults the user may override.
-   Also load `get_weekly_schedule`, `get_latest_retro`, and
-   `get_household_memory` before drafting when those tools are available.
+   Use the individual retrieval tools only when the user asks to inspect or
+   refresh one record independently.
 2. Call `get_pantry` and `search_recipes` when existing food or saved recipes
    affect the request. Do not fabricate pantry quantities, freshness, prices,
    inventory, or recipe provenance.
@@ -46,6 +49,10 @@ food, update household food preferences, or create a shopping list.
 - Retrospective observations are evidence, not permanent preferences. Save them
   as suggested memories and use `review_household_memory` only after the user
   confirms, corrects, or asks to forget one.
+- Use confirmed household memories as planning defaults. Suggested memories may
+  influence a question or option but must not be presented as settled facts.
+- A null weekly schedule or retrospective means no saved record exists. Ask for
+  relevant constraints when needed; do not invent a schedule or prior outcome.
 - Recipe archival and external purchases require explicit confirmation.
 - `mark_item_purchased` records shopping progress; it does not buy anything.
 - If a proposed recipe conflicts with a hard restriction, reject it and offer
