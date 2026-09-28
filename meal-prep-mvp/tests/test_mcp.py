@@ -28,6 +28,18 @@ def rpc(client: TestClient, method: str, params: dict, request_id: int = 1) -> d
     return response.json()["result"]
 
 
+def test_http_surface_is_service_only(client: TestClient):
+    root = client.get("/")
+    assert root.status_code == 200
+    assert root.json() == {
+        "name": "Meal Prep MCP Server",
+        "status": "ok",
+        "mcp_endpoint": "/mcp",
+    }
+    assert client.get("/api/dashboard").status_code == 404
+    assert client.post("/api/interactions", json={"action": "home"}).status_code == 404
+
+
 def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     initialized = rpc(
         client,
@@ -46,6 +58,7 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "get_household_context",
         "save_meal_plan",
         "save_shopping_list",
+        "render_onboarding",
         "render_meal_plan",
         "render_shopping_list",
         "render_household_snapshot",
@@ -63,6 +76,8 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     assert render_tool["_meta"]["ui"]["resourceUri"].startswith("ui://meal-prep/")
     household_render_tool = next(tool for tool in tools if tool["name"] == "render_household_snapshot")
     assert household_render_tool["_meta"]["ui"]["resourceUri"].endswith("household-snapshot-v1.html")
+    onboarding_tool = next(tool for tool in tools if tool["name"] == "render_onboarding")
+    assert onboarding_tool["_meta"]["ui"]["resourceUri"] == "ui://meal-prep/onboarding-v1.html"
     preferences_tool = next(tool for tool in tools if tool["name"] == "update_household_preferences")
     assert "complete_onboarding" in preferences_tool["inputSchema"]["properties"]
 
@@ -162,6 +177,31 @@ def test_household_snapshot_collects_chatgpt_ui_data_without_flattening_it_to_te
         "pantry", "recipes", "schedule", "memories", "mealPlan", "shoppingList"
     }
     assert rendered["sections"]["pantry"]["status"] in {"ready", "empty", "unavailable"}
+
+
+def test_onboarding_is_served_as_an_mcp_app(client: TestClient):
+    rendered = rpc(
+        client,
+        "tools/call",
+        {"name": "render_onboarding", "arguments": {}},
+        request_id=15,
+    )["structuredContent"]
+    assert rendered["kind"] == "onboarding"
+    assert "planningPreferences" in rendered["household"]
+
+    resources = rpc(client, "resources/list", {}, request_id=16)["resources"]
+    onboarding = next(resource for resource in resources if resource["uri"] == "ui://meal-prep/onboarding-v1.html")
+    assert onboarding["mimeType"] == "text/html;profile=mcp-app"
+
+    contents = rpc(
+        client,
+        "resources/read",
+        {"uri": onboarding["uri"]},
+        request_id=17,
+    )["contents"]
+    html = contents[0]["text"]
+    assert "Feeding a family takes planning" in html
+    assert "update_household_preferences" in html
 
 
 def test_household_onboarding_can_be_completed_only_with_full_answers(client: TestClient):

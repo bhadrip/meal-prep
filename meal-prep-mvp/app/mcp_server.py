@@ -20,6 +20,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 MEAL_PLAN_UI_URI = "ui://meal-prep/meal-plan-v1.html"
 SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v1.html"
 HOUSEHOLD_UI_URI = "ui://meal-prep/household-snapshot-v1.html"
+ONBOARDING_UI_URI = "ui://meal-prep/onboarding-v1.html"
 
 auth_settings = None
 token_verifier = None
@@ -38,10 +39,13 @@ mcp = FastMCP(
     instructions=(
         "Call get_planning_context before drafting or revising a weekly meal plan. It returns household "
         "preferences, the requested or remembered weekly schedule, the relevant retrospective, and active "
-        "household memories. If onboardingComplete is false, ask the user "
-        "for household size, dietary restrictions, store priority, weeknight cooking limit, and "
-        "whether dinner should provide lunch leftovers. Do not describe empty or null onboarding "
+        "household memories. If onboardingComplete is false, call render_onboarding so the user can complete "
+        "the MCP-served setup for household size, dietary restrictions, store priority, weeknight cooking limit, "
+        "lunch leftovers, and the planning areas they want coordinated. Save those areas in "
+        "planningPreferences.focusAreas. Do not describe empty or null onboarding "
         "fields as saved preferences. Respect hard dietary restrictions. "
+        "Do not assume a weekly plan is dinner-only. Give each saved entry an explicit slot such as breakfast, "
+        "lunch, snack, dinner, or prep, and keep repeated breakfasts and packed lunches simple unless variety is requested. "
         "Use confirmed memories as preferences; treat suggested memories and retrospectives only as evidence. "
         "A null schedule or retrospective means no record exists, not permission to invent one. "
         "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
@@ -194,7 +198,7 @@ async def update_pantry_item(item: dict[str, Any]) -> dict[str, Any]:
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_meal_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    """Persist a weekly meal plan and its entries after the user approves the draft."""
+    """Persist an approved weekly plan whose entries identify breakfast, lunch, snack, dinner, or prep slots."""
     if not plan.get("weekStart") or not isinstance(plan.get("entries"), list):
         raise ValueError("plan.weekStart and plan.entries are required")
     try:
@@ -401,6 +405,20 @@ async def render_household_snapshot() -> dict[str, Any]:
 
 @mcp.tool(
     annotations=READ_ONLY,
+    meta={"ui": {"resourceUri": ONBOARDING_UI_URI}},
+    structured_output=True,
+)
+async def render_onboarding() -> dict[str, Any]:
+    """Render household setup for meals, prep, pantry, and shopping."""
+    try:
+        household = await _repo().get_household_context()
+        return {"kind": "onboarding", "household": household}
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
+@mcp.tool(
+    annotations=READ_ONLY,
     meta={"ui": {"resourceUri": MEAL_PLAN_UI_URI}},
     structured_output=True,
 )
@@ -460,6 +478,18 @@ def shopping_list_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def household_snapshot_resource() -> str:
+    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    ONBOARDING_UI_URI,
+    name="onboarding-ui",
+    title="Household food planning setup",
+    description="Set up the household food week across meals, prep, pantry, and shopping.",
+    mime_type="text/html;profile=mcp-app",
+    meta={"ui": {"prefersBorder": True}},
+)
+def onboarding_resource() -> str:
     return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
 
 

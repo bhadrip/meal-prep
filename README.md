@@ -1,8 +1,8 @@
 # Meal Prep
 
-This repository contains a persistent Meal Prep plugin for ChatGPT, its FastAPI/MCP service, the Supabase data model, and the original product-design brief.
+This repository contains a persistent household food-planning plugin for ChatGPT, its FastAPI/MCP service, the Supabase data model, and the original product-design brief. It coordinates breakfasts, lunches, dinners, weekend prep, pantry inventory, and store-prioritized shopping lists around the household’s actual week.
 
-- [`meal-prep-mvp/`](meal-prep-mvp/) — dashboard, MCP server, Supabase migrations, tests, and Vercel configuration
+- [`meal-prep-mvp/`](meal-prep-mvp/) — MCP server, MCP Apps, Supabase migrations, tests, and Vercel configuration
 - [`meal-prep-plugin/`](meal-prep-plugin/) — portable Agent Plugin manifest and workflow skill
 - [`Meal_Prep_AI_Native_Product_Design.docx`](Meal_Prep_AI_Native_Product_Design.docx) — product and system design source
 
@@ -55,9 +55,10 @@ Marketplace installations receive new plugin versions from GitHub. In Claude, us
 
 ## MCP UI
 
-The MCP server currently exposes two interactive presentation resources:
+The MCP server currently exposes three interactive presentation resources:
 
+- **Household onboarding** — an MCP-served setup form for family size, dietary rules, planning areas, preferred stores, cooking time, and lunch leftovers.
 - **Weekly meal plan** — a responsive seven-column calendar of saved meals with day/date, meal title, and servings.
 - **Shopping list** — store-priority groups with quantities and interactive purchased checkboxes that call `mark_item_purchased` and persist progress.
 
-Both have empty states, adapt to light/dark mode, and remain separate from the underlying structured-data tools.
+The meal-plan and shopping-list views include empty states. All three adapt to light/dark mode and remain separate from the underlying structured-data tools.

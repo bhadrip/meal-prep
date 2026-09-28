@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "meal-prep",
-  "version": "0.3.0+codex.20260928003315",
-  "description": "Plan household meals with durable preferences, recipes, pantry state, meal plans, and shopping lists.",
+  "version": "0.4.0",
+  "description": "Coordinate the household food week across meals, prep, pantry inventory, and shopping.",
   "author": {
     "name": "BhadriP",
     "url": "https://github.com/bhadrip"
@@ -14,8 +14,8 @@
     "com.openai": {
       "interface": {
         "displayName": "Meal Prep",
-        "shortDescription": "Plan meals from household context",
-        "longDescription": "Create practical meal plans, remember household preferences, track pantry items, and save shopping lists while keeping orders behind explicit confirmation.",
+        "shortDescription": "Coordinate the household food week",
+        "longDescription": "Plan breakfasts, lunches, dinners, and prep around the household schedule; use pantry inventory, remember approved preferences, and build store-prioritized shopping lists while keeping orders behind explicit confirmation.",
         "developerName": "BhadriP",
         "category": "Lifestyle",
         "capabilities": ["Interactive"],
@@ -23,9 +23,9 @@
         "composerIcon": "./assets/meal-prep-icon.svg",
         "logo": "./assets/meal-prep-icon.svg",
         "defaultPrompt": [
-          "Plan next week's dinners from my household preferences and pantry.",
-          "Turn this meal plan into a shopping list grouped by preferred store.",
-          "Show my current meal plan and suggest one low-effort swap."
+          "Plan our household food week, including breakfasts, lunches, dinners, and weekend prep.",
+          "Use what is already in my pantry and build a shopping list grouped by preferred store.",
+          "Show what needs to be prepared this weekend to make the coming week easier."
         ]
       }
     }
