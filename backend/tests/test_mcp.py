@@ -78,9 +78,9 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     render_tool = next(tool for tool in tools if tool["name"] == "render_meal_plan")
     assert render_tool["_meta"]["ui"]["resourceUri"].startswith("ui://meal-prep/")
     household_render_tool = next(tool for tool in tools if tool["name"] == "render_household_snapshot")
-    assert household_render_tool["_meta"]["ui"]["resourceUri"].endswith("household-snapshot-v1.html")
+    assert household_render_tool["_meta"]["ui"]["resourceUri"].endswith("household-snapshot-v2.html")
     onboarding_tool = next(tool for tool in tools if tool["name"] == "render_onboarding")
-    assert onboarding_tool["_meta"]["ui"]["resourceUri"] == "ui://meal-prep/onboarding-v1.html"
+    assert onboarding_tool["_meta"]["ui"]["resourceUri"] == "ui://meal-prep/onboarding-v2.html"
     preferences_tool = next(tool for tool in tools if tool["name"] == "update_household_preferences")
     assert "complete_onboarding" in preferences_tool["inputSchema"]["properties"]
 
@@ -193,7 +193,7 @@ def test_onboarding_is_served_as_an_mcp_app(client: TestClient):
     assert "planningPreferences" in rendered["household"]
 
     resources = rpc(client, "resources/list", {}, request_id=16)["resources"]
-    onboarding = next(resource for resource in resources if resource["uri"] == "ui://meal-prep/onboarding-v1.html")
+    onboarding = next(resource for resource in resources if resource["uri"] == "ui://meal-prep/onboarding-v2.html")
     assert onboarding["mimeType"] == "text/html;profile=mcp-app"
 
     contents = rpc(
@@ -211,7 +211,7 @@ def test_mcp_app_completes_the_standard_ui_handshake(client: TestClient):
     contents = rpc(
         client,
         "resources/read",
-        {"uri": "ui://meal-prep/household-snapshot-v1.html"},
+        {"uri": "ui://meal-prep/household-snapshot-v2.html"},
         request_id=18,
     )["contents"]
     html = contents[0]["text"]

@@ -16,10 +16,10 @@ from ..container import services_for_request
 
 settings = get_settings()
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
-MEAL_PLAN_UI_URI = "ui://meal-prep/meal-plan-v1.html"
-SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v1.html"
-HOUSEHOLD_UI_URI = "ui://meal-prep/household-snapshot-v1.html"
-ONBOARDING_UI_URI = "ui://meal-prep/onboarding-v1.html"
+MEAL_PLAN_UI_URI = "ui://meal-prep/meal-plan-v2.html"
+SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v2.html"
+HOUSEHOLD_UI_URI = "ui://meal-prep/household-snapshot-v2.html"
+ONBOARDING_UI_URI = "ui://meal-prep/onboarding-v2.html"
 
 auth_settings = None
 token_verifier = None
