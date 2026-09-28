@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Meal Prep</title>
+  <desc id="desc">An open terracotta cooking pot with three curls of steam.</desc>
+  <g fill="none" stroke="#2C292B" stroke-linecap="round" stroke-linejoin="round" stroke-width="18">
+    <path fill="#F2632E" d="M116 244c-38-30-82-6-77 29 4 29 38 42 76 46l19-45c-17-1-38-5-45-16-5-8 6-17 18-10l17 10"/>
+    <path fill="#F2632E" d="M396 244c38-30 82-6 77 29-4 29-38 42-76 46l-19-45c17-1 38-5 45-16 5-8-6-17-18-10l-17 10"/>
+    <path fill="#F2632E" d="M103 236h306l-22 165c-4 34-33 59-67 59H192c-34 0-63-25-67-59z"/>
+    <ellipse cx="256" cy="236" rx="153" ry="45" fill="#F2632E"/>
+    <ellipse cx="256" cy="236" rx="126" ry="25" fill="#2C292B" stroke="#F2632E" stroke-width="14"/>
+  </g>
+  <path d="M159 292c-13 20-20 46-21 73" fill="none" stroke="#FFF0D4" stroke-linecap="round" stroke-width="18"/>
+  <g fill="none" stroke="#FFF0D4" stroke-linecap="round" stroke-width="22">
+    <path d="M176 176c-27-29 24-44-3-82"/>
+    <path d="M256 174c-36-40 34-60-3-112"/>
+    <path d="M336 176c-27-29 24-44-3-82"/>
+  </g>
+</svg>
