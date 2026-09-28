@@ -75,12 +75,17 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "save_household_memory",
         "review_household_memory",
     }.issubset(names)
-    render_tool = next(tool for tool in tools if tool["name"] == "render_meal_plan")
-    assert render_tool["_meta"]["ui"]["resourceUri"].startswith("ui://meal-prep/")
-    household_render_tool = next(tool for tool in tools if tool["name"] == "render_household_snapshot")
-    assert household_render_tool["_meta"]["ui"]["resourceUri"].endswith("household-snapshot-v2.html")
-    onboarding_tool = next(tool for tool in tools if tool["name"] == "render_onboarding")
-    assert onboarding_tool["_meta"]["ui"]["resourceUri"] == "ui://meal-prep/onboarding-v2.html"
+    render_uris = {
+        tool["name"]: tool["_meta"]["ui"]["resourceUri"]
+        for tool in tools
+        if tool["name"].startswith("render_")
+    }
+    assert render_uris == {
+        "render_household_snapshot": "ui://meal-prep/household-snapshot-v2.html",
+        "render_onboarding": "ui://meal-prep/onboarding-v2.html",
+        "render_meal_plan": "ui://meal-prep/meal-plan-v2.html",
+        "render_shopping_list": "ui://meal-prep/shopping-list-v2.html",
+    }
     preferences_tool = next(tool for tool in tools if tool["name"] == "update_household_preferences")
     assert "complete_onboarding" in preferences_tool["inputSchema"]["properties"]
 
