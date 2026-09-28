@@ -1,64 +1,51 @@
 # Meal Prep
 
-This repository contains a persistent household food-planning plugin for ChatGPT, its FastAPI/MCP service, the Supabase data model, and the original product-design brief. It coordinates breakfasts, lunches, dinners, weekend prep, pantry inventory, and store-prioritized shopping lists around the household’s actual week.
+Meal Prep is a household food-planning plugin and MCP app. It coordinates breakfasts, lunches, dinners, snacks, weekend prep, pantry inventory, and store-prioritized shopping around a family’s actual week.
 
-- [`meal-prep-mvp/`](meal-prep-mvp/) — MCP server, MCP Apps, Supabase migrations, tests, and Vercel configuration
-- [`meal-prep-plugin/`](meal-prep-plugin/) — portable Agent Plugin manifest and workflow skill
-- [`Meal_Prep_AI_Native_Product_Design.docx`](Meal_Prep_AI_Native_Product_Design.docx) — product and system design source
+The plugin supplies the planning workflow and connector metadata. The hosted MCP service stores household data in Supabase and serves the interactive onboarding, household snapshot, meal-plan, and shopping-list interfaces directly in chat.
 
-See [`meal-prep-mvp/README.md`](meal-prep-mvp/README.md) for local development and deployment instructions.
+## Access
 
-## Add to ChatGPT
+The hosted service uses a private Supabase project. Before signing in, contact [BhadriP](https://github.com/bhadrip) and include the email address that should be added to Supabase. Installing the plugin does not grant database access.
 
-You do not need Codex or a command-line installation. In ChatGPT:
+## Install in Codex
 
-1. Open **Settings → Security and login** and turn on **Developer mode**.
-2. Open **ChatGPT Plugins** and select the **+** button.
-3. Name the connection **Meal Prep** and paste this MCP URL:
-
-   ```text
-   https://meal-prep-swart.vercel.app/mcp
-   ```
-
-4. Create the connection, review its discovered tools, and complete the BhadriP/Supabase login when prompted.
-5. Start a new ChatGPT conversation and select **Meal Prep** from the tools or More menu.
-
-The GitHub repository contains the installable package and source, but ChatGPT connects to the live `/mcp` endpoint above.
-
-## Optional GitHub marketplace installation
-
-For ChatGPT desktop development or other compatible local clients, the repository can also be added as a marketplace source:
+Add the GitHub marketplace and install Meal Prep:
 
 ```bash
 codex plugin marketplace add bhadrip/meal-prep --ref main
+codex plugin add meal-prep@badri-personal-plugins
 ```
 
-Restart the ChatGPT desktop app, open the Plugins Directory, choose **BhadriP Plugins**, and install **Meal Prep**.
+Start a new Codex chat after installation, open the Meal Prep connector, and sign in with the approved Supabase account.
 
-## Add to Claude
+To fetch and install a newer version later:
 
-Claude can install the full plugin—skill plus remote MCP connector—directly from this GitHub repository:
-
-1. In Claude, open **Customize → Plugins**.
-2. Select **Add → Add marketplace**.
-3. Enter `bhadrip/meal-prep` or `https://github.com/bhadrip/meal-prep`.
-4. Open the new **bhadrip-plugins** marketplace and add **Meal Prep**.
-5. Open the plugin's **Connectors** tab and connect the Meal Prep service through OAuth.
-
-For connector-only use, open **Customize → Connectors → Add custom connector** and enter:
-
-```text
-https://meal-prep-swart.vercel.app/mcp
+```bash
+codex plugin marketplace upgrade badri-personal-plugins
+codex plugin add meal-prep@badri-personal-plugins
 ```
 
-Marketplace installations receive new plugin versions from GitHub. In Claude, use **Check for updates** or enable **Sync automatically** for this GitHub marketplace.
+`badri-personal-plugins` resolves through [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json). A Git marketplace upgrade fetches the latest `main`; a marketplace configured from a local checkout reads that checkout instead, so update it with `git pull origin main` before reinstalling.
 
-## MCP UI
+## Connect from ChatGPT
 
-The MCP server currently exposes three interactive presentation resources:
+1. Enable **Developer mode** in **Settings → Security and login**.
+2. In **ChatGPT Plugins**, select **+** and create a connection named **Meal Prep**.
+3. Use `https://meal-prep-swart.vercel.app/mcp` as the MCP URL.
+4. Review the discovered tools and sign in with the approved Supabase account.
+5. Start a new conversation and select **Meal Prep** from the tools menu.
 
-- **Household onboarding** — an MCP-served setup form for family size, dietary rules, planning areas, preferred stores, cooking time, and lunch leftovers.
-- **Weekly meal plan** — a responsive seven-column calendar of saved meals with day/date, meal title, and servings.
-- **Shopping list** — store-priority groups with quantities and interactive purchased checkboxes that call `mark_item_purchased` and persist progress.
+ChatGPT connects to the deployed MCP service; installing or updating the repository package does not deploy server changes. Server and MCP UI changes must also be deployed to Vercel.
 
-The meal-plan and shopping-list views include empty states. All three adapt to light/dark mode and remain separate from the underlying structured-data tools.
+## Install in Claude
+
+Open **Customize → Plugins → Add marketplace**, enter `bhadrip/meal-prep`, install **Meal Prep**, and connect it from the plugin’s **Connectors** tab. Use **Check for updates** or enable automatic marketplace sync for later releases.
+
+## Repository
+
+- [`meal-prep-mvp/`](meal-prep-mvp/) — FastAPI/MCP service, MCP Apps, Supabase migrations, tests, and Vercel configuration
+- [`meal-prep-plugin/`](meal-prep-plugin/) — portable plugin manifest, MCP connection, assets, and planning skill
+- [`Meal_Prep_AI_Native_Product_Design.docx`](Meal_Prep_AI_Native_Product_Design.docx) — product and system-design source
+
+See [`meal-prep-mvp/README.md`](meal-prep-mvp/README.md) for local service development, configuration, testing, and deployment.
