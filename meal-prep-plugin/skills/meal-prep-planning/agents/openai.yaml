@@ -1,6 +1,6 @@
 interface:
   display_name: "Meal Prep Planning"
   short_description: "Plan meals from your household and pantry"
-  icon_small: "./assets/meal-prep-icon.svg"
-  icon_large: "./assets/meal-prep-icon.svg"
+  icon_small: "./assets/meal-prep-icon-96.png"
+  icon_large: "./assets/meal-prep-icon-96.png"
   brand_color: "#F2632E"
