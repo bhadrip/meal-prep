@@ -36,11 +36,14 @@ if settings.auth_required and settings.supabase_configured:
 mcp = FastMCP(
     "meal-prep",
     instructions=(
-        "Load get_household_context before planning. If onboardingComplete is false, ask the user "
+        "Call get_planning_context before drafting or revising a weekly meal plan. It returns household "
+        "preferences, the requested or remembered weekly schedule, the relevant retrospective, and active "
+        "household memories. If onboardingComplete is false, ask the user "
         "for household size, dietary restrictions, store priority, weeknight cooking limit, and "
         "whether dinner should provide lunch leftovers. Do not describe empty or null onboarding "
         "fields as saved preferences. Respect hard dietary restrictions. "
-        "Load the weekly schedule and any prior retrospective before drafting a new plan. "
+        "Use confirmed memories as preferences; treat suggested memories and retrospectives only as evidence. "
+        "A null schedule or retrospective means no record exists, not permission to invent one. "
         "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
         "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
         "a compact interactive view instead of a long text inventory. "
@@ -253,6 +256,26 @@ async def get_weekly_schedule(week_start: str | None = None) -> dict[str, Any]:
         raise _error(exc) from exc
 
 
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_planning_context(week_start: str | None = None) -> dict[str, Any]:
+    """Load the complete durable context needed before drafting or revising a weekly meal plan."""
+    repo = _repo()
+    try:
+        household = await repo.get_household_context()
+        schedule = await repo.get_weekly_schedule(week_start)
+        retro = await repo.get_latest_retro(before_week_start=week_start)
+        memories = await repo.get_household_memory()
+        return {
+            "household": household,
+            "schedule": schedule,
+            "retro": retro,
+            "memories": memories,
+            "requestedWeekStart": week_start,
+        }
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_weekly_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
     """Save an explicitly confirmed seven-day planning rhythm for one week."""
@@ -273,6 +296,15 @@ async def get_latest_retro() -> dict[str, Any]:
         raise _error(exc) from exc
 
 
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_weekly_retro(week_start: str | None = None) -> dict[str, Any]:
+    """Return a retrospective for one week, or the latest retrospective when no week is supplied."""
+    try:
+        return {"retro": await _repo().get_weekly_retro(week_start)}
+    except RepositoryError as exc:
+        raise _error(exc) from exc
+
+
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_weekly_retro(retro: dict[str, Any]) -> dict[str, Any]:
     """Save a weekly reflection. Do not promote its observations to durable preferences automatically."""
@@ -285,10 +317,19 @@ async def save_weekly_retro(retro: dict[str, Any]) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
-async def get_household_memory(include_inactive: bool = False) -> dict[str, Any]:
+async def get_household_memory(
+    include_inactive: bool = False,
+    status: str | None = None,
+    scope: str | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
     """List visible household memories with source, review status, scope, and evidence count."""
+    if status not in {None, "suggested", "confirmed", "forgotten"}:
+        raise ValueError("status must be suggested, confirmed, or forgotten")
+    if scope not in {None, "persistent", "this_week"}:
+        raise ValueError("scope must be persistent or this_week")
     try:
-        items = await _repo().get_household_memory(include_inactive)
+        items = await _repo().get_household_memory(include_inactive, status, scope, limit)
         return {"items": items, "count": len(items)}
     except RepositoryError as exc:
         raise _error(exc) from exc
@@ -296,7 +337,7 @@ async def get_household_memory(include_inactive: bool = False) -> dict[str, Any]
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_household_memory(memory: dict[str, Any]) -> dict[str, Any]:
-    """Save an explicit user memory or a reviewable suggestion with source provenance."""
+    """Save a reviewable suggestion by default; use confirmed only for an explicit user instruction."""
     if not str(memory.get("content", "")).strip():
         raise ValueError("memory.content is required")
     try:

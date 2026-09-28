@@ -15,6 +15,33 @@ class RepositoryError(RuntimeError):
     pass
 
 
+PLANNING_TABLES = {
+    "weekly_schedules": "weekly schedules",
+    "weekly_retros": "weekly retrospectives",
+    "household_memories": "household memory",
+}
+
+
+def _repository_error(path: str, exc: httpx.HTTPError | ValueError) -> RepositoryError:
+    response = getattr(exc, "response", None)
+    detail = getattr(response, "text", "")
+    if response is not None:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            detail = str(payload.get("message") or payload.get("details") or detail)
+            code = payload.get("code")
+            table = path.split("?", 1)[0].strip("/")
+            if code == "PGRST205" and table in PLANNING_TABLES:
+                return RepositoryError(
+                    f"{PLANNING_TABLES[table].capitalize()} storage is not installed. "
+                    "Apply the checked-in Supabase migrations before using this feature."
+                )
+    return RepositoryError(detail or str(exc))
+
+
 class SupabaseRepository:
     def __init__(self, settings: Settings, access_token: str):
         self.settings = settings
@@ -55,8 +82,7 @@ class SupabaseRepository:
                 return None
             return response.json()
         except (httpx.HTTPError, ValueError) as exc:
-            detail = getattr(getattr(exc, "response", None), "text", "")
-            raise RepositoryError(detail or str(exc)) from exc
+            raise _repository_error(path, exc) from exc
 
     async def rpc(self, name: str, payload: dict[str, Any] | None = None) -> Any:
         return await self.request("POST", f"rpc/{name}", json=payload or {})
@@ -239,11 +265,34 @@ class SupabaseRepository:
         )
         return rows[0]
 
-    async def get_latest_retro(self) -> dict[str, Any] | None:
+    async def get_latest_retro(self, before_week_start: str | None = None) -> dict[str, Any] | None:
         household_id = await self.household_id()
+        params = {
+            "select": "*",
+            "household_id": f"eq.{household_id}",
+            "order": "week_start.desc",
+            "limit": "1",
+        }
+        if before_week_start:
+            params["week_start"] = f"lt.{before_week_start}"
+        rows = await self.request("GET", "weekly_retros", params=params)
+        return rows[0] if rows else None
+
+    async def get_weekly_retro(self, week_start: str | None = None) -> dict[str, Any] | None:
+        if not week_start:
+            return await self.get_latest_retro()
+        household_id = await self.household_id()
+        params = {
+            "select": "*",
+            "household_id": f"eq.{household_id}",
+            "order": "week_start.desc",
+            "limit": "1",
+        }
+        params["week_start"] = f"eq.{week_start}"
         rows = await self.request(
-            "GET", "weekly_retros",
-            params={"select": "*", "household_id": f"eq.{household_id}", "order": "week_start.desc", "limit": "1"},
+            "GET",
+            "weekly_retros",
+            params=params,
         )
         return rows[0] if rows else None
 
@@ -262,15 +311,26 @@ class SupabaseRepository:
         )
         return rows[0]
 
-    async def get_household_memory(self, include_inactive: bool = False) -> list[dict[str, Any]]:
+    async def get_household_memory(
+        self,
+        include_inactive: bool = False,
+        status: str | None = None,
+        scope: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
         household_id = await self.household_id()
         params = {
             "select": "*",
             "household_id": f"eq.{household_id}",
             "order": "status.desc,updated_at.desc",
+            "limit": str(min(max(limit, 1), 100)),
         }
         if not include_inactive:
             params["active"] = "eq.true"
+        if status:
+            params["status"] = f"eq.{status}"
+        if scope:
+            params["scope"] = f"eq.{scope}"
         return await self.request("GET", "household_memories", params=params) or []
 
     async def save_household_memory(self, memory: dict[str, Any]) -> dict[str, Any]:
@@ -282,7 +342,7 @@ class SupabaseRepository:
             "content": memory["content"],
             "source_type": memory.get("sourceType", "user"),
             "source_detail": memory.get("sourceDetail", "You told us"),
-            "status": memory.get("status", "confirmed"),
+            "status": memory.get("status", "suggested"),
             "scope": memory.get("scope", "persistent"),
             "evidence_count": memory.get("evidenceCount", 1),
             "active": memory.get("active", True),
@@ -468,8 +528,19 @@ class DemoRepository:
         type(self)._weekly_schedule = value
         return deepcopy(value)
 
-    async def get_latest_retro(self) -> dict[str, Any] | None:
-        return deepcopy(type(self)._latest_retro)
+    async def get_latest_retro(self, before_week_start: str | None = None) -> dict[str, Any] | None:
+        value = type(self)._latest_retro
+        if before_week_start and value and value.get("week_start", before_week_start) >= before_week_start:
+            return None
+        return deepcopy(value)
+
+    async def get_weekly_retro(self, week_start: str | None = None) -> dict[str, Any] | None:
+        if not week_start:
+            return await self.get_latest_retro()
+        value = type(self)._latest_retro
+        if week_start and (not value or value.get("week_start") != week_start):
+            return None
+        return deepcopy(value)
 
     async def save_weekly_retro(self, retro: dict[str, Any]) -> dict[str, Any]:
         value = {
@@ -483,15 +554,27 @@ class DemoRepository:
         type(self)._latest_retro = value
         return deepcopy(value)
 
-    async def get_household_memory(self, include_inactive: bool = False) -> list[dict[str, Any]]:
+    async def get_household_memory(
+        self,
+        include_inactive: bool = False,
+        status: str | None = None,
+        scope: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
         items = type(self)._memories
-        return deepcopy(items if include_inactive else [item for item in items if item.get("active", True)])
+        if not include_inactive:
+            items = [item for item in items if item.get("active", True)]
+        if status:
+            items = [item for item in items if item.get("status") == status]
+        if scope:
+            items = [item for item in items if item.get("scope") == scope]
+        return deepcopy(items[: min(max(limit, 1), 100)])
 
     async def save_household_memory(self, memory: dict[str, Any]) -> dict[str, Any]:
         value = {
             "id": memory.get("id") or str(uuid4()), "category": memory.get("category", "planning"),
             "content": memory["content"], "source_type": memory.get("sourceType", "user"),
-            "source_detail": memory.get("sourceDetail", "You told us"), "status": memory.get("status", "confirmed"),
+            "source_detail": memory.get("sourceDetail", "You told us"), "status": memory.get("status", "suggested"),
             "scope": memory.get("scope", "persistent"), "evidence_count": memory.get("evidenceCount", 1),
             "active": memory.get("active", True),
         }
