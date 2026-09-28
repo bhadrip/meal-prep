@@ -35,8 +35,11 @@ food, update household food preferences, or create a shopping list.
    and orders belong to the commerce plugin, not Meal Prep.
 7. Call `save_shopping_list` only for the resulting durable list. Never state
    or imply that saving a list placed an order.
-8. Use `render_meal_plan` or `render_shopping_list` only after the corresponding
-   data tool has returned the final data. Data tools must remain usable without UI.
+8. Use `render_household_snapshot` when the user asks what Meal Prep knows or
+   wants to inspect household rules, pantry, schedule, or memory without a wall
+   of prose. Use `render_meal_plan` or `render_shopping_list` only after the
+   corresponding data tool has returned the final data. Data tools must remain
+   usable without UI.
 
 ## Changes and confirmation
 

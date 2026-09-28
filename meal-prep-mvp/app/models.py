@@ -37,7 +37,9 @@ class ComponentSpec(BaseModel):
         "onboarding_form",
         "schedule_check",
         "retro_form",
+        "memory_overview",
         "memory_list",
+        "collection_overview",
     ]
     data: dict[str, Any]
     actions: list[ActionSpec] = Field(default_factory=list)

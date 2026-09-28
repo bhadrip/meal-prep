@@ -108,6 +108,46 @@ def test_household_memory_is_visible_confirmable_correctable_and_forgettable():
     assert memory["active"] is False
 
 
+def test_household_memory_summarizes_saved_profile_and_data_coverage():
+    response = client.post("/api/interactions", json={"action": "show_memory"})
+    assert response.status_code == 200
+    body = response.json()
+    overview = next(item for item in body["components"] if item["type"] == "memory_overview")
+
+    assert overview["data"]["household"] == {
+        "name": "My household",
+        "id": "4bdfec03-3217-41c2-a4cb-2ab014923287",
+        "role": "Owner",
+        "size": 4,
+        "members": ["Two adults", "Vasu · 8 years", "Daughter · 3½ years"],
+    }
+    assert overview["data"]["foodRules"]["restrictions"] == [
+        "Vegetarian", "No meat", "No eggs", "No fish sauce", "No oyster sauce"
+    ]
+    assert overview["data"]["stores"] == ["Costco", "Safeway"]
+    assert overview["data"]["people"][0]["likes"] == ["Puri", "Ramen", "Noodles", "Maggi"]
+    assert {item["status"] for item in overview["data"]["collections"]} == {"empty", "unavailable"}
+
+
+@pytest.mark.parametrize(
+    ("action", "view_id", "kind", "metric"),
+    [
+        ("show_pantry", "pantry-collection", "pantry", "0 items"),
+        ("show_recipes", "recipes-collection", "recipes", "0 recipes"),
+        ("show_shopping", "shopping-collection", "shopping", "0 lists"),
+    ],
+)
+def test_empty_data_collections_have_purpose_built_views(action, view_id, kind, metric):
+    response = client.post("/api/interactions", json={"action": action})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["view_id"] == view_id
+    overview = next(item for item in body["components"] if item["type"] == "collection_overview")
+    assert overview["data"]["kind"] == kind
+    assert overview["data"]["metric"] == metric
+    assert len(overview["data"]["benefits"]) == 3
+
+
 def test_dashboard_is_a_valid_view_spec():
     complete_onboarding()
     response = client.get("/api/dashboard")

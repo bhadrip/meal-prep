@@ -10,6 +10,7 @@ from .models import InteractionEvent, ViewSpec
 from .mcp_server import mcp, mcp_app
 from .orchestrator import (
     confirm_swap_view,
+    collection_view,
     dashboard_view,
     easier_choices_view,
     onboarding_view,
@@ -161,6 +162,9 @@ async def interact(event: InteractionEvent) -> ViewSpec:
         return decided(schedule_check_view(STATE), event, "skip")
     if action == "show_memory":
         return decided(memory_view(STATE), event, "review")
+    if action in {"show_pantry", "show_recipes", "show_shopping"}:
+        collection = action.removeprefix("show_")
+        return decided(collection_view(STATE, collection), event, "review")
     if action in {"confirm_memory", "forget_memory", "update_memory"}:
         if not event.target_id:
             raise HTTPException(422, "target_id is required")
@@ -244,7 +248,7 @@ async def interact(event: InteractionEvent) -> ViewSpec:
         else:
             view = plan_review_view(STATE) if STATE.schedule_confirmed else schedule_check_view(STATE)
         return decided(view, event, "review")
-    if action in {"start_cooking", "show_shopping"}:
+    if action == "start_cooking":
         return decided(
             dashboard_view(STATE, source="policy", model_label=provider.label if provider else None, toast="That focused workflow is outside this small MVP."),
             event,

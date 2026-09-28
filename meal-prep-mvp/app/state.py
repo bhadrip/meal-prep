@@ -47,7 +47,47 @@ SEED_MEALS = [
 @dataclass
 class HouseholdState:
     version: int = 7
-    household: str = "The Parkers"
+    household: str = "My household"
+    household_id: str = "4bdfec03-3217-41c2-a4cb-2ab014923287"
+    household_role: str = "Owner"
+    household_members: list[str] = field(
+        default_factory=lambda: ["Two adults", "Vasu · 8 years", "Daughter · 3½ years"]
+    )
+    dietary_allowances: list[str] = field(default_factory=lambda: ["Dairy", "Cheese"])
+    planning_priorities: list[dict] = field(
+        default_factory=lambda: [
+            {"title": "Meaningful protein", "detail": "Include a substantial vegetarian protein in every meal."},
+            {"title": "Carbohydrate", "detail": "Pair the meal with a satisfying grain, bread, noodle, or other carbohydrate."},
+            {"title": "Fiber-rich foods", "detail": "Build in vegetables, legumes, whole grains, fruit, nuts, or seeds."},
+            {"title": "Variety", "detail": "Rotate foods that contribute a range of vitamins and minerals."},
+        ]
+    )
+    planning_defaults: list[str] = field(
+        default_factory=lambda: [
+            "Taste matters",
+            "Quick, assembly-style weekdays",
+            "30 minute weeknight maximum",
+            "Plan dinner leftovers for lunch",
+            "Open to all vegetarian foods and protein sources",
+        ]
+    )
+    individual_preferences: list[dict] = field(
+        default_factory=lambda: [
+            {"name": "Vasu", "detail": "4 saved likes", "likes": ["Puri", "Ramen", "Noodles", "Maggi"]},
+        ]
+    )
+    preferred_stores: list[str] = field(default_factory=lambda: ["Costco", "Safeway"])
+    data_collections: list[dict] = field(
+        default_factory=lambda: [
+            {"name": "Pantry inventory", "status": "empty", "detail": "No items saved yet"},
+            {"name": "Saved recipes", "status": "empty", "detail": "No recipes saved yet"},
+            {"name": "Meal plans", "status": "empty", "detail": "No plans saved yet"},
+            {"name": "Shopping lists", "status": "empty", "detail": "No lists saved yet"},
+            {"name": "Weekly schedules", "status": "unavailable", "detail": "Database table not installed"},
+            {"name": "Retrospectives", "status": "unavailable", "detail": "Database table not installed"},
+            {"name": "Learned memories", "status": "unavailable", "detail": "Database table not installed"},
+        ]
+    )
     active_meal_id: str = "paneer-bowl"
     previous_meal_id: str | None = None
     shopping_done: int = 9
@@ -79,7 +119,9 @@ class HouseholdState:
     decision_records: list[dict] = field(default_factory=list)
     onboarding_complete: bool = False
     household_size: int = 4
-    dietary_restrictions: list[str] = field(default_factory=lambda: ["No shellfish"])
+    dietary_restrictions: list[str] = field(
+        default_factory=lambda: ["Vegetarian", "No meat", "No eggs", "No fish sauce", "No oyster sauce"]
+    )
     planned_dinners: int = 5
     week_shape: str = "normal"
     pantry_status: str = "mostly_current"
