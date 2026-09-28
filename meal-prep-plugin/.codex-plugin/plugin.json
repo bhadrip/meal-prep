@@ -1,6 +1,6 @@
 {
   "name": "meal-prep",
-  "version": "0.3.0+codex.20260928000242",
+  "version": "0.3.0+codex.20260928000705",
   "description": "Plan household meals with durable preferences, recipes, pantry state, meal plans, and shopping lists.",
   "author": {
     "name": "BhadriP",
@@ -16,7 +16,9 @@
     "longDescription": "Create practical meal plans, remember household preferences, track pantry items, and save shopping lists while keeping orders behind explicit confirmation.",
     "developerName": "BhadriP",
     "category": "Lifestyle",
-    "capabilities": ["Interactive"],
+    "capabilities": [
+      "Interactive"
+    ],
     "brandColor": "#F2632E",
     "composerIcon": "./assets/meal-prep-icon.svg",
     "logo": "./assets/meal-prep-icon.svg",
