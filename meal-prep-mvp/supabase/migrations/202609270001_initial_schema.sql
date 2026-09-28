@@ -21,7 +21,7 @@ create table public.household_members (
 
 create table public.household_preferences (
   household_id uuid primary key references public.households(id) on delete cascade,
-  household_size integer not null default 1 check (household_size between 1 and 30),
+  household_size integer check (household_size is null or household_size between 1 and 30),
   dietary_restrictions jsonb not null default '[]'::jsonb check (jsonb_typeof(dietary_restrictions) = 'array'),
   store_priority jsonb not null default '[]'::jsonb check (jsonb_typeof(store_priority) = 'array'),
   planning_preferences jsonb not null default '{}'::jsonb check (jsonb_typeof(planning_preferences) = 'object'),
@@ -202,13 +202,7 @@ begin
   if existing_id is not null then return existing_id; end if;
   insert into public.households(name, created_by) values (coalesce(nullif(trim(household_name), ''), 'My household'), auth.uid()) returning id into created_id;
   insert into public.household_members(household_id, user_id, role) values (created_id, auth.uid(), 'owner');
-  insert into public.household_preferences(household_id, household_size, store_priority, planning_preferences)
-  values (
-    created_id,
-    1,
-    '[{"store":"Costco","priority":1},{"store":"Safeway","priority":2}]'::jsonb,
-    '{"weeknightMaxMinutes":30,"leftoversForLunch":true}'::jsonb
-  );
+  insert into public.household_preferences(household_id) values (created_id);
   return created_id;
 end;
 $$;

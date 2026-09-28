@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -34,7 +35,10 @@ if settings.auth_required and settings.supabase_configured:
 mcp = FastMCP(
     "meal-prep",
     instructions=(
-        "Load get_household_context before planning. Respect hard dietary restrictions. "
+        "Load get_household_context before planning. If onboardingComplete is false, ask the user "
+        "for household size, dietary restrictions, store priority, weeknight cooking limit, and "
+        "whether dinner should provide lunch leftovers. Do not describe empty or null onboarding "
+        "fields as saved preferences. Respect hard dietary restrictions. "
         "Load the weekly schedule and any prior retrospective before drafting a new plan. "
         "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
         "Never place or imply an order; external commerce requires a separate confirmation flow."
@@ -84,8 +88,23 @@ async def update_household_preferences(
     dietary_restrictions: list[str] | None = None,
     store_priority: list[dict[str, Any]] | None = None,
     planning_preferences: dict[str, Any] | None = None,
+    complete_onboarding: bool = False,
 ) -> dict[str, Any]:
-    """Update explicit household preferences. Do not promote inferred behavior without confirmation."""
+    """Update explicit preferences; complete onboarding only after the user answers every setup question."""
+    if complete_onboarding:
+        missing = []
+        if household_size is None:
+            missing.append("household_size")
+        if dietary_restrictions is None:
+            missing.append("dietary_restrictions")
+        if store_priority is None:
+            missing.append("store_priority")
+        if planning_preferences is None or "weeknightMaxMinutes" not in planning_preferences:
+            missing.append("planning_preferences.weeknightMaxMinutes")
+        if planning_preferences is None or "leftoversForLunch" not in planning_preferences:
+            missing.append("planning_preferences.leftoversForLunch")
+        if missing:
+            raise ValueError(f"Cannot complete onboarding; missing: {', '.join(missing)}")
     patch = {
         key: value
         for key, value in {
@@ -96,6 +115,8 @@ async def update_household_preferences(
         }.items()
         if value is not None
     }
+    if complete_onboarding:
+        patch["onboardingCompletedAt"] = datetime.now(UTC).isoformat()
     try:
         return await _repo().update_household_preferences(patch)
     except RepositoryError as exc:

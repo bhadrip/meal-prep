@@ -322,6 +322,8 @@ class DemoRepository:
             "weeknightMaxMinutes": 30,
             "leftoversForLunch": True,
         },
+        "onboardingCompletedAt": "2026-01-01T00:00:00+00:00",
+        "onboardingComplete": True,
     }
     _recipes = [
         {

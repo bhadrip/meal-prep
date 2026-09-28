@@ -58,6 +58,8 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     }.issubset(names)
     render_tool = next(tool for tool in tools if tool["name"] == "render_meal_plan")
     assert render_tool["_meta"]["ui"]["resourceUri"].startswith("ui://meal-prep/")
+    preferences_tool = next(tool for tool in tools if tool["name"] == "update_household_preferences")
+    assert "complete_onboarding" in preferences_tool["inputSchema"]["properties"]
 
 
 def test_demo_weekly_schedule_can_be_saved_and_read(client: TestClient):
@@ -96,6 +98,7 @@ def test_demo_household_context_and_plan_render_are_structured(client: TestClien
     )["structuredContent"]
     assert context["storePriority"][0]["store"] == "Costco"
     assert "no shellfish" in context["dietaryRestrictions"]
+    assert context["onboardingComplete"] is True
 
     rendered = rpc(
         client,
@@ -104,3 +107,38 @@ def test_demo_household_context_and_plan_render_are_structured(client: TestClien
     )["structuredContent"]
     assert rendered["kind"] == "meal_plan"
     assert rendered["plan"]["entries"]
+
+
+def test_household_onboarding_can_be_completed_only_with_full_answers(client: TestClient):
+    incomplete = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "update_household_preferences",
+            "arguments": {"household_size": 2, "complete_onboarding": True},
+        },
+        request_id=8,
+    )
+    assert incomplete["isError"] is True
+    assert "dietary_restrictions" in incomplete["content"][0]["text"]
+
+    completed = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "update_household_preferences",
+            "arguments": {
+                "household_size": 2,
+                "dietary_restrictions": [],
+                "store_priority": [{"store": "Local market", "priority": 1}],
+                "planning_preferences": {
+                    "weeknightMaxMinutes": 25,
+                    "leftoversForLunch": False,
+                },
+                "complete_onboarding": True,
+            },
+        },
+        request_id=9,
+    )["structuredContent"]
+    assert completed["householdSize"] == 2
+    assert completed["onboardingCompletedAt"] != "2026-01-01T00:00:00+00:00"

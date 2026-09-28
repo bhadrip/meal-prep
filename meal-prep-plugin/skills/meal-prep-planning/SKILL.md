@@ -10,7 +10,13 @@ food, update household food preferences, or create a shopping list.
 
 ## Required sequence
 
-1. Call `get_household_context` before planning. Treat dietary restrictions as
+1. Call `get_household_context` before planning. If `onboardingComplete` is
+   false, stop planning and ask the user for household size, dietary
+   restrictions (including an explicit "none"), preferred stores in order,
+   maximum weeknight cooking time, and whether dinner should make lunch
+   leftovers. Do not present null or empty onboarding fields as an existing
+   starter profile. Save the answers together with `update_household_preferences`
+   using `complete_onboarding: true`. Treat recorded dietary restrictions as
    hard constraints and planning preferences as defaults the user may override.
    Also load `get_weekly_schedule`, `get_latest_retro`, and
    `get_household_memory` before drafting when those tools are available.
