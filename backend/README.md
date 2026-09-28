@@ -1,6 +1,17 @@
-# Meal Prep plugin
+# Meal Prep backend
 
-Meal Prep is a persistent meal-planning plugin for ChatGPT. It keeps reasoning in ChatGPT while the service owns authenticated household data, validation, Row-Level Security, and structured presentation.
+The backend owns Meal Prep use cases, authenticated household data, validation, Row-Level Security, MCP tools, and MCP Apps. MCP and HTTP are transport adapters over the same application services; a future website can add HTTP endpoints without duplicating product logic.
+
+```text
+app/
+├── application/       Use cases and product rules
+├── infrastructure/    Supabase repository adapter
+├── transports/        MCP BFF and HTTP routes
+├── static/            OAuth pages and MCP Apps bundle
+├── auth.py            Supabase token verification
+├── container.py       Per-request composition
+└── main.py            ASGI application
+```
 
 ## What is included
 
@@ -12,7 +23,6 @@ Meal Prep is a persistent meal-planning plugin for ChatGPT. It keeps reasoning i
 - Supabase Auth bearer-token validation and OAuth 2.1 discovery through the MCP SDK
 - Supabase schema, transactional functions, and RLS policies
 - Vercel serverless entrypoint and deployment configuration
-- Packaged `meal-prep` Agent Plugin with workflow guidance
 
 The service never calls a model to make domain writes. ChatGPT creates the plan, the MCP tools validate and persist it, and Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
 
@@ -27,7 +37,7 @@ These resources are owned by the personal `bhadrip` accounts and are separate fr
 ## Run locally
 
 ```bash
-cd meal-prep-mvp
+cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
@@ -60,7 +70,7 @@ Choose Streamable HTTP in the Inspector and use `http://localhost:8000/mcp`.
    ```
 
    For the Supabase GitHub integration, set **Working directory** to
-   `meal-prep-mvp` because the `supabase/` directory is nested in this
+   `backend` because the `supabase/` directory is nested in this
    repository. Enable **Deploy to production** if merges to `main` should apply
    new migrations automatically.
 
@@ -99,7 +109,7 @@ columns aligned in `supabase migration list --linked`.
 
 ## Vercel setup
 
-Create the Vercel project from the repository and set its Root Directory to `meal-prep-mvp`. Configure:
+Create the Vercel project from the repository and set its Root Directory to `backend`. Configure:
 
 ```dotenv
 APP_BASE_URL=https://YOUR_PROJECT.vercel.app

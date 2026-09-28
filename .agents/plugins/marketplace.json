@@ -8,7 +8,7 @@
       "name": "meal-prep",
       "source": {
         "source": "local",
-        "path": "./meal-prep-plugin"
+        "path": "./plugin"
       },
       "policy": {
         "installation": "AVAILABLE",

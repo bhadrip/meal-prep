@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -10,13 +9,13 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
-from .auth import SupabaseTokenVerifier
-from .config import MCP_AUTH_SCOPES, get_settings
-from .db import RepositoryError, repository_for_request
+from ..auth import SupabaseTokenVerifier
+from ..config import MCP_AUTH_SCOPES, get_settings
+from ..container import services_for_request
 
 
 settings = get_settings()
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 MEAL_PLAN_UI_URI = "ui://meal-prep/meal-plan-v1.html"
 SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v1.html"
 HOUSEHOLD_UI_URI = "ui://meal-prep/household-snapshot-v1.html"
@@ -75,21 +74,10 @@ WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHin
 ARCHIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
 
 
-def _repo():
-    return repository_for_request()
-
-
-def _error(exc: RepositoryError) -> ValueError:
-    return ValueError(str(exc))
-
-
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_household_context() -> dict[str, Any]:
     """Load household size, restrictions, preferred stores, and planning preferences before planning."""
-    try:
-        return await _repo().get_household_context()
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().household.get_context()
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
@@ -101,141 +89,77 @@ async def update_household_preferences(
     complete_onboarding: bool = False,
 ) -> dict[str, Any]:
     """Update explicit preferences; complete onboarding only after the user answers every setup question."""
-    if complete_onboarding:
-        missing = []
-        if household_size is None:
-            missing.append("household_size")
-        if dietary_restrictions is None:
-            missing.append("dietary_restrictions")
-        if store_priority is None:
-            missing.append("store_priority")
-        if planning_preferences is None or "weeknightMaxMinutes" not in planning_preferences:
-            missing.append("planning_preferences.weeknightMaxMinutes")
-        if planning_preferences is None or "leftoversForLunch" not in planning_preferences:
-            missing.append("planning_preferences.leftoversForLunch")
-        if missing:
-            raise ValueError(f"Cannot complete onboarding; missing: {', '.join(missing)}")
-    patch = {
-        key: value
-        for key, value in {
-            "householdSize": household_size,
-            "dietaryRestrictions": dietary_restrictions,
-            "storePriority": store_priority,
-            "planningPreferences": planning_preferences,
-        }.items()
-        if value is not None
-    }
-    if complete_onboarding:
-        patch["onboardingCompletedAt"] = datetime.now(UTC).isoformat()
-    try:
-        return await _repo().update_household_preferences(patch)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().household.update_preferences(
+        household_size=household_size,
+        dietary_restrictions=dietary_restrictions,
+        store_priority=store_priority,
+        planning_preferences=planning_preferences,
+        complete_onboarding=complete_onboarding,
+    )
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def search_recipes(query: str = "", limit: int = 10) -> dict[str, Any]:
     """Search the household recipe library without changing it."""
-    try:
-        items = await _repo().search_recipes(query=query, limit=limit)
-        return {"items": items, "count": len(items)}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    items = await services_for_request().food.search_recipes(query=query, limit=limit)
+    return {"items": items, "count": len(items)}
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_recipe(recipe_id: str) -> dict[str, Any]:
     """Get one recipe by its UUID."""
-    try:
-        item = await _repo().get_recipe(recipe_id)
-        if not item:
-            raise ValueError("Recipe was not found")
-        return item
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().food.get_recipe(recipe_id)
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     """Create or update a normalized household recipe with provenance fields when available."""
-    if not str(recipe.get("title", "")).strip():
-        raise ValueError("recipe.title is required")
-    try:
-        return await _repo().save_recipe(recipe)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().food.save_recipe(recipe)
 
 
 @mcp.tool(annotations=ARCHIVE, structured_output=True)
 async def archive_recipe(recipe_id: str) -> dict[str, Any]:
     """Archive a recipe after the user has confirmed the removal."""
-    try:
-        return await _repo().archive_recipe(recipe_id)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().food.archive_recipe(recipe_id)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_pantry() -> dict[str, Any]:
     """Return pantry items with quantity confidence and freshness basis."""
-    try:
-        items = await _repo().get_pantry()
-        return {"items": items, "count": len(items)}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    items = await services_for_request().food.get_pantry()
+    return {"items": items, "count": len(items)}
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def update_pantry_item(item: dict[str, Any]) -> dict[str, Any]:
     """Create or update one pantry item. Never invent an exact expiry date."""
-    if not str(item.get("name", "")).strip():
-        raise ValueError("item.name is required")
-    try:
-        return await _repo().update_pantry_item(item)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().food.update_pantry_item(item)
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_meal_plan(plan: dict[str, Any]) -> dict[str, Any]:
     """Persist an approved weekly plan whose entries identify breakfast, lunch, snack, dinner, or prep slots."""
-    if not plan.get("weekStart") or not isinstance(plan.get("entries"), list):
-        raise ValueError("plan.weekStart and plan.entries are required")
-    try:
-        return await _repo().save_meal_plan(plan)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().planning.save_meal_plan(plan)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_meal_plan(week_start: str | None = None) -> dict[str, Any]:
     """Return the meal plan for a week, or the latest plan when no week is supplied."""
-    try:
-        plan = await _repo().get_meal_plan(week_start)
-        return {"plan": plan}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    plan = await services_for_request().planning.get_meal_plan(week_start)
+    return {"plan": plan}
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_shopping_list(shopping_list: dict[str, Any]) -> dict[str, Any]:
     """Persist a shopping list grouped by preferred store. This does not place an order."""
-    if not isinstance(shopping_list.get("items"), list):
-        raise ValueError("shopping_list.items is required")
-    try:
-        return await _repo().save_shopping_list(shopping_list)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().shopping.save(shopping_list)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_shopping_list(list_id: str | None = None) -> dict[str, Any]:
     """Return one shopping list or the latest active list."""
-    try:
-        value = await _repo().get_shopping_list(list_id)
-        return {"shoppingList": value}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    value = await services_for_request().shopping.get(list_id)
+    return {"shoppingList": value}
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
@@ -245,79 +169,43 @@ async def mark_item_purchased(
     purchased_quantity: float | None = None,
 ) -> dict[str, Any]:
     """Mark a shopping item purchased or unpurchased. This does not place an order."""
-    try:
-        return await _repo().mark_item_purchased(item_id, purchased, purchased_quantity)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().shopping.mark_purchased(item_id, purchased, purchased_quantity)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_weekly_schedule(week_start: str | None = None) -> dict[str, Any]:
     """Return the requested weekly rhythm, or the latest remembered schedule."""
-    try:
-        return {"schedule": await _repo().get_weekly_schedule(week_start)}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return {"schedule": await services_for_request().planning.get_schedule(week_start)}
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_planning_context(week_start: str | None = None) -> dict[str, Any]:
     """Load the complete durable context needed before drafting or revising a weekly meal plan."""
-    repo = _repo()
-    try:
-        household = await repo.get_household_context()
-        schedule = await repo.get_weekly_schedule(week_start)
-        retro = await repo.get_latest_retro(before_week_start=week_start)
-        memories = await repo.get_household_memory()
-        return {
-            "household": household,
-            "schedule": schedule,
-            "retro": retro,
-            "memories": memories,
-            "requestedWeekStart": week_start,
-        }
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().planning.get_context(week_start)
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_weekly_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
     """Save an explicitly confirmed seven-day planning rhythm for one week."""
-    if not schedule.get("weekStart") or len(schedule.get("days", [])) != 7:
-        raise ValueError("schedule.weekStart and seven schedule.days are required")
-    try:
-        return await _repo().save_weekly_schedule(schedule)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().planning.save_schedule(schedule)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_latest_retro() -> dict[str, Any]:
     """Return the most recent weekly reflection as planning evidence, if one exists."""
-    try:
-        return {"retro": await _repo().get_latest_retro()}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return {"retro": await services_for_request().planning.get_latest_retro()}
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_weekly_retro(week_start: str | None = None) -> dict[str, Any]:
     """Return a retrospective for one week, or the latest retrospective when no week is supplied."""
-    try:
-        return {"retro": await _repo().get_weekly_retro(week_start)}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return {"retro": await services_for_request().planning.get_retro(week_start)}
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_weekly_retro(retro: dict[str, Any]) -> dict[str, Any]:
     """Save a weekly reflection. Do not promote its observations to durable preferences automatically."""
-    if not retro.get("weekStart") or not isinstance(retro.get("outcomes", []), list):
-        raise ValueError("retro.weekStart and retro.outcomes are required")
-    try:
-        return await _repo().save_weekly_retro(retro)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().planning.save_retro(retro)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
@@ -328,46 +216,20 @@ async def get_household_memory(
     limit: int = 50,
 ) -> dict[str, Any]:
     """List visible household memories with source, review status, scope, and evidence count."""
-    if status not in {None, "suggested", "confirmed", "forgotten"}:
-        raise ValueError("status must be suggested, confirmed, or forgotten")
-    if scope not in {None, "persistent", "this_week"}:
-        raise ValueError("scope must be persistent or this_week")
-    try:
-        items = await _repo().get_household_memory(include_inactive, status, scope, limit)
-        return {"items": items, "count": len(items)}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    items = await services_for_request().memory.list(include_inactive, status, scope, limit)
+    return {"items": items, "count": len(items)}
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_household_memory(memory: dict[str, Any]) -> dict[str, Any]:
     """Save a reviewable suggestion by default; use confirmed only for an explicit user instruction."""
-    if not str(memory.get("content", "")).strip():
-        raise ValueError("memory.content is required")
-    try:
-        return await _repo().save_household_memory(memory)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    return await services_for_request().memory.save(memory)
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def review_household_memory(memory_id: str, action: str, content: str | None = None) -> dict[str, Any]:
     """Confirm, correct, or forget one visible memory after the user requests that action."""
-    if action not in {"confirm", "update", "forget"}:
-        raise ValueError("action must be confirm, update, or forget")
-    try:
-        return await _repo().review_household_memory(memory_id, action, content)
-    except RepositoryError as exc:
-        raise _error(exc) from exc
-
-
-async def _snapshot_section(loader) -> dict[str, Any]:
-    try:
-        value = await loader()
-    except RepositoryError:
-        return {"status": "unavailable", "value": None}
-    is_empty = value is None or value == [] or value == {}
-    return {"status": "empty" if is_empty else "ready", "value": value}
+    return await services_for_request().memory.review(memory_id, action, content)
 
 
 @mcp.tool(
@@ -377,30 +239,8 @@ async def _snapshot_section(loader) -> dict[str, Any]:
 )
 async def render_household_snapshot() -> dict[str, Any]:
     """Render a compact in-chat view of household rules, pantry, schedule, saved data, and memory."""
-    repo = _repo()
-    try:
-        household = await repo.get_household_context()
-    except RepositoryError as exc:
-        raise _error(exc) from exc
-
-    pantry = await _snapshot_section(repo.get_pantry)
-    recipes = await _snapshot_section(lambda: repo.search_recipes(query="", limit=25))
-    schedule = await _snapshot_section(repo.get_weekly_schedule)
-    memories = await _snapshot_section(repo.get_household_memory)
-    meal_plan = await _snapshot_section(repo.get_meal_plan)
-    shopping = await _snapshot_section(repo.get_shopping_list)
-    return {
-        "kind": "household_snapshot",
-        "household": household,
-        "sections": {
-            "pantry": pantry,
-            "recipes": recipes,
-            "schedule": schedule,
-            "memories": memories,
-            "mealPlan": meal_plan,
-            "shoppingList": shopping,
-        },
-    }
+    snapshot = await services_for_request().household.snapshot()
+    return {"kind": "household_snapshot", **snapshot}
 
 
 @mcp.tool(
@@ -410,11 +250,8 @@ async def render_household_snapshot() -> dict[str, Any]:
 )
 async def render_onboarding() -> dict[str, Any]:
     """Render household setup for meals, prep, pantry, and shopping."""
-    try:
-        household = await _repo().get_household_context()
-        return {"kind": "onboarding", "household": household}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    household = await services_for_request().household.get_context()
+    return {"kind": "onboarding", "household": household}
 
 
 @mcp.tool(
@@ -424,11 +261,8 @@ async def render_onboarding() -> dict[str, Any]:
 )
 async def render_meal_plan(week_start: str | None = None) -> dict[str, Any]:
     """Render the final meal plan. Call get_meal_plan first when reasoning over the plan."""
-    try:
-        plan = await _repo().get_meal_plan(week_start)
-        return {"kind": "meal_plan", "plan": plan}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    plan = await services_for_request().planning.get_meal_plan(week_start)
+    return {"kind": "meal_plan", "plan": plan}
 
 
 @mcp.tool(
@@ -438,11 +272,8 @@ async def render_meal_plan(week_start: str | None = None) -> dict[str, Any]:
 )
 async def render_shopping_list(list_id: str | None = None) -> dict[str, Any]:
     """Render the final grouped shopping checklist. Call get_shopping_list first when reasoning over it."""
-    try:
-        value = await _repo().get_shopping_list(list_id)
-        return {"kind": "shopping_list", "shoppingList": value}
-    except RepositoryError as exc:
-        raise _error(exc) from exc
+    value = await services_for_request().shopping.get(list_id)
+    return {"kind": "shopping_list", "shoppingList": value}
 
 
 @mcp.resource(

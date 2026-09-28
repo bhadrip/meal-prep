@@ -1,6 +1,6 @@
 import httpx
 
-from app.db import _repository_error
+from app.infrastructure.repositories import _repository_error
 
 
 def test_missing_planning_table_has_actionable_error():

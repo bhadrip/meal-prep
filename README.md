@@ -1,8 +1,13 @@
 # Meal Prep
 
-Meal Prep is a household food-planning plugin and MCP app. It coordinates breakfasts, lunches, dinners, snacks, weekend prep, pantry inventory, and store-prioritized shopping around a family’s actual week.
+Meal Prep is a household food-planning plugin backed by a hosted MCP service. It coordinates breakfasts, lunches, dinners, snacks, weekend prep, pantry inventory, and store-prioritized shopping around a family’s actual week.
 
-The plugin supplies the planning workflow and connector metadata. The hosted MCP service stores household data in Supabase and serves the interactive onboarding, household snapshot, meal-plan, and shopping-list interfaces directly in chat.
+The installable plugin supplies workflow guidance and the MCP connection. The backend provides application services, authentication, Supabase persistence, MCP tools, and interactive MCP Apps directly in chat. A standalone website is intentionally deferred and can later use the same application services through an HTTP API.
+
+```text
+Codex / ChatGPT → plugin → MCP BFF → application services → Supabase
+Future website  → HTTP API ────────────────┘
+```
 
 ## Access
 
@@ -26,7 +31,7 @@ codex plugin marketplace upgrade badri-personal-plugins
 codex plugin add meal-prep@badri-personal-plugins
 ```
 
-`badri-personal-plugins` resolves through [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json). A Git marketplace upgrade fetches the latest `main`; a marketplace configured from a local checkout reads that checkout instead, so update it with `git pull origin main` before reinstalling.
+`badri-personal-plugins` resolves through [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json), which points to [`plugin/`](plugin/). A Git marketplace upgrade fetches the latest `main`; a marketplace configured from a local checkout reads that checkout instead, so update it with `git pull origin main` before reinstalling.
 
 ## Connect from ChatGPT
 
@@ -44,8 +49,8 @@ Open **Customize → Plugins → Add marketplace**, enter `bhadrip/meal-prep`, i
 
 ## Repository
 
-- [`meal-prep-mvp/`](meal-prep-mvp/) — FastAPI/MCP service, MCP Apps, Supabase migrations, tests, and Vercel configuration
-- [`meal-prep-plugin/`](meal-prep-plugin/) — portable plugin manifest, MCP connection, assets, and planning skill
+- [`backend/`](backend/) — application services, MCP and HTTP transports, Supabase integration and migrations, tests, and Vercel configuration
+- [`plugin/`](plugin/) — portable plugin manifest, MCP connection, assets, and planning skill
 - [`Meal_Prep_AI_Native_Product_Design.docx`](Meal_Prep_AI_Native_Product_Design.docx) — product and system-design source
 
-See [`meal-prep-mvp/README.md`](meal-prep-mvp/README.md) for local service development, configuration, testing, and deployment.
+See [`backend/README.md`](backend/README.md) for local development, configuration, testing, and deployment.

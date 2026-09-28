@@ -41,7 +41,10 @@ async function setup() {
     if (next) redirectUrl.searchParams.set('next', next);
     const { error } = await client.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: redirectUrl.toString() },
+      options: {
+        emailRedirectTo: redirectUrl.toString(),
+        shouldCreateUser: false,
+      },
     });
     message.textContent = error ? error.message : 'Check your email for the sign-in link.';
   });

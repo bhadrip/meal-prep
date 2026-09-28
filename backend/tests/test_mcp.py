@@ -32,12 +32,15 @@ def test_http_surface_is_service_only(client: TestClient):
     root = client.get("/")
     assert root.status_code == 200
     assert root.json() == {
-        "name": "Meal Prep MCP Server",
+        "name": "Meal Prep Backend",
         "status": "ok",
         "mcp_endpoint": "/mcp",
     }
     assert client.get("/api/dashboard").status_code == 404
     assert client.post("/api/interactions", json={"action": "home"}).status_code == 404
+    login_script = client.get("/static/login.js")
+    assert login_script.status_code == 200
+    assert "shouldCreateUser: false" in login_script.text
 
 
 def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):

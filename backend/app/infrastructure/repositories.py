@@ -8,11 +8,8 @@ from uuid import UUID, uuid4
 import httpx
 from mcp.server.auth.middleware.auth_context import get_access_token
 
-from .config import Settings, get_settings
-
-
-class RepositoryError(RuntimeError):
-    pass
+from ..application.errors import RepositoryError
+from ..config import Settings, get_settings
 
 
 PLANNING_TABLES = {
