@@ -352,8 +352,6 @@ document.addEventListener('click', (event) => {
   fields.querySelectorAll('[data-choice-control].open').forEach((control) => closeChoice(control));
 });
 
-form.querySelectorAll('[data-dialog-close]').forEach((button) => button.addEventListener('click', () => dialog.close()));
-
 function openEditor(kind, item = null) {
   state.editor = { kind, item };
   errorBox.hidden = true;
@@ -575,6 +573,7 @@ content.addEventListener('submit', async (event) => {
 });
 
 form.addEventListener('submit', async (event) => {
+  if (event.submitter?.value === 'cancel') return;
   event.preventDefault();
   errorBox.hidden = true;
   const button = document.querySelector('#dialog-save');

@@ -16,7 +16,9 @@ def test_website_uses_plugin_logo_and_self_hosted_type():
     assert '/static/meal-prep-icon.svg' in html
     assert '/static/typography.css' in html
     assert 'id="sidebar-toggle"' in html
-    assert 'type="button" data-dialog-close>Cancel</button>' in html
+    assert '<symbol id="icon-pantry"' in html
+    assert html.count('formnovalidate') == 2
+    assert 'value="cancel" formnovalidate>Cancel</button>' in html
     assert client.get("/static/typography.css").status_code == 200
     assert 'background: #252a40' in client.get("/static/app.css").text
 

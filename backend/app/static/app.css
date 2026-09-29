@@ -18,6 +18,7 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--cream); }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
@@ -39,7 +40,8 @@ h1, h2, h3 { color: var(--ink); }
 .sidebar-collapsed .nav-item { justify-content: center; padding-inline: 0; }
 #primary-nav { display: grid; gap: 5px; }
 .nav-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 45px; padding: 0 13px; border: 0; border-radius: 8px; background: transparent; color: #c2c5d1; font-weight: 600; text-align: left; }
-.nav-icon { flex: 0 0 auto; display: grid; place-items: center; width: 23px; color: #979db1; font-size: 1.05rem; }
+.nav-icon { flex: 0 0 auto; display: grid; place-items: center; width: 23px; color: #979db1; }
+.nav-svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .nav-item:hover { background: #333950; color: #fff9f1; }
 .nav-item.active { background: #424963; color: #fff9f1; box-shadow: inset 3px 0 0 var(--copper); }
 .nav-item.active .nav-icon { color: #e6b197; }
@@ -214,7 +216,7 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
   .planning-areas { grid-template-columns: 1fr; }
   .mobile-nav { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 20; display: grid; grid-template-columns: repeat(5,1fr); padding: 6px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,252,247,.95); box-shadow: 0 12px 40px rgba(39,37,46,.14); backdrop-filter: blur(15px); }
   .mobile-nav button { display: grid; place-items: center; gap: 1px; min-height: 48px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: .57rem; font-weight: 700; }
-  .mobile-nav button span { font-size: 1rem; }
+  .mobile-nav .nav-svg { width: 19px; height: 19px; }
   .mobile-nav button.active { background: var(--primary); color: white; }
   .toast { right: 16px; bottom: 82px; left: 16px; }
 }
