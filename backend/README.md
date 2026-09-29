@@ -16,6 +16,7 @@ app/
 ## What is included
 
 - Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes, pantry, shopping, feedback, reviews, memory, and dashboard settings
+- Owner-managed household invitations and shared adult access from website Settings
 - Authenticated JSON API under `/api` for the website and future mobile clients
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
@@ -70,6 +71,8 @@ AUTH_REQUIRED=true
 
 Start the Python server with `uvicorn app.main:app --reload`. Open local Supabase Studio at `http://127.0.0.1:55323`, create a test user under **Authentication → Users**, then open `http://127.0.0.1:8000/` and request a magic link for that user. The link appears in the local [Mailpit inbox](http://127.0.0.1:55324). Follow it to sign in, complete the household setup, and verify edits in the website and MCP client. The login form deliberately does not create accounts; the test user must exist first. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
 
+To test invitations locally, use `./scripts/dev-local.sh` so the server also receives the local `SUPABASE_SECRET_KEY`. Sign in as the first user, open **Settings → Household members**, and invite a second email. Open the message in Mailpit, follow the link to `/invite`, and select **Join household**. The second account should see the first account's household from both the website and MCP. Use a new email for the account-creation path and a confirmed existing user for the sign-in path.
+
 If `supabase start` reports that Docker is unavailable, start the container runtime first. For a quick UI-only check without Supabase, leaving the Supabase values empty in `.env` still enables in-memory demo data; demo edits last only until the server restarts.
 
 ## Test and inspect
@@ -96,10 +99,10 @@ Choose Streamable HTTP in the Inspector and use `http://127.0.0.1:8000/mcp`.
    repository. Enable **Deploy to production** if merges to `main` should apply
    new migrations automatically.
 
-3. In Authentication, set the Site URL to the Vercel production URL and add `/login` as an allowed redirect.
+3. In Authentication, set the Site URL to the Vercel production URL and add `/login` and `/invite` as allowed redirects.
 4. In Authentication > OAuth Server, enable OAuth 2.1, set the authorization path to `/oauth/consent`, and enable dynamic client registration.
 5. Use an asymmetric JWT signing key (ES256 or RS256) so OAuth clients can validate tokens through JWKS.
-6. Copy the project URL and anon key to `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Vercel. Do not expose a service-role key.
+6. Copy the project URL and anon key to `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Vercel. Set `SUPABASE_SECRET_KEY` to a Supabase secret key in the **server environment only** for invitation email delivery. Never include it in browser code or a public response.
 7. Set `AUTH_REQUIRED=true` only after the consent screen and redirect URLs work.
 
 The MCP resource advertises only `openid`, `email`, and `offline_access`.
@@ -108,6 +111,8 @@ It does not request profile or phone access. Codex loopback callbacks such as
 used unchanged while the corresponding Codex configure command is still running.
 
 The first authenticated request creates an unconfigured household through `bootstrap_my_household`. It does not assume a household size, stores, cooking limit, or leftovers preference. The plugin opens the MCP-served onboarding form and marks onboarding complete only after the user submits it. Every subsequent database operation uses the caller's access token, so RLS remains the authority for ownership.
+
+An account with a pending household invitation is sent to `/invite` before household bootstrap. Acceptance verifies the signed-in email and joins the existing household. If the account already has an untouched, empty bootstrap household, acceptance removes that empty household first. A configured household or one with food data blocks acceptance until a separate switching or migration flow exists. Invitation and member changes run through checked database functions; the secret key is used only to ask Supabase Auth to send an invitation or sign-in email. The Auth email link can expire before the seven-day household invitation; resending from Settings sends a fresh Auth link. Production email delivery to addresses outside the Supabase project team requires [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
 
 ### Repair an existing project's migration history without a CLI
 
@@ -137,6 +142,7 @@ Create the Vercel project from the repository and set its Root Directory to `bac
 APP_BASE_URL=https://YOUR_PROJECT.vercel.app
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=YOUR_ANON_KEY
+SUPABASE_SECRET_KEY=YOUR_SERVER_ONLY_SECRET_KEY
 AUTH_REQUIRED=true
 ```
 

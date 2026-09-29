@@ -35,7 +35,7 @@ const CARD_NAMES = {
   pantry: 'Pantry', recipes: 'Recipes', retro: 'Weekly review', feedback: 'Meal feedback', memories: 'Household memory',
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' };
-const state = { view: 'overview', snapshot: null, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, search: '', client: null, session: null, config: null, editor: null };
+const state = { view: 'overview', snapshot: null, access: null, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, search: '', client: null, session: null, config: null, editor: null };
 const esc = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const arr = (value) => Array.isArray(value) ? value : [];
 const pick = (value, ...keys) => keys.map((key) => value?.[key]).find((item) => item !== undefined && item !== null);
@@ -92,6 +92,7 @@ async function save(path, method, value) {
 async function refresh(message) {
   const snapshot = await api('/api/app/snapshot');
   state.snapshot = snapshot;
+  if (state.client) state.access = await api('/api/household/access');
   state.plan = section('mealPlan');
   state.schedule = section('schedule');
   if (!state.weekStart) state.weekStart = state.plan?.weekStart || state.schedule?.week_start || monday();
@@ -237,6 +238,16 @@ function renderSettings() {
   const stores = arr(h.storePriority).sort((a, b) => a.priority - b.priority).map((item) => item.store).join(', ');
   const focusChoices = FOCUS.map((area) => `<label class="planning-choice"><input type="checkbox" name="focusAreas" value="${area}" ${focus.includes(area) ? 'checked' : ''} /><span>${esc(label(area))}</span></label>`).join('');
   const cardRows = order.map((id, index) => `<div class="card-order-row"><label class="toggle-field"><span>${esc(CARD_NAMES[id])}</span><input type="checkbox" name="visibleCard" value="${id}" ${hidden.includes(id) ? '' : 'checked'} /></label><div class="card-order-buttons"><button class="icon-button" type="button" data-action="card-up" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} up" ${index === 0 ? 'disabled' : ''}>↑</button><button class="icon-button" type="button" data-action="card-down" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} down" ${index === order.length - 1 ? 'disabled' : ''}>↓</button></div></div>`).join('');
+  const members = arr(state.access?.members);
+  const invitations = arr(state.access?.invitations);
+  const owner = state.access?.role === 'owner';
+  const memberRows = members.map((member) => row(member.email, label(member.role), owner && member.role !== 'owner' ? action('Remove', 'remove-member', member.userId, 'danger') : '')).join('');
+  const inviteRows = invitations.filter((invite) => invite.status === 'pending').map((invite) => row(invite.email, `Invited · expires ${new Date(invite.expiresAt).toLocaleDateString()}`, owner ? action('Revoke', 'revoke-invite', invite.id, 'danger') : '')).join('');
+  const accessCard = state.client ? `<article class="card"><div class="card-head"><h3>Household members</h3><span class="card-icon">♙</span></div>
+    <div class="stack">${memberRows || '<p class="muted tiny">No members yet.</p>'}</div>
+    ${owner ? `<form id="invite-form" class="invite-form"><label for="invite-email">Invite an adult by email</label><input id="invite-email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required /><button class="button primary" type="submit">Send invitation</button></form>` : ''}
+    ${inviteRows ? `<p class="muted tiny" style="margin:20px 0 10px">Pending invitations</p><div class="stack">${inviteRows}</div>` : ''}
+  </article>` : '';
   return `<div class="settings-grid"><div class="stack">
     <article class="card"><div class="card-head"><h3>Household preferences</h3><span class="card-icon">⚙</span></div>
       <form id="settings-form" class="form-grid">
@@ -254,6 +265,7 @@ function renderSettings() {
       <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save visible cards</button></form>
     </article>
   </div><div class="stack">
+    ${accessCard}
     <article class="card"><div class="card-head"><h3>Your session</h3><span class="card-icon">○</span></div><p class="muted tiny" style="margin-bottom:15px">${esc(state.session?.user?.email || 'Local demo mode')}</p>${state.client ? action('Sign out', 'sign-out', '', 'danger') : '<p class="muted tiny">Demo data resets when the local server restarts.</p>'}</article>
   </div></div>`;
 }
@@ -434,6 +446,16 @@ async function handleAction(actionName, id) {
   const pantry = arr(section('pantry'));
   const shopping = arr(section('shoppingList')?.items);
   const plan = arr(state.plan?.entries);
+  if (actionName === 'revoke-invite') {
+    if (!confirm('Revoke this invitation?')) return;
+    await api(`/api/household/invitations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return refresh('Invitation revoked.');
+  }
+  if (actionName === 'remove-member') {
+    if (!confirm('Remove this person from the household? They will lose access to shared data.')) return;
+    await api(`/api/household/members/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return refresh('Collaborator removed.');
+  }
   if (TITLES[actionName]) return view(actionName);
   if (actionName === 'add-recipe') return openEditor('recipe');
   if (actionName === 'edit-recipe') return openEditor('recipe', state.recipe || recipes.find((item) => item.id === id));
@@ -551,12 +573,17 @@ content.addEventListener('input', (event) => {
 });
 
 content.addEventListener('submit', async (event) => {
-  if (!['settings-form', 'dashboard-form'].includes(event.target.id)) return;
+  if (!['settings-form', 'dashboard-form', 'invite-form'].includes(event.target.id)) return;
   event.preventDefault();
   const submit = event.target.querySelector('[type="submit"]');
   submit.disabled = true;
   try {
     const data = new FormData(event.target);
+    if (event.target.id === 'invite-form') {
+      await save('/api/household/invitations', 'POST', { email: String(data.get('email') || '').trim() });
+      await refresh('Invitation email sent.');
+      return;
+    }
     if (event.target.id === 'settings-form') {
       const restrictionText = String(data.get('dietaryRestrictions') || '').trim();
       const stores = String(data.get('stores') || '').split(',').map((item) => item.trim()).filter(Boolean);
@@ -597,6 +624,11 @@ async function start() {
     const email = data.session.user?.email || 'Account';
     document.querySelector('#account-label').textContent = email;
     document.querySelector('#account-avatar').textContent = email.slice(0, 2).toUpperCase();
+    const pending = await api('/api/invitations/mine');
+    if (!pending.hasHousehold && arr(pending.invitations).length) {
+      location.replace('/invite');
+      return;
+    }
   } else {
     document.querySelector('#mode-badge').hidden = false;
     document.querySelector('#account-label').textContent = 'Local demo';

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#252a40" />
+    <title>Join a household · Meal Prep</title>
+    <link rel="icon" type="image/svg+xml" href="/static/meal-prep-icon.svg" />
+    <link rel="stylesheet" href="/static/typography.css?v=1" />
+    <link rel="stylesheet" href="/static/app.css?v=9" />
+    <style>
+      body { display:grid; place-items:center; padding:24px; background:#252a40; }
+      main { width:min(540px,100%); padding:clamp(28px,5vw,44px); border-radius:14px; background:#fffcf7; box-shadow:0 24px 75px rgba(15,17,30,.24); }
+      .brand-link { display:inline-flex; align-items:center; gap:10px; color:#626981; font-size:.78rem; font-weight:700; text-decoration:none; }
+      .brand-link img { width:34px; height:34px; }
+      h1 { margin:34px 0 12px; font-family:var(--font-display); font-size:2.4rem; letter-spacing:-.055em; }
+      p { color:#626981; line-height:1.55; }
+      .invite-row { display:grid; gap:14px; margin-top:25px; padding:20px; border:1px solid var(--line); border-radius:12px; }
+      .invite-row strong { color:var(--ink); }
+      .invite-row small { color:var(--muted); }
+      #message { margin-top:20px; font-size:.82rem; }
+      #account { margin-top:20px; font-size:.74rem; }
+      .button { justify-self:start; }
+    </style>
+    <script src="/static/vendor/supabase.js" defer></script>
+    <script src="/static/invite.js?v=1" defer></script>
+  </head>
+  <body>
+    <main>
+      <a class="brand-link" href="/"><img src="/static/meal-prep-icon.svg" alt="" />Meal Prep</a>
+      <h1>Join a household</h1>
+      <p>Accept an invitation to plan meals, manage recipes and pantry items, and share a grocery list with your household.</p>
+      <p id="account"></p>
+      <div id="invitations"></div>
+      <p id="message" role="status">Checking your invitation…</p>
+    </main>
+  </body>
+</html>

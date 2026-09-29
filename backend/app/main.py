@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .application.errors import ApplicationError, RepositoryError
+from .invitations import router as invitations_router
 from .transports.http import router as http_router
 from .transports.mcp import mcp, mcp_app
 
@@ -28,6 +29,7 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(http_router)
+app.include_router(invitations_router)
 
 
 @app.exception_handler(ApplicationError)

@@ -17,7 +17,7 @@ port = 55323
 [auth]
 enabled = true
 site_url = "http://127.0.0.1:8000"
-additional_redirect_urls = ["http://127.0.0.1:8000/login", "http://localhost:8000/login"]
+additional_redirect_urls = ["http://127.0.0.1:8000/login", "http://localhost:8000/login", "http://127.0.0.1:8000/invite", "http://localhost:8000/invite"]
 
 [auth.email]
 enable_signup = true
