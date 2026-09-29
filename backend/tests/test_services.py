@@ -1,8 +1,36 @@
+from unittest.mock import AsyncMock
+
 import pytest
 
-from app.application.errors import ApplicationError
-from app.application.services import FeedbackService, HouseholdService, PlanningService
+from app.application.errors import ApplicationError, RepositoryError, StorageNotInstalledError
+from app.application.services import (
+    FeedbackService,
+    HouseholdService,
+    PlanningService,
+    RecipePantryService,
+)
 from app.infrastructure.repositories import DemoRepository
+
+
+@pytest.mark.asyncio
+async def test_recipe_detail_survives_missing_feedback_storage():
+    repository = DemoRepository()
+    repository.get_recipe = AsyncMock(return_value={"id": "recipe-1", "title": "Lentil soup"})
+    repository.get_feedback = AsyncMock(side_effect=StorageNotInstalledError("feedback"))
+
+    recipe = await RecipePantryService(repository).get_recipe("recipe-1")
+
+    assert recipe == {
+        "id": "recipe-1",
+        "title": "Lentil soup",
+        "feedback": [],
+        "feedbackUnavailable": True,
+    }
+    repository.get_feedback.assert_awaited_once_with(recipe_id="recipe-1", limit=25)
+
+    repository.get_feedback.side_effect = RepositoryError("Database unavailable")
+    with pytest.raises(RepositoryError, match="Database unavailable"):
+        await RecipePantryService(repository).get_recipe("recipe-1")
 
 
 @pytest.mark.asyncio

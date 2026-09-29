@@ -368,7 +368,7 @@
           <div class="recipe-hero"><span class="recipe-art" aria-hidden="true">${escapeHtml(recipeInitial(recipe))}</span><div><h1>${escapeHtml(recipe.title || 'Untitled recipe')}</h1><p>${escapeHtml(recipe.description || 'Saved recipe')}</p><div class="recipe-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${tags.length ? `<div class="recipe-tags">${tags.map((tag) => `<span class="recipe-tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}</div></div>
           <div class="recipe-columns"><section class="recipe-section"><h2>Ingredients</h2><ul class="recipe-list">${ingredientMarkup}</ul></section><section class="recipe-section"><h2>Instructions</h2><ol class="recipe-steps">${instructionMarkup}</ol></section></div>
           <section class="recipe-section"><h2>Share this recipe</h2><p>A shared link contains this recipe's ingredients and instructions. Cooking notes and household details stay private.</p><div class="recipe-share-actions"><button data-create-recipe-share="${escapeHtml(recipe.id || '')}">Create share link</button></div><div id="recipe-share-result" role="status"></div><div id="recipe-share-list" class="recipe-share-list"></div></section>
-          ${feedback.length ? `<section class="recipe-section"><h2>Cooking notes</h2><div class="recipe-notes">${feedback.map((item) => `<article class="recipe-note"><p>${escapeHtml(item.note || item.content || 'Saved feedback')}</p>${pick(item, 'nextTime', 'next_time') ? `<small>Next time: ${escapeHtml(pick(item, 'nextTime', 'next_time'))}</small>` : ''}</article>`).join('')}</div></section>` : ''}
+          ${recipe.feedbackUnavailable ? '<section class="recipe-section"><h2>Cooking notes</h2><p>Cooking notes are temporarily unavailable.</p></section>' : feedback.length ? `<section class="recipe-section"><h2>Cooking notes</h2><div class="recipe-notes">${feedback.map((item) => `<article class="recipe-note"><p>${escapeHtml(item.note || item.content || 'Saved feedback')}</p>${pick(item, 'nextTime', 'next_time') ? `<small>Next time: ${escapeHtml(pick(item, 'nextTime', 'next_time'))}</small>` : ''}</article>`).join('')}</div></section>` : ''}
           ${sourceUrl ? `<a class="recipe-source" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">Open original recipe ↗</a>` : sourceType ? `<span class="recipe-source">Source: ${escapeHtml(humanize(sourceType))}</span>` : ''}
         </section>`;
       }
@@ -431,7 +431,7 @@
       }
 
       function renderFeedback() {
-        if (sectionStatus('feedback') === 'unavailable') return '<div class="callout"><strong>Feedback unavailable</strong><p>Feedback will appear once its database table is installed.</p></div>';
+        if (sectionStatus('feedback') === 'unavailable') return '<div class="callout"><strong>Feedback unavailable</strong><p>Cooking notes are temporarily unavailable. Please try again later.</p></div>';
         const feedback = asArray(sectionValue('feedback'));
         if (!feedback.length) return '<div class="callout"><strong>No feedback saved yet</strong><p>Meal notes, what worked, and next-time changes from weekly check-ins will appear here.</p></div>';
         const rows = feedback.slice(0, 8).map((item) => {

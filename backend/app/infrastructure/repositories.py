@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 import httpx
 from mcp.server.auth.middleware.auth_context import get_access_token
 
-from ..application.errors import RepositoryError
+from ..application.errors import RepositoryError, StorageNotInstalledError
 from ..config import Settings, get_settings
 
 
@@ -38,15 +38,9 @@ def _repository_error(path: str, exc: httpx.HTTPError | ValueError) -> Repositor
             code = payload.get("code")
             table = path.split("?", 1)[0].strip("/")
             if code == "PGRST205" and table in PLANNING_TABLES:
-                return RepositoryError(
-                    f"{PLANNING_TABLES[table].capitalize()} storage is not installed. "
-                    "Apply the checked-in Supabase migrations before using this feature."
-                )
+                return StorageNotInstalledError(PLANNING_TABLES[table])
             if code == "PGRST202" and table in PLANNING_FUNCTIONS:
-                return RepositoryError(
-                    f"{PLANNING_FUNCTIONS[table].capitalize()} storage is not installed. "
-                    "Apply the checked-in Supabase migrations before using this feature."
-                )
+                return StorageNotInstalledError(PLANNING_FUNCTIONS[table])
     return RepositoryError(detail or str(exc))
 
 
