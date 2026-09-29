@@ -25,6 +25,7 @@ def test_local_website_edits_share_application_data_across_requests():
     assert pantry.status_code == 200
     snapshot = client.get("/api/app/snapshot").json()
     assert any(item["name"] == "Lentils" for item in snapshot["sections"]["pantry"]["value"])
+    assert "retro" not in snapshot["sections"]
 
     invalid = client.put("/api/meal-plan", json={"weekStart": "2026-09-28", "entries": [{"meal": "Soup"}]})
     assert invalid.status_code == 422

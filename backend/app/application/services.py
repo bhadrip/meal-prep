@@ -192,7 +192,6 @@ class HouseholdService:
             "pantry": self.repository.get_pantry,
             "recipes": lambda: self.repository.search_recipes(query="", limit=25),
             "schedule": self.repository.get_weekly_schedule,
-            "retro": self.repository.get_latest_retro,
             "feedback": lambda: self.repository.get_feedback(limit=25),
             "memories": self.repository.get_household_memory,
             "mealPlan": self.repository.get_meal_plan,

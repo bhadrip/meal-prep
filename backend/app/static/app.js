@@ -115,8 +115,8 @@ function renderOverview() {
   const shopping = section('shoppingList');
   const pending = arr(shopping?.items).filter((item) => !item.purchased).length;
   const incomplete = h.onboardingComplete === false;
-  const displayName = h.householdName || 'Your household';
-  let html = `<section class="hero"><div class="hero-copy"><p class="eyebrow">A calmer food week starts here</p><h2>${incomplete ? 'Let’s set up your kitchen.' : `Welcome to ${esc(displayName)}.`}</h2><p>${incomplete ? 'Add your household’s food rules and weekly preferences to get started.' : 'Your recipes, food on hand, weekly plan, and groceries live together here.'}</p><div style="margin-top:22px">${action(incomplete ? 'Set up household' : 'Open weekly plan', incomplete ? 'settings' : 'plan', '', 'secondary')}</div></div><div class="hero-stat"><strong>${esc(arr(plan?.entries).length)}</strong><span>meals and prep tasks in the latest plan</span></div></section>`;
+  const displayName = h.householdName && h.householdName !== 'My household' ? h.householdName : 'Your household';
+  let html = `<section class="hero"><div class="hero-copy"><p class="eyebrow">${esc(incomplete ? 'Getting started' : displayName)}</p><h2>${incomplete ? 'Set up your kitchen.' : 'Your food week, in one place.'}</h2><p>${incomplete ? 'Add your household’s food rules and weekly preferences to get started.' : 'Review your plan, recipes, pantry, and shopping list from one workspace.'}</p><div style="margin-top:22px">${action(incomplete ? 'Set up household' : 'Open weekly plan', incomplete ? 'settings' : 'plan', '', 'secondary')}</div></div><div class="hero-stat"><strong>${esc(arr(plan?.entries).length)}</strong><span>meals and prep tasks in the latest plan</span></div></section>`;
   html += `<div class="section-head"><div><h2>At a glance</h2><p>The latest saved information from your household.</p></div></div>`;
   html += `<div class="card-grid">`;
   html += card('Weekly plan', '▦', `<div class="metric">${arr(plan?.entries).length}</div><p class="muted tiny">planned meals and prep tasks</p>`, `<div style="margin-top:20px">${action('View plan', 'plan')}</div>`);
@@ -215,7 +215,7 @@ function renderSettings() {
   const restrictions = h.dietaryRestrictions === null || h.dietaryRestrictions === undefined
     ? '' : arr(h.dietaryRestrictions).length ? h.dietaryRestrictions.join(', ') : 'none';
   const stores = arr(h.storePriority).sort((a, b) => a.priority - b.priority).map((item) => item.store).join(', ');
-  const focusChoices = FOCUS.map((area) => `<label class="tag"><input type="checkbox" name="focusAreas" value="${area}" ${focus.includes(area) ? 'checked' : ''} /> ${esc(label(area))}</label>`).join('');
+  const focusChoices = FOCUS.map((area) => `<label class="planning-choice"><input type="checkbox" name="focusAreas" value="${area}" ${focus.includes(area) ? 'checked' : ''} /><span>${esc(label(area))}</span></label>`).join('');
   const cardRows = order.map((id, index) => `<div class="card-order-row"><label class="toggle-field"><span>${esc(CARD_NAMES[id])}</span><input type="checkbox" name="visibleCard" value="${id}" ${hidden.includes(id) ? '' : 'checked'} /></label><div class="card-order-buttons"><button class="icon-button" type="button" data-action="card-up" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} up" ${index === 0 ? 'disabled' : ''}>↑</button><button class="icon-button" type="button" data-action="card-down" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} down" ${index === order.length - 1 ? 'disabled' : ''}>↓</button></div></div>`).join('');
   return `<div class="settings-grid"><div class="stack">
     <article class="card"><div class="card-head"><h3>Household preferences</h3><span class="card-icon">⚙</span></div>
@@ -224,7 +224,7 @@ function renderSettings() {
         ${field('weeknightMaxMinutes', 'Maximum weeknight cooking minutes', prefs.weeknightMaxMinutes ?? '', { type: 'number', min: 1, max: 240, required: true })}
         ${field('dietaryRestrictions', 'Dietary restrictions — enter none if there are none', restrictions, { required: true, wide: true })}
         ${field('stores', 'Preferred stores, in order', stores, { required: true, wide: true, placeholder: 'Costco, Safeway' })}
-        <div class="field wide"><span>Planning areas</span><div class="tag-list">${focusChoices}</div></div>
+        <fieldset class="field wide planning-field"><legend>Planning areas</legend><div class="planning-areas">${focusChoices}</div></fieldset>
         <label class="field wide toggle-field"><span>Plan dinner leftovers for lunch</span><input name="leftoversForLunch" type="checkbox" ${prefs.leftoversForLunch ? 'checked' : ''} /></label>
         <div class="field wide"><button class="button primary" type="submit">Save household setup</button></div>
       </form>
@@ -234,7 +234,6 @@ function renderSettings() {
       <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save visible cards</button></form>
     </article>
   </div><div class="stack">
-    <div class="callout"><b>One account across surfaces</b>Sign in with the same approved email on the website and through the MCP connection. Your household data is shared; each client keeps its own session.</div>
     <article class="card"><div class="card-head"><h3>Your session</h3><span class="card-icon">○</span></div><p class="muted tiny" style="margin-bottom:15px">${esc(state.session?.user?.email || 'Local demo mode')}</p>${state.client ? action('Sign out', 'sign-out', '', 'danger') : '<p class="muted tiny">Demo data resets when the local server restarts.</p>'}</article>
   </div></div>`;
 }

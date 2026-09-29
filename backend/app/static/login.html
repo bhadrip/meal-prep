@@ -3,30 +3,37 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#252a40" />
     <title>Sign in · Meal Prep</title>
     <style>
-      :root { font-family: ui-sans-serif, system-ui, sans-serif; color:#17211e; background:#f5f7f2; }
+      @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600&display=swap');
+      :root { font-family:'DM Sans',ui-sans-serif,system-ui,sans-serif; color:#25283b; background:#252a40; }
       * { box-sizing:border-box; }
-      body { min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; }
-      main { width:min(460px,100%); background:white; border:1px solid #dfe5de; border-radius:24px; padding:32px; box-shadow:0 18px 45px rgba(29,56,47,.1); }
-      h1 { margin:0; font-family:Georgia,serif; font-size:2rem; }
-      p { color:#64716c; line-height:1.5; }
-      form { display:grid; gap:12px; margin-top:24px; }
-      label { font-weight:700; }
-      input,button { min-height:48px; border-radius:12px; font:inherit; }
-      input { border:1px solid #cfd8d2; padding:0 14px; }
-      button { border:0; background:#173f35; color:white; font-weight:700; cursor:pointer; }
-      a { color:#173f35; }
-      #message { min-height:24px; }
+      body { min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; background:repeating-linear-gradient(128deg,transparent 0 36px,rgba(255,255,255,.035) 37px 38px),#252a40; }
+      main { width:min(460px,100%); background:#fffcf7; border:1px solid #dedbd5; border-radius:14px; padding:clamp(28px,5vw,44px); box-shadow:0 24px 75px rgba(15,17,30,.24); }
+      .back { color:#626981; font-size:.78rem; font-weight:700; text-decoration:none; }
+      .back:hover { color:#b6674e; }
+      .eyebrow { margin:38px 0 5px; color:#b6674e; font-size:.68rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+      h1 { margin:0; font-family:'Newsreader',Georgia,serif; font-size:2.45rem; line-height:1; }
+      p { color:#737583; line-height:1.55; }
+      form { display:grid; gap:10px; margin-top:28px; }
+      label { color:#55596d; font-size:.76rem; font-weight:700; }
+      input,button { min-height:48px; border-radius:9px; font:inherit; }
+      input { border:1px solid #c9c8cc; padding:0 14px; background:white; color:#25283b; }
+      input:focus-visible { outline:2px solid #56658c; outline-offset:2px; }
+      button { margin-top:6px; border:0; background:#29324c; color:white; font-weight:700; cursor:pointer; }
+      button:hover { background:#3d486b; }
+      #message { min-height:24px; margin-bottom:0; font-size:.78rem; }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
-    <script src="/static/login.js" defer></script>
+    <script src="/static/vendor/supabase.js" defer></script>
+    <script src="/static/login.js?v=2" defer></script>
   </head>
   <body>
     <main>
-      <a href="/">← Meal Prep</a>
+      <a class="back" href="/">← Meal Prep</a>
+      <p class="eyebrow">Your household, organized</p>
       <h1>Sign in</h1>
-      <p>Use the email address approved for Meal Prep. Contact BhadriP first if you have not been added to Supabase.</p>
+      <p>Use an email address that has been added to Meal Prep. We’ll send you a secure sign-in link.</p>
       <form id="login-form">
         <label for="email">Email</label>
         <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@example.com" />
