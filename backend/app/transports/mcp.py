@@ -21,7 +21,7 @@ SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v2.html"
 HOUSEHOLD_UI_URI = "ui://meal-prep/household-dashboard-v4.html"
 ONBOARDING_UI_URI = "ui://meal-prep/onboarding-v2.html"
 RECIPE_LIBRARY_UI_URI = "ui://meal-prep/recipe-library-v1.html"
-HOUSEHOLD_REVIEWS_UI_URI = "ui://meal-prep/household-reviews-v1.html"
+FEEDBACK_UI_URI = "ui://meal-prep/feedback-v2.html"
 
 auth_settings = None
 token_verifier = None
@@ -39,28 +39,28 @@ mcp = FastMCP(
     "meal-prep",
     instructions=(
         "Call get_planning_context before drafting or revising a weekly meal plan. It returns household "
-        "preferences, the requested or remembered weekly schedule, the relevant retrospective, recent "
-        "experience feedback, and active "
-        "household memories. If onboardingComplete is false, call render_onboarding so the user can complete "
+        "preferences, the requested or remembered weekly schedule, recent feedback, and active "
+        "household knowledge. If onboardingComplete is false, call render_onboarding so the user can complete "
         "the MCP-served setup for household size, dietary restrictions, store priority, weeknight cooking limit, "
         "lunch leftovers, and the planning areas they want coordinated. Save those areas in "
         "planningPreferences.focusAreas. Do not describe empty or null onboarding "
         "fields as saved preferences. Respect hard dietary restrictions. "
         "Do not assume a weekly plan is dinner-only. Give each saved entry an explicit slot such as breakfast, "
         "lunch, snack, dinner, or prep, and keep repeated breakfasts and packed lunches simple unless variety is requested. "
-        "Use confirmed memories as preferences; treat suggested memories, retrospectives, and feedback only as evidence. "
+        "Use confirmed household knowledge as preferences; treat suggestions and feedback only as evidence. "
         "When someone reports how a dish or week went, save atomic feedback linked to the meal occurrence, recipe, "
         "and week whenever those subjects are known. Use canonical tags for reusable themes and audiences, preserve "
-        "an actionable nextTime, and query recipe lessons before repeating a dish. "
-        "A null schedule or retrospective means no record exists, not permission to invent one. "
+        "an actionable nextTime, and query the recipe feedback summary before repeating a dish. A weekly check-in "
+        "is a conversation that creates ordinary feedback entries; it is not a separate data type. "
+        "A null schedule means no record exists, not permission to invent one. "
         "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
         "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
         "a compact card dashboard instead of a long text inventory. When the user asks to change that "
         "dashboard, use get_dashboard_layout and configure_dashboard, then render it again for verification. "
         "When the user asks to see, browse, or list saved recipes, use render_recipe_library so the recipes "
         "appear as visual cards with expandable ingredients and instructions instead of a text list. "
-        "When the user asks about retrospectives, what worked, or meal feedback, use render_household_reviews "
-        "so weekly evidence appears separately from explicit preferences and durable household memory. "
+        "When the user asks for a weekly check-in, what worked, or meal feedback, use render_feedback "
+        "so feedback appears separately from confirmed household preferences. "
         "Never place or imply an order; external commerce requires a separate confirmation flow."
     ),
     stateless_http=True,
@@ -222,24 +222,6 @@ async def save_weekly_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
-async def get_latest_retro() -> dict[str, Any]:
-    """Return the most recent weekly reflection as planning evidence, if one exists."""
-    return {"retro": await services_for_request().planning.get_latest_retro()}
-
-
-@mcp.tool(annotations=READ_ONLY, structured_output=True)
-async def get_weekly_retro(week_start: str | None = None) -> dict[str, Any]:
-    """Return a retrospective for one week, or the latest retrospective when no week is supplied."""
-    return {"retro": await services_for_request().planning.get_retro(week_start)}
-
-
-@mcp.tool(annotations=WRITE, structured_output=True)
-async def save_weekly_retro(retro: dict[str, Any]) -> dict[str, Any]:
-    """Save a weekly reflection. Do not promote its observations to durable preferences automatically."""
-    return await services_for_request().planning.save_retro(retro)
-
-
-@mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_feedback(
     recipe_id: str | None = None,
     week_start: str | None = None,
@@ -247,7 +229,7 @@ async def get_feedback(
     feedback_type: str | None = None,
     limit: int = 20,
 ) -> dict[str, Any]:
-    """Traverse experience feedback by recipe, week, canonical tags, or outcome type."""
+    """Find feedback by recipe, week, reusable tags, or outcome type."""
     items = await services_for_request().feedback.list(
         recipe_id, week_start, tags, feedback_type, limit
     )
@@ -256,7 +238,7 @@ async def get_feedback(
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_feedback(feedback: dict[str, Any]) -> dict[str, Any]:
-    """Save one observation and its graph links to an occurrence, recipe or variant, week, and canonical tags."""
+    """Save one piece of feedback about a meal, recipe or variant, or week."""
     return await services_for_request().feedback.save(feedback)
 
 
@@ -271,9 +253,9 @@ async def get_what_worked(
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
-async def get_recipe_lessons(recipe_id: str, limit: int = 50) -> dict[str, Any]:
-    """Summarize what worked, next-time corrections, tags, and successful variants for one recipe."""
-    return await services_for_request().feedback.recipe_lessons(recipe_id, limit)
+async def get_recipe_feedback_summary(recipe_id: str, limit: int = 50) -> dict[str, Any]:
+    """Summarize what worked, next-time changes, problems, and successful variants for one recipe."""
+    return await services_for_request().feedback.recipe_feedback_summary(recipe_id, limit)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
@@ -283,20 +265,20 @@ async def get_household_memory(
     scope: str | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
-    """List visible household memories with source, review status, scope, and evidence count."""
+    """List confirmed household preferences and suggestions that still need confirmation."""
     items = await services_for_request().memory.list(include_inactive, status, scope, limit)
     return {"items": items, "count": len(items)}
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_household_memory(memory: dict[str, Any]) -> dict[str, Any]:
-    """Save a reviewable suggestion by default; use confirmed only for an explicit user instruction."""
+    """Save a household suggestion; mark it confirmed only after an explicit user instruction."""
     return await services_for_request().memory.save(memory)
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def review_household_memory(memory_id: str, action: str, content: str | None = None) -> dict[str, Any]:
-    """Confirm, correct, or forget one visible memory after the user requests that action."""
+    """Confirm, correct, or forget one household suggestion after the user requests that action."""
     return await services_for_request().memory.review(memory_id, action, content)
 
 
@@ -306,7 +288,7 @@ async def review_household_memory(memory_id: str, action: str, content: str | No
     structured_output=True,
 )
 async def render_household_snapshot() -> dict[str, Any]:
-    """Render the chat-configured card dashboard of household rules, pantry, schedule, saved data, and memory."""
+    """Render the chat-configured card dashboard of household rules, pantry, schedule, saved data, and preferences."""
     snapshot = await services_for_request().household.snapshot()
     return {"kind": "household_snapshot", **snapshot}
 
@@ -324,18 +306,15 @@ async def render_recipe_library(query: str = "", limit: int = 50) -> dict[str, A
 
 @mcp.tool(
     annotations=READ_ONLY,
-    meta={"ui": {"resourceUri": HOUSEHOLD_REVIEWS_UI_URI}},
+    meta={"ui": {"resourceUri": FEEDBACK_UI_URI}},
     structured_output=True,
 )
-async def render_household_reviews() -> dict[str, Any]:
-    """Render the latest weekly retro and meal feedback separately from household memory."""
+async def render_feedback() -> dict[str, Any]:
+    """Render saved meal and week feedback separately from confirmed household preferences."""
     snapshot = await services_for_request().household.snapshot()
     return {
-        "kind": "household_reviews",
-        "sections": {
-            "retro": snapshot["sections"]["retro"],
-            "feedback": snapshot["sections"]["feedback"],
-        },
+        "kind": "feedback",
+        "sections": {"feedback": snapshot["sections"]["feedback"]},
     }
 
 
@@ -433,14 +412,14 @@ def recipe_library_resource() -> str:
 
 
 @mcp.resource(
-    HOUSEHOLD_REVIEWS_UI_URI,
-    name="household-reviews-ui",
-    title="Household meal reviews",
-    description="The latest weekly retrospective and saved meal feedback.",
+    FEEDBACK_UI_URI,
+    name="feedback-ui",
+    title="Meal and week feedback",
+    description="Saved feedback about meals, recipes, and weekly planning.",
     mime_type="text/html;profile=mcp-app",
     meta={"ui": {"prefersBorder": True}},
 )
-def household_reviews_resource() -> str:
+def feedback_resource() -> str:
     return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
 
 

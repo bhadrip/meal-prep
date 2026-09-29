@@ -19,7 +19,7 @@ app/
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
 - MCP Apps resources for household onboarding, the recipe library, the weekly plan, and the shopping checklist
 - MCP-served onboarding for household constraints, planning coverage, preferred stores, cooking time, and leftovers
-- Remembered weekly rhythms, pre-planning retrospectives, graph-shaped experience learning across recipes, variants, meal occurrences, weeks, canonical tags, and user-reviewable household memory
+- Remembered weekly rhythms, meal and week feedback linked across recipes, variants, occurrences, weeks, and reusable tags, plus user-confirmed household preferences
 - Supabase Auth bearer-token validation and OAuth 2.1 discovery through the MCP SDK
 - Supabase schema, transactional functions, and RLS policies
 - Vercel serverless entrypoint and deployment configuration
@@ -103,8 +103,8 @@ next commit. The integration should skip `001`–`003` and apply the remaining
 migrations in order.
 
 Do not make migrations `004`–`008` applied unless their tables and indexes
-already exist; those migrations must run to install schedule, retrospective,
-and household-memory storage. A successful push should leave local and remote
+already exist; those migrations must run before the feedback-consolidation
+migration can preserve older weekly check-ins. A successful push should leave local and remote
 columns aligned in `supabase migration list --linked`.
 
 ## Vercel setup
@@ -136,8 +136,7 @@ Data tools:
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
 - `get_pantry`, `update_pantry_item`
 - `get_weekly_schedule`, `save_weekly_schedule`
-- `get_latest_retro`, `get_weekly_retro`, `save_weekly_retro`
-- `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_lessons`
+- `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`
 - `get_household_memory`, `save_household_memory`, `review_household_memory`
 - `save_meal_plan`, `get_meal_plan`
 - `save_shopping_list`, `get_shopping_list`, `mark_item_purchased`
@@ -146,7 +145,7 @@ Presentation tools:
 
 - `render_household_snapshot`
 - `render_recipe_library`
-- `render_household_reviews`
+- `render_feedback`
 - `render_onboarding`
 - `render_meal_plan`
 - `render_shopping_list`

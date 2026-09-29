@@ -38,7 +38,7 @@ def test_missing_feedback_table_has_actionable_error():
     mapped = _repository_error("feedback_entries", error)
 
     assert str(mapped) == (
-        "Experience feedback storage is not installed. "
+        "Feedback storage is not installed. "
         "Apply the checked-in Supabase migrations before using this feature."
     )
 
@@ -60,6 +60,6 @@ def test_missing_feedback_rpc_has_actionable_error():
     mapped = _repository_error("rpc/get_experience_feedback", error)
 
     assert str(mapped) == (
-        "Experience feedback storage is not installed. "
+        "Feedback storage is not installed. "
         "Apply the checked-in Supabase migrations before using this feature."
     )

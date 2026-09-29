@@ -81,7 +81,7 @@ async def test_feedback_service_requires_a_subject_and_normalizes_tags():
 
 
 @pytest.mark.asyncio
-async def test_feedback_service_answers_what_worked_and_recipe_lessons():
+async def test_feedback_service_answers_what_worked_and_recipe_feedback_summary():
     service = FeedbackService(DemoRepository())
     recipe_id = "11111111-1111-1111-1111-111111111111"
     saved = await service.save(
@@ -99,6 +99,24 @@ async def test_feedback_service_answers_what_worked_and_recipe_lessons():
     assert saved["occurrence"]["variant"]["name"] == "Family mild"
     worked = await service.what_worked(tags=["worked well"])
     assert any(item["id"] == saved["id"] for item in worked["items"])
-    lessons = await service.recipe_lessons(recipe_id)
-    assert lessons["evidenceCount"] >= 1
-    assert any(variant["name"] == "Family mild" for variant in lessons["variants"])
+    summary = await service.recipe_feedback_summary(recipe_id)
+    assert summary["evidenceCount"] >= 1
+    assert any(variant["name"] == "Family mild" for variant in summary["variants"])
+
+
+@pytest.mark.asyncio
+async def test_feedback_service_treats_a_preference_as_a_signal():
+    service = FeedbackService(DemoRepository())
+
+    saved = await service.save(
+        {
+            "weekStart": "2026-09-28",
+            "note": "We prefer lighter dinners on Wednesdays.",
+            "feedbackType": "preference",
+        }
+    )
+
+    assert saved["feedback_type"] == "preference_signal"
+    assert {tag["slug"] for tag in saved["tags"]} == {"preference-signal"}
+    legacy_filter = await service.list(feedback_type="preference")
+    assert any(item["id"] == saved["id"] for item in legacy_filter)
