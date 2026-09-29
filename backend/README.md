@@ -1,13 +1,13 @@
 # Meal Prep backend
 
-The backend owns Meal Prep use cases, authenticated household data, validation, Row-Level Security, MCP tools, and MCP Apps. MCP and HTTP are transport adapters over the same application services; a future website can add HTTP endpoints without duplicating product logic.
+The backend owns Meal Prep use cases, authenticated household data, validation, Row-Level Security, MCP tools, MCP Apps, and the website. MCP and HTTP are transport adapters over the same application services.
 
 ```text
 app/
 ├── application/       Use cases and product rules
 ├── infrastructure/    Supabase repository adapter
 ├── transports/        MCP BFF and HTTP routes
-├── static/            OAuth pages and MCP Apps bundle
+├── static/            Website, OAuth pages, and MCP Apps bundle
 ├── auth.py            Supabase token verification
 ├── container.py       Per-request composition
 └── main.py            ASGI application
@@ -15,6 +15,8 @@ app/
 
 ## What is included
 
+- Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes, pantry, shopping, feedback, reviews, memory, and dashboard settings
+- Authenticated JSON API under `/api` for the website and future mobile clients
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
 - MCP Apps resources for household onboarding, the recipe library, the weekly plan, and the shopping checklist
@@ -24,7 +26,7 @@ app/
 - Supabase schema, transactional functions, and RLS policies
 - Vercel serverless entrypoint and deployment configuration
 
-The service never calls a model to make domain writes. ChatGPT creates the plan, the MCP tools validate and persist it, and Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
+The website has no model integration. Users edit their data directly there. The service never calls a model to make domain writes. ChatGPT can create a plan through MCP, while Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
 
 ## Deployed resources
 
@@ -36,19 +38,39 @@ These resources are owned by the personal `bhadrip` accounts and are separate fr
 
 ## Run locally
 
+The normal local run uses Supabase Auth, its local Postgres database, and its Mailpit inbox. Install the [Supabase CLI and a Docker-compatible container runtime](https://supabase.com/docs/guides/local-development), then run:
+
 ```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
-cp .env.example .env
-uvicorn app.main:app --reload
+./scripts/dev-local.sh
 ```
 
-Open `http://localhost:8000/api/health` to verify the service, then connect an
-MCP inspector or client to `http://localhost:8000/mcp`.
+Open `http://127.0.0.1:8000/` for the website and `http://127.0.0.1:8000/api/health` to verify `persistence: supabase` and `auth_required: true`. Connect an MCP inspector or client to `http://127.0.0.1:8000/mcp`. The script reads the local anon key from `supabase status`; it does not store it in the repository. Stop the Python server with Ctrl-C and, when finished, stop the local containers with `supabase stop` from `backend/`.
 
-With no Supabase credentials, MCP tools use deterministic in-memory demo data.
+### Test the shared login with local Supabase and Mailpit
+
+The development script starts Supabase automatically. To inspect the local services separately, run from `backend/`:
+
+```bash
+supabase start
+supabase status -o env
+```
+
+The local migrations initialize the database. If you run the Python server manually instead of using the script, copy the `API_URL` and `ANON_KEY` values reported by `supabase status -o env` into `backend/.env`:
+
+```dotenv
+APP_BASE_URL=http://127.0.0.1:8000
+SUPABASE_URL=http://127.0.0.1:55321
+SUPABASE_ANON_KEY=PASTE_LOCAL_ANON_KEY_HERE
+AUTH_REQUIRED=true
+```
+
+Start the Python server with `uvicorn app.main:app --reload`. Open local Supabase Studio at `http://127.0.0.1:55323`, create a test user under **Authentication → Users**, then open `http://127.0.0.1:8000/` and request a magic link for that user. The link appears in the local [Mailpit inbox](http://127.0.0.1:55324). Follow it to sign in, complete the household setup, and verify edits in the website and MCP client. The login form deliberately does not create accounts; the test user must exist first. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
+
+If `supabase start` reports that Docker is unavailable, start the container runtime first. For a quick UI-only check without Supabase, leaving the Supabase values empty in `.env` still enables in-memory demo data; demo edits last only until the server restarts.
 
 ## Test and inspect
 
@@ -57,7 +79,7 @@ pytest
 npx -y @modelcontextprotocol/inspector
 ```
 
-Choose Streamable HTTP in the Inspector and use `http://localhost:8000/mcp`.
+Choose Streamable HTTP in the Inspector and use `http://127.0.0.1:8000/mcp`.
 
 ## Supabase setup
 
@@ -121,6 +143,8 @@ AUTH_REQUIRED=true
 Deploy, then verify:
 
 - `GET /api/health` reports `persistence: supabase`.
+- `/` opens the website and redirects unsigned users to `/login`.
+- Website edits appear through `/api/app/snapshot` and the MCP tools for the same account.
 - `/login` can create a valid session.
 - `/oauth/consent` displays an OAuth client request.
 - MCP initialization and `tools/list` succeed at `/mcp` after authorization.

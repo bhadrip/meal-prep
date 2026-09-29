@@ -28,16 +28,12 @@ def rpc(client: TestClient, method: str, params: dict, request_id: int = 1) -> d
     return response.json()["result"]
 
 
-def test_http_surface_is_service_only(client: TestClient):
+def test_http_surface_serves_website_and_mcp(client: TestClient):
     root = client.get("/")
     assert root.status_code == 200
-    assert root.json() == {
-        "name": "Meal Prep Backend",
-        "status": "ok",
-        "mcp_endpoint": "/mcp",
-    }
-    assert client.get("/api/dashboard").status_code == 404
-    assert client.post("/api/interactions", json={"action": "home"}).status_code == 404
+    assert "Meal Prep" in root.text
+    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/api/app/snapshot").status_code == 200
     login_script = client.get("/static/login.js")
     assert login_script.status_code == 200
     assert "shouldCreateUser: false" in login_script.text

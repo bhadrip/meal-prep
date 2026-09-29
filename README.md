@@ -1,13 +1,20 @@
 # Meal Prep
 
-Meal Prep is a household food-planning plugin backed by a hosted MCP service. It coordinates breakfasts, lunches, dinners, snacks, weekend prep, pantry inventory, and store-prioritized shopping around a family’s actual week.
+Meal Prep is a household food-planning app available as a website and a hosted MCP service. It coordinates breakfasts, lunches, dinners, snacks, weekend prep, pantry inventory, and store-prioritized shopping around a family’s actual week.
 
-The installable plugin supplies workflow guidance and the MCP connection. The backend provides application services, authentication, Supabase persistence, MCP tools, and interactive MCP Apps directly in chat. A standalone website is intentionally deferred and can later use the same application services through an HTTP API.
+The website offers direct, manual access to household setup, planning, recipes, pantry, shopping, and feedback. The installable plugin supplies workflow guidance and the MCP connection. Both use the same application services and Supabase household data. The website has no AI features.
 
 ```text
-Codex / ChatGPT → plugin → MCP BFF → application services → Supabase
-Future website  → HTTP API ────────────────┘
+Website           → HTTP API ─┐
+Codex / ChatGPT   → MCP BFF ──┼→ application services → Supabase
+Future mobile app → HTTP API ─┘
 ```
+
+## Website
+
+Once this change is deployed, open the [Meal Prep website](https://meal-prep-swart.vercel.app/) and sign in with the same approved Supabase email used for the MCP connection. Browser and MCP clients have separate sessions, but they share the same identity and household data. The site supports manual edits and never places grocery orders.
+
+For local demo mode or a full local Supabase and email flow, see [`backend/README.md`](backend/README.md#run-locally).
 
 ## Access
 
@@ -49,7 +56,7 @@ Open **Customize → Plugins → Add marketplace**, enter `bhadrip/meal-prep`, i
 
 ## Repository
 
-- [`backend/`](backend/) — application services, MCP and HTTP transports, Supabase integration and migrations, tests, and Vercel configuration
+- [`backend/`](backend/) — website, application services, MCP and HTTP transports, Supabase integration and migrations, tests, and Vercel configuration
 - [`plugin/`](plugin/) — portable plugin manifest, MCP connection, assets, and planning skill
 - [`Meal_Prep_AI_Native_Product_Design.docx`](Meal_Prep_AI_Native_Product_Design.docx) — product and system-design source
 

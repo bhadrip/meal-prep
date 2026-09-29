@@ -10,6 +10,7 @@ function continuationPath() {
 }
 
 async function setup() {
+  message.textContent = 'Preparing sign-in…';
   const config = await fetch('/api/auth/config').then((response) => response.json());
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
     message.textContent = 'Supabase is not configured yet. The app is currently using demo mode.';
@@ -17,8 +18,10 @@ async function setup() {
     return;
   }
   const client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  message.textContent = 'Checking your session…';
   const next = continuationPath();
   const { data: { session } } = await client.auth.getSession();
+  message.textContent = '';
   if (session?.access_token) {
     sessionStorage.setItem('meal-prep-access-token', session.access_token);
     if (next) {
@@ -26,12 +29,13 @@ async function setup() {
       location.replace(next);
       return;
     }
-    message.textContent = `Signed in as ${session.user.email}.`;
+    location.replace('/');
+    return;
   }
   client.auth.onAuthStateChange((_event, nextSession) => {
     if (!nextSession?.access_token) return;
     sessionStorage.setItem('meal-prep-access-token', nextSession.access_token);
-    if (next) location.replace(next);
+    location.replace(next || '/');
   });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
