@@ -89,6 +89,14 @@ async function save(path, method, value) {
   return api(path, { method, body: JSON.stringify(value) });
 }
 
+async function loadRecipe(id) {
+  state.recipe = await api(`/api/recipes/${encodeURIComponent(id)}`);
+  try { state.recipeShares = (await api('/api/recipe-shares')).items; state.recipeSharesUnavailable = false; }
+  catch { state.recipeShares = []; state.recipeSharesUnavailable = true; }
+  state.shareUrl = null;
+  state.shareId = null;
+}
+
 async function refresh(message) {
   const snapshot = await api('/api/app/snapshot');
   state.snapshot = snapshot;
@@ -404,7 +412,7 @@ async function submitEditor(data) {
   if (kind === 'recipe') {
     const recipe = { id: item?.id, title: value('title'), description: value('description'), servings: Number(value('servings')), totalMinutes: numberOrNull(value('totalMinutes')), activeMinutes: numberOrNull(value('activeMinutes')), tags: comma('tags'), ingredients: lines('ingredients').map((line) => { const [name, quantity, unit] = line.split('|').map((part) => part.trim()); return { name, quantity: numberOrNull(quantity), unit: unit || null }; }), instructions: lines('instructions'), sourceUrl: value('sourceUrl') || null };
     const saved = await save('/api/recipes', 'PUT', recipe);
-    state.recipe = saved;
+    await loadRecipe(saved.id);
     state.view = 'recipes';
   } else if (kind === 'pantry') {
     await save('/api/pantry', 'PUT', { id: item?.id, name: value('name'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, storageLocation: value('storageLocation'), quantityConfidence: value('quantityConfidence'), useByDate: value('useByDate') || null });
@@ -443,11 +451,7 @@ async function handleAction(actionName, id) {
   if (actionName === 'add-recipe') return openEditor('recipe');
   if (actionName === 'edit-recipe') return openEditor('recipe', state.recipe || recipes.find((item) => item.id === id));
   if (actionName === 'open-recipe') {
-    state.recipe = await api(`/api/recipes/${encodeURIComponent(id)}`);
-    try { state.recipeShares = (await api('/api/recipe-shares')).items; state.recipeSharesUnavailable = false; }
-    catch { state.recipeShares = []; state.recipeSharesUnavailable = true; }
-    state.shareUrl = null;
-    state.shareId = null;
+    await loadRecipe(id);
     return render();
   }
   if (actionName === 'close-recipe') { state.recipe = null; state.shareUrl = null; state.shareId = null; return render(); }
