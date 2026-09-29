@@ -198,6 +198,7 @@ class SupabaseRepository:
         return bool(await self.rpc("revoke_recipe_share", {"requested_share_id": share_id}))
 
     async def copy_shared_recipe(self, token: str) -> str:
+        await self.household_id()
         return str(await self.rpc("copy_shared_recipe", {"raw_token": token}))
 
     async def get_pantry(self) -> list[dict[str, Any]]:
