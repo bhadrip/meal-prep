@@ -274,13 +274,85 @@ function view(name) {
 }
 
 function field(name, title, value = '', options = {}) {
+  if (options.choices) {
+    const choices = options.choices.map((choice) => typeof choice === 'string' ? { value: choice, label: label(choice) } : choice);
+    const selected = choices.find((choice) => choice.value === value) || choices[0];
+    const fieldId = `choice-${name}`;
+    return `<div class="field ${options.wide ? 'wide' : ''}"><span id="${esc(fieldId)}-label">${esc(title)}</span>
+      <div class="choice-control" data-choice-control>
+        <input type="hidden" name="${esc(name)}" value="${esc(selected.value)}" />
+        <button class="choice-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="${esc(fieldId)}-label ${esc(fieldId)}-value">
+          <span id="${esc(fieldId)}-value" class="choice-value">${esc(selected.label)}</span><span class="choice-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="choice-menu" role="listbox" aria-labelledby="${esc(fieldId)}-label" hidden>${choices.map((choice) => `<button class="choice-option" type="button" role="option" aria-selected="${choice.value === selected.value}" data-choice-value="${esc(choice.value)}"><span class="choice-option-label">${esc(choice.label)}</span><span class="choice-check" aria-hidden="true">✓</span></button>`).join('')}</div>
+      </div></div>`;
+  }
   const input = options.type === 'textarea'
     ? `<textarea name="${esc(name)}" ${options.required ? 'required' : ''} placeholder="${esc(options.placeholder || '')}">${esc(value)}</textarea>`
-    : options.choices
-      ? `<select name="${esc(name)}">${options.choices.map((choice) => { const optionValue = typeof choice === 'string' ? choice : choice.value; const optionLabel = typeof choice === 'string' ? label(choice) : choice.label; return `<option value="${esc(optionValue)}" ${optionValue === value ? 'selected' : ''}>${esc(optionLabel)}</option>`; }).join('')}</select>`
-      : `<input name="${esc(name)}" type="${esc(options.type || 'text')}" value="${esc(value)}" ${options.required ? 'required' : ''} ${options.min !== undefined ? `min="${options.min}"` : ''} ${options.max !== undefined ? `max="${options.max}"` : ''} placeholder="${esc(options.placeholder || '')}" />`;
+    : `<input name="${esc(name)}" type="${esc(options.type || 'text')}" value="${esc(value)}" ${options.required ? 'required' : ''} ${options.min !== undefined ? `min="${options.min}"` : ''} ${options.max !== undefined ? `max="${options.max}"` : ''} placeholder="${esc(options.placeholder || '')}" />`;
   return `<label class="field ${options.wide ? 'wide' : ''}">${esc(title)}${input}</label>`;
 }
+
+function closeChoice(control, focusTrigger = false) {
+  control.querySelector('.choice-menu').hidden = true;
+  control.querySelector('.choice-trigger').setAttribute('aria-expanded', 'false');
+  control.classList.remove('open');
+  if (focusTrigger) control.querySelector('.choice-trigger').focus();
+}
+
+function openChoice(control, focusSelected = false) {
+  fields.querySelectorAll('[data-choice-control].open').forEach((other) => { if (other !== control) closeChoice(other); });
+  control.querySelector('.choice-menu').hidden = false;
+  control.querySelector('.choice-trigger').setAttribute('aria-expanded', 'true');
+  control.classList.add('open');
+  if (focusSelected) control.querySelector('[aria-selected="true"]')?.focus();
+}
+
+fields.addEventListener('click', (event) => {
+  const option = event.target.closest('.choice-option');
+  if (option) {
+    const control = option.closest('[data-choice-control]');
+    control.querySelector('input[type="hidden"]').value = option.dataset.choiceValue;
+    control.querySelector('.choice-value').textContent = option.querySelector('.choice-option-label').textContent;
+    control.querySelectorAll('.choice-option').forEach((candidate) => candidate.setAttribute('aria-selected', String(candidate === option)));
+    closeChoice(control, true);
+    return;
+  }
+  const trigger = event.target.closest('.choice-trigger');
+  if (!trigger) return;
+  const control = trigger.closest('[data-choice-control]');
+  if (control.classList.contains('open')) closeChoice(control);
+  else openChoice(control);
+});
+
+fields.addEventListener('keydown', (event) => {
+  const control = event.target.closest('[data-choice-control]');
+  if (!control) return;
+  const options = [...control.querySelectorAll('.choice-option')];
+  if (event.key === 'Escape' && control.classList.contains('open')) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeChoice(control, true);
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    if (!control.classList.contains('open')) openChoice(control);
+    const index = options.indexOf(document.activeElement);
+    const selectedIndex = options.findIndex((option) => option.getAttribute('aria-selected') === 'true');
+    const next = index < 0 ? selectedIndex : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+    options[next]?.focus();
+  } else if (event.key === 'Home' || event.key === 'End') {
+    if (!control.classList.contains('open')) return;
+    event.preventDefault();
+    options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
+  }
+});
+
+document.addEventListener('click', (event) => {
+  if (event.target.closest('[data-choice-control]')) return;
+  fields.querySelectorAll('[data-choice-control].open').forEach((control) => closeChoice(control));
+});
+
+form.querySelectorAll('[data-dialog-close]').forEach((button) => button.addEventListener('click', () => dialog.close()));
 
 function openEditor(kind, item = null) {
   state.editor = { kind, item };
@@ -503,8 +575,6 @@ content.addEventListener('submit', async (event) => {
 });
 
 form.addEventListener('submit', async (event) => {
-  const submitter = event.submitter;
-  if (submitter?.value === 'cancel') return;
   event.preventDefault();
   errorBox.hidden = true;
   const button = document.querySelector('#dialog-save');

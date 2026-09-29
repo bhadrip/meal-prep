@@ -7,9 +7,9 @@
     <title>Meal Prep</title>
     <link rel="icon" type="image/svg+xml" href="/static/meal-prep-icon.svg" />
     <link rel="stylesheet" href="/static/typography.css?v=1" />
-    <link rel="stylesheet" href="/static/app.css?v=5" />
+    <link rel="stylesheet" href="/static/app.css?v=6" />
     <script src="/static/vendor/supabase.js" defer></script>
-    <script src="/static/app.js?v=5" defer></script>
+    <script src="/static/app.js?v=6" defer></script>
   </head>
   <body>
     <div class="shell">
@@ -62,10 +62,10 @@
 
     <dialog id="editor-dialog">
       <form method="dialog" class="dialog-card" id="editor-form">
-        <div class="dialog-head"><div><p class="eyebrow" id="dialog-eyebrow">Meal Prep</p><h2 id="dialog-title">Edit</h2></div><button class="icon-button" value="cancel" aria-label="Close">×</button></div>
+        <div class="dialog-head"><div><p class="eyebrow" id="dialog-eyebrow">Meal Prep</p><h2 id="dialog-title">Edit</h2></div><button class="icon-button" type="button" data-dialog-close aria-label="Close">×</button></div>
         <div id="dialog-fields" class="dialog-fields"></div>
         <p class="form-error" id="dialog-error" role="alert" hidden></p>
-        <div class="dialog-actions"><button class="button ghost" value="cancel">Cancel</button><button class="button primary" id="dialog-save" value="default">Save</button></div>
+        <div class="dialog-actions"><button class="button ghost" type="button" data-dialog-close>Cancel</button><button class="button primary" id="dialog-save" type="submit">Save</button></div>
       </form>
     </dialog>
     <div class="toast" id="toast" role="status"></div>
