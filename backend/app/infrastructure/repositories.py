@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from functools import lru_cache
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -400,12 +401,12 @@ class DemoRepository:
     ]
     _meal_plan = {
         "id": "33333333-3333-3333-3333-333333333333",
-        "weekStart": date.today().isoformat(),
+        "weekStart": (date.today() - timedelta(days=date.today().weekday())).isoformat(),
         "status": "draft",
         "entries": [
-            {"day": "Monday", "meal": "Tomato pasta", "servings": 4},
-            {"day": "Tuesday", "meal": "Paneer rice bowls", "servings": 4},
-            {"day": "Wednesday", "meal": "Lemon chicken tray bake", "servings": 4},
+            {"day": "Monday", "slot": "dinner", "meal": "Tomato pasta", "servings": 4},
+            {"day": "Tuesday", "slot": "dinner", "meal": "Paneer rice bowls", "servings": 4},
+            {"day": "Wednesday", "slot": "dinner", "meal": "Lemon chicken tray bake", "servings": 4},
         ],
     }
     _shopping_list = {
@@ -419,7 +420,7 @@ class DemoRepository:
     }
     _weekly_schedule = {
         "id": "66666666-6666-6666-6666-666666666666",
-        "week_start": date.today().isoformat(),
+        "week_start": (date.today() - timedelta(days=date.today().weekday())).isoformat(),
         "days": [
             {"day": "Monday", "mode": "quick"}, {"day": "Tuesday", "mode": "cook"},
             {"day": "Wednesday", "mode": "quick"}, {"day": "Thursday", "mode": "leftovers"},
@@ -466,6 +467,7 @@ class DemoRepository:
         if not row:
             raise RepositoryError("Recipe was not found")
         row["archived_at"] = datetime.now(UTC).isoformat()
+        self._recipes = [item for item in self._recipes if item["id"] != recipe_id]
         return row
 
     async def get_pantry(self) -> list[dict[str, Any]]:
@@ -481,6 +483,8 @@ class DemoRepository:
         return deepcopy(self._meal_plan)
 
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None:
+        if week_start and self._meal_plan.get("weekStart") != week_start:
+            return None
         return deepcopy(self._meal_plan)
 
     async def save_shopping_list(self, shopping_list: dict[str, Any]) -> dict[str, Any]:
@@ -701,13 +705,21 @@ class DemoRepository:
         return deepcopy(item)
 
 
-def repository_for_request() -> SupabaseRepository | DemoRepository:
+@lru_cache(maxsize=1)
+def demo_repository() -> DemoRepository:
+    """Keep local demo edits visible across HTTP requests until server restart."""
+    return DemoRepository()
+
+
+def repository_for_request(access_token: str | None = None) -> SupabaseRepository | DemoRepository:
     settings = get_settings()
     if not settings.supabase_configured:
-        return DemoRepository()
+        return demo_repository()
+    if access_token:
+        return SupabaseRepository(settings, access_token)
     access = get_access_token()
     if not access:
         if settings.auth_required:
             raise RepositoryError("Authentication is required")
-        return DemoRepository()
+        return demo_repository()
     return SupabaseRepository(settings, access.token)

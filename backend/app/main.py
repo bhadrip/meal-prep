@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .application.errors import ApplicationError, RepositoryError
 from .transports.http import router as http_router
 from .transports.mcp import mcp, mcp_app
 
@@ -26,6 +28,16 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(http_router)
+
+
+@app.exception_handler(ApplicationError)
+async def application_error_handler(_, exc: ApplicationError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(RepositoryError)
+async def repository_error_handler(_, exc: RepositoryError) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 # Mount last so the MCP ASGI app serves /mcp and OAuth metadata without

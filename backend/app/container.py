@@ -12,8 +12,9 @@ from .application import (
 from .infrastructure.repositories import repository_for_request
 
 
-def services_for_request() -> MealPrepServices:
-    repository = repository_for_request()
+def services_for_request(access_token: str | None = None) -> MealPrepServices:
+    """Compose services for MCP context or an explicit HTTP bearer token."""
+    repository = repository_for_request(access_token)
     return MealPrepServices(
         household=HouseholdService(repository),
         food=RecipePantryService(repository),

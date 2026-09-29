@@ -1,22 +1,59 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Annotated, Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from ..application import MealPrepServices
+from ..auth import SupabaseTokenVerifier
 from ..config import get_settings
+from ..container import services_for_request
 
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 router = APIRouter()
+bearer = HTTPBearer(auto_error=False)
+
+
+async def web_services(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> MealPrepServices:
+    """Use the browser's Supabase session for the same RLS-scoped services as MCP."""
+    settings = get_settings()
+    if not settings.supabase_configured:
+        return services_for_request()
+    if not credentials:
+        if settings.auth_required:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sign in to continue",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return services_for_request()
+    access = await SupabaseTokenVerifier(settings).verify_token(credentials.credentials)
+    if not access:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your session is invalid or expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return services_for_request(access.token)
+
+
+WebServices = Annotated[MealPrepServices, Depends(web_services)]
 
 
 @router.get("/", include_in_schema=False)
-async def service_info() -> dict:
-    return {
-        "name": "Meal Prep Backend",
-        "status": "ok",
-        "mcp_endpoint": "/mcp",
-    }
+async def website_home() -> FileResponse:
+    return FileResponse(STATIC_DIR / "app.html")
+
+
+@router.get("/app", include_in_schema=False)
+async def website() -> FileResponse:
+    return FileResponse(STATIC_DIR / "app.html")
 
 
 @router.get("/login", include_in_schema=False)
@@ -47,5 +84,194 @@ async def health() -> dict:
         "status": "ok",
         "persistence": "supabase" if settings.supabase_configured else "demo",
         "auth_required": settings.auth_required,
+        "website": "/",
         "mcp_endpoint": "/mcp",
     }
+
+
+@router.get("/api/app/snapshot")
+async def app_snapshot(services: WebServices) -> dict:
+    return await services.household.snapshot()
+
+
+@router.get("/api/household")
+async def get_household(services: WebServices) -> dict:
+    return await services.household.get_context()
+
+
+@router.patch("/api/household")
+async def update_household(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.household.update_preferences(
+        household_size=payload.get("householdSize"),
+        dietary_restrictions=payload.get("dietaryRestrictions"),
+        store_priority=payload.get("storePriority"),
+        planning_preferences=payload.get("planningPreferences"),
+        complete_onboarding=payload.get("completeOnboarding", False),
+    )
+
+
+@router.get("/api/dashboard-layout")
+async def get_dashboard_layout(services: WebServices) -> dict:
+    return await services.household.get_dashboard_layout()
+
+
+@router.patch("/api/dashboard-layout")
+async def configure_dashboard(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.household.configure_dashboard(
+        card_order=payload.get("cardOrder"),
+        hidden_cards=payload.get("hiddenCards"),
+        reset_to_default=payload.get("resetToDefault", False),
+    )
+
+
+@router.get("/api/recipes")
+async def search_recipes(
+    services: WebServices,
+    query: str = "",
+    limit: int = Query(25, ge=1, le=25),
+) -> dict:
+    items = await services.food.search_recipes(query=query, limit=limit)
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/api/recipes/{recipe_id}")
+async def get_recipe(recipe_id: str, services: WebServices) -> dict:
+    return await services.food.get_recipe(recipe_id)
+
+
+@router.put("/api/recipes")
+async def save_recipe(recipe: dict[str, Any], services: WebServices) -> dict:
+    return await services.food.save_recipe(recipe)
+
+
+@router.delete("/api/recipes/{recipe_id}")
+async def archive_recipe(recipe_id: str, services: WebServices) -> dict:
+    return await services.food.archive_recipe(recipe_id)
+
+
+@router.get("/api/recipes/{recipe_id}/lessons")
+async def get_recipe_lessons(recipe_id: str, services: WebServices, limit: int = 50) -> dict:
+    return await services.feedback.recipe_lessons(recipe_id, limit)
+
+
+@router.get("/api/pantry")
+async def get_pantry(services: WebServices) -> dict:
+    items = await services.food.get_pantry()
+    return {"items": items, "count": len(items)}
+
+
+@router.put("/api/pantry")
+async def update_pantry_item(item: dict[str, Any], services: WebServices) -> dict:
+    return await services.food.update_pantry_item(item)
+
+
+@router.get("/api/meal-plan")
+async def get_meal_plan(services: WebServices, week_start: str | None = None) -> dict:
+    return {"plan": await services.planning.get_meal_plan(week_start)}
+
+
+@router.put("/api/meal-plan")
+async def save_meal_plan(plan: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.save_meal_plan(plan)
+
+
+@router.get("/api/shopping-list")
+async def get_shopping_list(services: WebServices, list_id: str | None = None) -> dict:
+    return {"shoppingList": await services.shopping.get(list_id)}
+
+
+@router.put("/api/shopping-list")
+async def save_shopping_list(
+    shopping_list: dict[str, Any], services: WebServices
+) -> dict:
+    return await services.shopping.save(shopping_list)
+
+
+@router.patch("/api/shopping-list/items/{item_id}")
+async def mark_item_purchased(
+    item_id: str,
+    services: WebServices,
+    payload: dict[str, Any] = Body(default={}),
+) -> dict:
+    return await services.shopping.mark_purchased(
+        item_id,
+        payload.get("purchased", True),
+        payload.get("purchasedQuantity"),
+    )
+
+
+@router.get("/api/schedule")
+async def get_weekly_schedule(services: WebServices, week_start: str | None = None) -> dict:
+    return {"schedule": await services.planning.get_schedule(week_start)}
+
+
+@router.put("/api/schedule")
+async def save_weekly_schedule(schedule: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.save_schedule(schedule)
+
+
+@router.get("/api/planning-context")
+async def get_planning_context(services: WebServices, week_start: str | None = None) -> dict:
+    return await services.planning.get_context(week_start)
+
+
+@router.get("/api/retros")
+async def get_weekly_retro(services: WebServices, week_start: str | None = None) -> dict:
+    return {"retro": await services.planning.get_retro(week_start)}
+
+
+@router.put("/api/retros")
+async def save_weekly_retro(retro: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.save_retro(retro)
+
+
+@router.get("/api/feedback")
+async def get_feedback(
+    services: WebServices,
+    recipe_id: str | None = None,
+    week_start: str | None = None,
+    tags: list[str] | None = Query(default=None),
+    feedback_type: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
+) -> dict:
+    items = await services.feedback.list(recipe_id, week_start, tags, feedback_type, limit)
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/api/feedback")
+async def save_feedback(feedback: dict[str, Any], services: WebServices) -> dict:
+    return await services.feedback.save(feedback)
+
+
+@router.get("/api/what-worked")
+async def get_what_worked(
+    services: WebServices,
+    week_start: str | None = None,
+    tags: list[str] | None = Query(default=None),
+    limit: int = Query(20, ge=1, le=100),
+) -> dict:
+    return await services.feedback.what_worked(week_start, tags, limit)
+
+
+@router.get("/api/memories")
+async def get_household_memory(
+    services: WebServices,
+    include_inactive: bool = False,
+    status_filter: str | None = Query(default=None, alias="status"),
+    scope: str | None = None,
+    limit: int = Query(50, ge=1, le=100),
+) -> dict:
+    items = await services.memory.list(include_inactive, status_filter, scope, limit)
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/api/memories")
+async def save_household_memory(memory: dict[str, Any], services: WebServices) -> dict:
+    return await services.memory.save(memory)
+
+
+@router.patch("/api/memories/{memory_id}")
+async def review_household_memory(
+    memory_id: str, payload: dict[str, Any], services: WebServices
+) -> dict:
+    return await services.memory.review(memory_id, payload.get("action", ""), payload.get("content"))

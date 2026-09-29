@@ -24,3 +24,8 @@ enable_confirmations = false
 enabled = true
 authorization_url_path = "/oauth/consent"
 allow_dynamic_registration = true
+
+# Supabase's local email test inbox is available at http://localhost:54324.
+[inbucket]
+enabled = true
+port = 54324

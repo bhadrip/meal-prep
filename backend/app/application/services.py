@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -187,17 +188,20 @@ class HouseholdService:
             return {"status": "empty" if empty else "ready", "value": value}
 
         household = await self.repository.get_household_context()
+        loaders = {
+            "pantry": self.repository.get_pantry,
+            "recipes": lambda: self.repository.search_recipes(query="", limit=25),
+            "schedule": self.repository.get_weekly_schedule,
+            "retro": self.repository.get_latest_retro,
+            "feedback": lambda: self.repository.get_feedback(limit=25),
+            "memories": self.repository.get_household_memory,
+            "mealPlan": self.repository.get_meal_plan,
+            "shoppingList": self.repository.get_shopping_list,
+        }
+        values = await asyncio.gather(*(section(loader) for loader in loaders.values()))
         return {
             "household": household,
-            "sections": {
-                "pantry": await section(self.repository.get_pantry),
-                "recipes": await section(lambda: self.repository.search_recipes(query="", limit=25)),
-                "schedule": await section(self.repository.get_weekly_schedule),
-                "feedback": await section(lambda: self.repository.get_feedback(limit=25)),
-                "memories": await section(self.repository.get_household_memory),
-                "mealPlan": await section(self.repository.get_meal_plan),
-                "shoppingList": await section(self.repository.get_shopping_list),
-            },
+            "sections": dict(zip(loaders, values)),
         }
 
 

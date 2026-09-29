@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#143d32" />
+    <title>Meal Prep</title>
+    <link rel="stylesheet" href="/static/app.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="Meal Prep home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Meal Prep</span>
+        </a>
+        <nav id="primary-nav" aria-label="Main navigation">
+          <button class="nav-item active" data-view="overview"><span>⌂</span>Overview</button>
+          <button class="nav-item" data-view="plan"><span>▦</span>Weekly plan</button>
+          <button class="nav-item" data-view="recipes"><span>◇</span>Recipes</button>
+          <button class="nav-item" data-view="pantry"><span>□</span>Pantry</button>
+          <button class="nav-item" data-view="shopping"><span>✓</span>Shopping</button>
+          <button class="nav-item" data-view="reviews"><span>♡</span>Reviews</button>
+        </nav>
+        <div class="sidebar-foot">
+          <button class="nav-item" data-view="settings"><span>⚙</span>Settings</button>
+          <div class="access-note"><b>One household, everywhere.</b><span>Website and MCP share the same account and data.</span></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="view-eyebrow">Your household</p>
+            <h1 id="view-title">Overview</h1>
+          </div>
+          <div class="top-actions">
+            <span class="mode-badge" id="mode-badge" hidden>Demo data</span>
+            <button class="icon-button" id="refresh-button" aria-label="Refresh data">↻</button>
+            <button class="account-button" id="account-button"><span id="account-avatar">MP</span><span id="account-label">Account</span></button>
+          </div>
+        </header>
+        <section id="app-content" class="content" aria-live="polite">
+          <div class="loading"><span class="loader"></span><b>Opening your kitchen…</b></div>
+        </section>
+      </main>
+    </div>
+
+    <nav class="mobile-nav" aria-label="Mobile navigation">
+      <button class="active" data-view="overview"><span>⌂</span>Home</button>
+      <button data-view="plan"><span>▦</span>Plan</button>
+      <button data-view="recipes"><span>◇</span>Recipes</button>
+      <button data-view="pantry"><span>□</span>Pantry</button>
+      <button data-view="shopping"><span>✓</span>Shop</button>
+    </nav>
+
+    <dialog id="editor-dialog">
+      <form method="dialog" class="dialog-card" id="editor-form">
+        <div class="dialog-head"><div><p class="eyebrow" id="dialog-eyebrow">Meal Prep</p><h2 id="dialog-title">Edit</h2></div><button class="icon-button" value="cancel" aria-label="Close">×</button></div>
+        <div id="dialog-fields" class="dialog-fields"></div>
+        <p class="form-error" id="dialog-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button class="button ghost" value="cancel">Cancel</button><button class="button primary" id="dialog-save" value="default">Save</button></div>
+      </form>
+    </dialog>
+    <div class="toast" id="toast" role="status"></div>
+  </body>
+</html>

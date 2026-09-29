@@ -26,12 +26,13 @@ async function setup() {
       location.replace(next);
       return;
     }
-    message.textContent = `Signed in as ${session.user.email}.`;
+    location.replace('/');
+    return;
   }
   client.auth.onAuthStateChange((_event, nextSession) => {
     if (!nextSession?.access_token) return;
     sessionStorage.setItem('meal-prep-access-token', nextSession.access_token);
-    if (next) location.replace(next);
+    location.replace(next || '/');
   });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
