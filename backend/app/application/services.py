@@ -18,7 +18,6 @@ DASHBOARD_CARD_IDS = (
     "shopping-list",
     "pantry",
     "recipes",
-    "retro",
     "feedback",
     "memories",
 )
@@ -55,9 +54,6 @@ class MealPrepRepository(Protocol):
     ) -> dict[str, Any]: ...
     async def get_weekly_schedule(self, week_start: str | None = None) -> dict[str, Any] | None: ...
     async def save_weekly_schedule(self, schedule: dict[str, Any]) -> dict[str, Any]: ...
-    async def get_latest_retro(self, before_week_start: str | None = None) -> dict[str, Any] | None: ...
-    async def get_weekly_retro(self, week_start: str | None = None) -> dict[str, Any] | None: ...
-    async def save_weekly_retro(self, retro: dict[str, Any]) -> dict[str, Any]: ...
     async def get_feedback(
         self,
         recipe_id: str | None = None,
@@ -197,7 +193,6 @@ class HouseholdService:
                 "pantry": await section(self.repository.get_pantry),
                 "recipes": await section(lambda: self.repository.search_recipes(query="", limit=25)),
                 "schedule": await section(self.repository.get_weekly_schedule),
-                "retro": await section(self.repository.get_latest_retro),
                 "feedback": await section(lambda: self.repository.get_feedback(limit=25)),
                 "memories": await section(self.repository.get_household_memory),
                 "mealPlan": await section(self.repository.get_meal_plan),
@@ -247,7 +242,6 @@ class PlanningService:
         return {
             "household": await self.repository.get_household_context(),
             "schedule": await self.repository.get_weekly_schedule(week_start),
-            "retro": await self.repository.get_latest_retro(before_week_start=week_start),
             "feedback": await self.repository.get_feedback(limit=25),
             "memories": await self.repository.get_household_memory(),
             "requestedWeekStart": week_start,
@@ -260,17 +254,6 @@ class PlanningService:
         if not schedule.get("weekStart") or len(schedule.get("days", [])) != 7:
             raise ApplicationError("schedule.weekStart and seven schedule.days are required")
         return await self.repository.save_weekly_schedule(schedule)
-
-    async def get_latest_retro(self) -> dict[str, Any] | None:
-        return await self.repository.get_latest_retro()
-
-    async def get_retro(self, week_start: str | None = None) -> dict[str, Any] | None:
-        return await self.repository.get_weekly_retro(week_start)
-
-    async def save_retro(self, retro: dict[str, Any]) -> dict[str, Any]:
-        if not retro.get("weekStart") or not isinstance(retro.get("outcomes", []), list):
-            raise ApplicationError("retro.weekStart and retro.outcomes are required")
-        return await self.repository.save_weekly_retro(retro)
 
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None:
         return await self.repository.get_meal_plan(week_start)
@@ -285,13 +268,14 @@ class PlanningService:
 
 
 class FeedbackService:
-    FEEDBACK_TYPES = {"worked_well", "change_next_time", "problem", "preference"}
+    FEEDBACK_TYPES = {"worked_well", "change_next_time", "problem", "preference_signal"}
     TAG_ALIASES = {
         "very-good": "worked-well",
         "great": "worked-well",
         "loved-it": "worked-well",
         "success": "worked-well",
         "didnt-work": "did-not-work",
+        "preference": "preference-signal",
         "too-hot": "too-spicy",
         "children": "family:kids",
         "kids": "family:kids",
@@ -301,7 +285,7 @@ class FeedbackService:
         "worked-well": "outcome",
         "did-not-work": "outcome",
         "change-next-time": "outcome",
-        "preference": "outcome",
+        "preference-signal": "outcome",
         "too-spicy": "taste",
         "too-salty": "taste",
         "bland": "taste",
@@ -318,7 +302,7 @@ class FeedbackService:
         "worked_well": "worked-well",
         "change_next_time": "change-next-time",
         "problem": "did-not-work",
-        "preference": "preference",
+        "preference_signal": "preference-signal",
     }
 
     def __init__(self, repository: MealPrepRepository):
@@ -332,9 +316,11 @@ class FeedbackService:
         feedback_type: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
+        if feedback_type == "preference":
+            feedback_type = "preference_signal"
         if feedback_type not in self.FEEDBACK_TYPES | {None}:
             raise ApplicationError(
-                "feedback_type must be worked_well, change_next_time, problem, or preference"
+                "feedback_type must be worked_well, change_next_time, problem, or preference_signal"
             )
         normalized_tags = [tag["slug"] for tag in self._tag_records(tags or [])]
         return await self.repository.get_feedback(
@@ -366,6 +352,8 @@ class FeedbackService:
         tag_records = self._tag_records(feedback.get("tags", []))
         tag_slugs = {tag["slug"] for tag in tag_records}
         feedback_type = feedback.get("feedbackType")
+        if feedback_type == "preference":
+            feedback_type = "preference_signal"
         if not feedback_type:
             if "worked-well" in tag_slugs:
                 feedback_type = "worked_well"
@@ -375,7 +363,7 @@ class FeedbackService:
                 feedback_type = "change_next_time"
         if feedback_type not in self.FEEDBACK_TYPES:
             raise ApplicationError(
-                "feedback.feedbackType must be worked_well, change_next_time, problem, or preference"
+                "feedback.feedbackType must be worked_well, change_next_time, problem, or preference_signal"
             )
         outcome_tag = self.FEEDBACK_TYPE_TAG[feedback_type]
         if outcome_tag not in tag_slugs:
@@ -454,7 +442,7 @@ class FeedbackService:
             ],
         }
 
-    async def recipe_lessons(self, recipe_id: str, limit: int = 50) -> dict[str, Any]:
+    async def recipe_feedback_summary(self, recipe_id: str, limit: int = 50) -> dict[str, Any]:
         recipe = await self.repository.get_recipe(recipe_id)
         if not recipe:
             raise ApplicationError("Recipe was not found")
@@ -477,7 +465,9 @@ class FeedbackService:
             "workedWell": [item for item in items if item.get("feedback_type") == "worked_well"],
             "nextTime": [item for item in items if item.get("next_time")],
             "problems": [item for item in items if item.get("feedback_type") == "problem"],
-            "preferences": [item for item in items if item.get("feedback_type") == "preference"],
+            "preferenceSignals": [
+                item for item in items if item.get("feedback_type") == "preference_signal"
+            ],
             "tagSummary": [
                 {"slug": slug, "count": count} for slug, count in tag_counts.most_common()
             ],

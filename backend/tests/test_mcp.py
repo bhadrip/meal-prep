@@ -68,21 +68,19 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "render_shopping_list",
         "render_household_snapshot",
         "render_recipe_library",
-        "render_household_reviews",
+        "render_feedback",
         "get_weekly_schedule",
         "save_weekly_schedule",
         "get_planning_context",
-        "get_latest_retro",
-        "get_weekly_retro",
-        "save_weekly_retro",
         "get_feedback",
         "save_feedback",
         "get_what_worked",
-        "get_recipe_lessons",
+        "get_recipe_feedback_summary",
         "get_household_memory",
         "save_household_memory",
         "review_household_memory",
     }.issubset(names)
+    assert {"get_latest_retro", "get_weekly_retro", "save_weekly_retro"}.isdisjoint(names)
     render_uris = {
         tool["name"]: tool["_meta"]["ui"]["resourceUri"]
         for tool in tools
@@ -91,7 +89,7 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     assert render_uris == {
         "render_household_snapshot": "ui://meal-prep/household-dashboard-v4.html",
         "render_recipe_library": "ui://meal-prep/recipe-library-v1.html",
-        "render_household_reviews": "ui://meal-prep/household-reviews-v1.html",
+        "render_feedback": "ui://meal-prep/feedback-v2.html",
         "render_onboarding": "ui://meal-prep/onboarding-v2.html",
         "render_meal_plan": "ui://meal-prep/meal-plan-v2.html",
         "render_shopping_list": "ui://meal-prep/shopping-list-v2.html",
@@ -111,16 +109,32 @@ def test_demo_weekly_schedule_can_be_saved_and_read(client: TestClient):
     assert loaded["schedule"]["is_normal_week"] is False
 
 
-def test_demo_retro_is_saved_as_evidence(client: TestClient):
-    retro = {"weekStart": "2026-09-21", "outcomes": [{"meal": "Pasta", "outcome": "cooked"}], "workedWell": ["Quick meals"], "stressors": ["Too many dishes"], "note": "Keep Wednesday light."}
-    saved = rpc(client, "tools/call", {"name": "save_weekly_retro", "arguments": {"retro": retro}}, request_id=3)["structuredContent"]
-    assert saved["stressors"] == ["Too many dishes"]
-    loaded = rpc(client, "tools/call", {"name": "get_latest_retro", "arguments": {}}, request_id=4)["structuredContent"]
-    assert loaded["retro"]["note"] == "Keep Wednesday light."
-    exact = rpc(client, "tools/call", {"name": "get_weekly_retro", "arguments": {"week_start": "2026-09-21"}}, request_id=10)["structuredContent"]
-    assert exact["retro"]["week_start"] == "2026-09-21"
-    missing = rpc(client, "tools/call", {"name": "get_weekly_retro", "arguments": {"week_start": "2026-09-14"}}, request_id=11)["structuredContent"]
-    assert missing["retro"] is None
+def test_demo_weekly_check_in_is_saved_as_feedback(client: TestClient):
+    saved = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "save_feedback",
+            "arguments": {
+                "feedback": {
+                    "weekStart": "2026-09-21",
+                    "feedbackType": "worked_well",
+                    "note": "Quick meals worked well.",
+                    "tags": ["easy cleanup"],
+                }
+            },
+        },
+        request_id=3,
+    )["structuredContent"]
+    assert saved["feedback_type"] == "worked_well"
+
+    loaded = rpc(
+        client,
+        "tools/call",
+        {"name": "get_feedback", "arguments": {"week_start": "2026-09-21"}},
+        request_id=4,
+    )["structuredContent"]
+    assert any(item["id"] == saved["id"] for item in loaded["items"])
 
 
 def test_feedback_links_a_recipe_to_the_week_and_is_recalled_next_time(client: TestClient):
@@ -180,18 +194,18 @@ def test_feedback_links_a_recipe_to_the_week_and_is_recalled_next_time(client: T
     )["structuredContent"]
     assert any(item["id"] == saved["id"] for item in recipe["feedback"])
 
-    lessons = rpc(
+    summary = rpc(
         client,
         "tools/call",
-        {"name": "get_recipe_lessons", "arguments": {"recipe_id": recipe_id}},
+        {"name": "get_recipe_feedback_summary", "arguments": {"recipe_id": recipe_id}},
         request_id=22,
     )["structuredContent"]
-    assert lessons["evidenceCount"] >= 1
-    assert any(item["id"] == saved["id"] for item in lessons["nextTime"])
+    assert summary["evidenceCount"] >= 1
+    assert any(item["id"] == saved["id"] for item in summary["nextTime"])
 
 
 def test_demo_memory_requires_explicit_review(client: TestClient):
-    saved = rpc(client, "tools/call", {"name": "save_household_memory", "arguments": {"memory": {"content": "Keep Wednesday meals quick", "category": "schedule", "status": "suggested", "sourceType": "retro"}}}, request_id=5)["structuredContent"]
+    saved = rpc(client, "tools/call", {"name": "save_household_memory", "arguments": {"memory": {"content": "Keep Wednesday meals quick", "category": "schedule", "status": "suggested", "sourceType": "feedback"}}}, request_id=5)["structuredContent"]
     assert saved["status"] == "suggested"
     confirmed = rpc(client, "tools/call", {"name": "review_household_memory", "arguments": {"memory_id": saved["id"], "action": "confirm"}}, request_id=6)["structuredContent"]
     assert confirmed["status"] == "confirmed"
@@ -225,8 +239,8 @@ def test_planning_context_returns_all_durable_inputs(client: TestClient):
     )["structuredContent"]
     assert context["household"]["householdId"]
     assert context["schedule"]["week_start"] == "2026-09-28"
-    assert context["retro"]["week_start"] == "2026-09-21"
     assert "feedback" in context
+    assert "retro" not in context
     assert any(item["status"] == "confirmed" for item in context["memories"])
 
 
@@ -260,10 +274,9 @@ def test_household_snapshot_collects_chatgpt_ui_data_without_flattening_it_to_te
     assert rendered["kind"] == "household_snapshot"
     assert rendered["household"]["householdSize"] == 4
     assert set(rendered["sections"]) == {
-        "pantry", "recipes", "schedule", "retro", "feedback", "memories", "mealPlan", "shoppingList"
+        "pantry", "recipes", "schedule", "feedback", "memories", "mealPlan", "shoppingList"
     }
     assert rendered["sections"]["pantry"]["status"] in {"ready", "empty", "unavailable"}
-    assert rendered["sections"]["retro"]["status"] in {"ready", "empty", "unavailable"}
 
 
 def test_recipe_library_is_served_as_a_visual_mcp_app(client: TestClient):
@@ -290,17 +303,17 @@ def test_recipe_library_is_served_as_a_visual_mcp_app(client: TestClient):
     assert "Instructions" in html
 
 
-def test_household_reviews_are_served_separately_from_memory(client: TestClient):
+def test_feedback_is_served_separately_from_confirmed_preferences(client: TestClient):
     rendered = rpc(
         client,
         "tools/call",
-        {"name": "render_household_reviews", "arguments": {}},
+        {"name": "render_feedback", "arguments": {}},
         request_id=26,
     )["structuredContent"]
 
-    assert rendered["kind"] == "household_reviews"
-    assert set(rendered["sections"]) == {"retro", "feedback"}
-    assert rendered["sections"]["retro"]["status"] in {"ready", "empty", "unavailable"}
+    assert rendered["kind"] == "feedback"
+    assert set(rendered["sections"]) == {"feedback"}
+    assert rendered["sections"]["feedback"]["status"] in {"ready", "empty", "unavailable"}
 
 
 def test_dashboard_layout_can_be_configured_incrementally_from_chat(client: TestClient):
@@ -395,7 +408,7 @@ def test_household_dashboard_exposes_chat_configured_individual_cards(client: Te
 
     for card_id in (
         "food-rules", "planning-defaults", "stores", "schedule", "meal-plan",
-        "shopping-list", "pantry", "recipes", "retro", "feedback", "memories",
+        "shopping-list", "pantry", "recipes", "feedback", "memories",
     ):
         assert f"id: '{card_id}'" in html
     assert "Ask Meal Prep in chat to show, hide, reorder, or reset dashboard cards." in html

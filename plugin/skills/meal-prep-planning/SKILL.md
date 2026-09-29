@@ -13,8 +13,8 @@ food preferences, or create a shopping list.
 
 1. Call `get_planning_context` before drafting or revising a weekly plan,
    passing the requested `week_start` when known. It returns household
-   preferences, the relevant weekly schedule and retrospective, and active
-   household memories in one read. If `household.onboardingComplete` is false,
+   preferences, the relevant weekly schedule, recent feedback, and active
+   household knowledge in one read. If `household.onboardingComplete` is false,
    call `render_onboarding` so the user can complete the MCP-served household
    setup. The form collects household size, dietary restrictions (including an
    explicit "none"), preferred stores in order, maximum weeknight cooking time,
@@ -50,8 +50,8 @@ food preferences, or create a shopping list.
 8. Use `render_onboarding` for incomplete household setup. Use
    `render_household_snapshot` when the user asks to open, show, view, or
    customize their dashboard, asks what Meal Prep knows, or wants to inspect
-   household rules, pantry, schedule, or memory without a wall of prose. Use
-   `render_meal_plan` or `render_shopping_list` only after the corresponding
+   household rules, pantry, schedule, or preferences without a wall of prose.
+   Use `render_meal_plan` or `render_shopping_list` only after the corresponding
    data tool has returned the final data. Data tools must remain usable without
    UI.
 
@@ -60,7 +60,7 @@ food preferences, or create a shopping list.
 The household snapshot starts from one shared card template and is configured
 through chat. It has individual cards for food rules, planning defaults,
 preferred stores, weekly rhythm, meal plan, shopping list, pantry, recipes,
-meal feedback, and learned memory.
+meal feedback, and what works for the household.
 
 - For “show my dashboard,” call `render_household_snapshot`.
 - For a general request such as “help me customize my dashboard,” call
@@ -75,18 +75,17 @@ meal feedback, and learned memory.
 - For “reset my dashboard,” call `configure_dashboard` with
   `reset_to_default: true`, then render the dashboard.
 - Valid card IDs are `food-rules`, `planning-defaults`, `stores`, `schedule`,
-  `meal-plan`, `shopping-list`, `pantry`, `recipes`, `retro`, `feedback`, and
-  `memories`.
+  `meal-plan`, `shopping-list`, `pantry`, `recipes`, `feedback`, and `memories`.
 - Do not use `update_household_preferences` for dashboard layout. The dedicated
   dashboard tool preserves cooking time, leftovers, focus areas, and other
   planning preferences automatically.
 
-## Experience feedback workflow
+## Feedback workflow
 
-Use atomic experience feedback when somebody describes how a dish or week
-actually went. The service models recipes, variants, meal occurrences,
-feedback, weeks, and canonical tags as a relational graph. This is more precise
-than putting every observation into the single weekly retrospective.
+Use feedback when somebody describes how a dish or week actually went. A
+weekly check-in is a conversation that creates ordinary feedback entries, not
+a separate kind of record. Save each distinct observation separately so it can
+remain connected to the meal, recipe, variant, and week it describes.
 
 1. Center dish feedback on the specific meal occurrence. Call `save_feedback`
    with `mealPlanEntryId` when the feedback concerns a planned meal. Otherwise
@@ -97,7 +96,8 @@ than putting every observation into the single weekly retrospective.
 2. Put the observation in `note` and a concrete correction in `nextTime`, such
    as reducing salt, starting prep earlier, or serving a spicy component on the
    side. Use `feedbackType` to distinguish `worked_well`, `change_next_time`,
-   `problem`, and `preference`.
+   `problem`, and `preference_signal`. A preference signal is evidence from one
+   moment; it is not yet a durable household preference.
 3. Use tags only for reusable themes and audiences, such as `worked-well`,
    `too-spicy`, `easy-cleanup`, `successful-substitution`, or `family:kids`.
    Natural aliases such as "very good" are normalized to canonical tags. IDs
@@ -105,12 +105,13 @@ than putting every observation into the single weekly retrospective.
 4. When the household names a distinct preparation, include `variantName` and
    structured `adaptations`. The service links that recipe variant to the meal
    occurrence and snapshots what was actually tried.
-5. Before recommending or adapting a saved recipe, call `get_recipe_lessons`.
+5. Before recommending or adapting a saved recipe, call
+   `get_recipe_feedback_summary`.
    Use `get_what_worked` for recent successes and `get_feedback` to traverse a
    particular week, tag combination, feedback type, or recipe. `get_recipe`
    also includes that recipe's recent feedback history.
 6. Treat each entry as evidence from one occurrence. If several entries reveal
-   a stable family pattern, offer a suggested household memory with
+   a stable family pattern, offer a suggested household preference with
    `sourceType: feedback`; do not silently turn it into a confirmed preference.
 
 ## Changes and confirmation
@@ -118,13 +119,13 @@ than putting every observation into the single weekly retrospective.
 - Explicit preference changes may be saved with
   `update_household_preferences`. Never turn a one-time situation or inferred
   behavior into a durable preference without asking.
-- Retrospectives and experience feedback are evidence, not permanent
-  preferences. Save repeated patterns as suggested memories and use
+- Feedback is evidence, not a permanent preference. Save repeated patterns as
+  suggested household preferences and use
   `review_household_memory` only after the user confirms, corrects, or asks to
   forget one.
-- Use confirmed household memories as planning defaults. Suggested memories may
+- Use confirmed household preferences as planning defaults. Suggestions may
   influence a question or option but must not be presented as settled facts.
-- A null weekly schedule or retrospective means no saved record exists. Ask for
+- A null weekly schedule means no saved record exists. Ask for
   relevant constraints when needed; do not invent a schedule or prior outcome.
 - Recipe archival and external purchases require explicit confirmation.
 - `mark_item_purchased` records shopping progress; it does not buy anything.

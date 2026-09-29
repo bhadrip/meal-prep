@@ -130,14 +130,6 @@
       .recipe-note { padding:9px 10px; border-left:3px solid var(--accent); border-radius:8px; background:var(--soft); }
       .recipe-note p { color:var(--muted); font-size:.7rem; line-height:1.4; }
       .recipe-note small { display:block; margin-top:5px; color:var(--accent); font-size:.64rem; font-weight:700; }
-      .retro-card { padding:13px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
-      .retro-card h3 { font-size:.78rem; }
-      .retro-card > p { margin-top:6px; color:var(--muted); font-size:.72rem; line-height:1.4; }
-      .retro-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
-      .retro-list { display:grid; gap:7px; margin:9px 0 0; padding:0; list-style:none; }
-      .retro-list li { display:grid; grid-template-columns:17px 1fr; gap:7px; color:var(--muted); font-size:.7rem; line-height:1.35; }
-      .retro-list li::before { content:"✓"; color:var(--accent); font-weight:800; }
-      .retro-card.stress .retro-list li::before { content:"!"; color:color-mix(in srgb, CanvasText 72%, #b54708); }
       .feedback-list { display:grid; gap:8px; }
       .feedback-row { padding:10px 11px; border:1px solid var(--line); border-radius:11px; background:var(--surface); }
       .feedback-row-head { display:flex; align-items:center; justify-content:space-between; gap:9px; }
@@ -165,7 +157,7 @@
         .grid { grid-template-columns:repeat(7,150px); }
         .signal-grid { grid-template-columns:1fr; }
         .data-strip { grid-template-columns:repeat(2,1fr); }
-        .recipe-grid,.recipe-columns,.retro-summary { grid-template-columns:1fr; }
+        .recipe-grid,.recipe-columns { grid-template-columns:1fr; }
         .dashboard-grid { grid-template-columns:1fr; }
         .dashboard-card.wide { grid-column:auto; }
       }
@@ -414,79 +406,37 @@
       }
 
       function renderFeedbackCard() {
-        if (sectionStatus('feedback') === 'unavailable') return cardShell('feedback', 'Meal feedback', 'F', unavailableCard('Meal feedback'));
+        if (sectionStatus('feedback') === 'unavailable') return cardShell('feedback', 'Feedback', 'F', unavailableCard('Feedback'));
         const feedback = asArray(sectionValue('feedback'));
         const rows = feedback.slice(0, 4).map((item) => {
           const subject = item.occurrence?.title || item.meal_title || item.recipe_title || humanize(item.feedback_type || 'Meal note');
           const note = item.note || item.next_time || 'Saved feedback';
           return `<div class="feedback-row"><strong>${escapeHtml(note)}</strong><small>${escapeHtml(subject)}${item.rating ? ` · ${escapeHtml(item.rating)}/5` : ''}</small></div>`;
         }).join('');
-        return cardShell('feedback', 'Meal feedback', 'F', rows ? `<div class="feedback-preview">${rows}</div>` : '<div class="card-empty">No meal feedback saved yet.</div>', `${feedback.length} saved`);
+        return cardShell('feedback', 'Feedback', 'F', rows ? `<div class="feedback-preview">${rows}</div>` : '<div class="card-empty">No feedback saved yet.</div>', `${feedback.length} saved`);
       }
 
       function renderMemoriesCard() {
-        if (sectionStatus('memories') === 'unavailable') return cardShell('memories', 'Learned memory', 'L', unavailableCard('Learned memory'));
+        if (sectionStatus('memories') === 'unavailable') return cardShell('memories', 'What works for us', 'W', unavailableCard('What works for us'));
         const memories = asArray(sectionValue('memories'));
         const rows = memories.slice(0, 6).map((item) => `<article class="memory-row"><div class="memory-meta"><span>${escapeHtml(humanize(item.category || 'planning'))}</span><span class="status ${item.status === 'suggested' ? 'suggested' : ''}">${escapeHtml(item.status || 'confirmed')}</span></div><p>${escapeHtml(item.content)}</p></article>`).join('');
-        const body = rows ? `<div class="compact-list">${rows}</div>` : '<div class="card-empty">No learned memories yet.</div>';
-        return cardShell('memories', 'Learned memory', 'L', body, `${memories.length} active`);
+        const body = rows ? `<div class="compact-list">${rows}</div>` : '<div class="card-empty">Nothing saved yet.</div>';
+        return cardShell('memories', 'What works for us', 'W', body, `${memories.length} active`);
       }
 
-      function reflectionText(item) {
-        return typeof item === 'string' ? item : pick(item, 'meal', 'title', 'note', 'outcome') || humanize(item);
-      }
-
-      function renderReviews() {
-        const retroUnavailable = sectionStatus('retro') === 'unavailable';
-        const feedbackUnavailable = sectionStatus('feedback') === 'unavailable';
-        if (retroUnavailable && feedbackUnavailable) return '<div class="callout"><strong>Reviews unavailable</strong><p>Review data will appear once its database tables are installed.</p></div>';
-        const retro = sectionValue('retro');
+      function renderFeedback() {
+        if (sectionStatus('feedback') === 'unavailable') return '<div class="callout"><strong>Feedback unavailable</strong><p>Feedback will appear once its database table is installed.</p></div>';
         const feedback = asArray(sectionValue('feedback'));
-        if (!retro && !feedback.length) return '<div class="callout"><strong>No reviews saved yet</strong><p>Weekly retrospectives and meal feedback will appear here without being promoted to long-term memory.</p></div>';
-
-        let retroMarkup = '';
-        if (retro) {
-          const workedWell = asArray(pick(retro, 'workedWell', 'worked_well'));
-          const stressors = asArray(retro.stressors);
-          const outcomes = asArray(retro.outcomes);
-          const workedMarkup = workedWell.length ? workedWell.map((item) => `<li><span>${escapeHtml(reflectionText(item))}</span></li>`).join('') : '<li><span>No wins recorded for this week.</span></li>';
-          const stressMarkup = stressors.length ? stressors.map((item) => `<li><span>${escapeHtml(reflectionText(item))}</span></li>`).join('') : '<li><span>No stressors recorded for this week.</span></li>';
-          const outcomeMarkup = outcomes.map((item) => `<div class="compact-row"><div><strong>${escapeHtml(pick(item, 'meal', 'title', 'name') || 'Meal')}</strong><small>${escapeHtml(item.note || '')}</small></div><span class="row-meta">${escapeHtml(humanize(item.outcome || item.status || 'recorded'))}</span></div>`).join('');
-          retroMarkup = `<div class="section-head"><h2>Latest weekly retro</h2><span>Week of ${escapeHtml(pick(retro, 'weekStart', 'week_start') || '')}</span></div>
-            ${retro.note ? `<article class="retro-card"><h3>Week note</h3><p>${escapeHtml(retro.note)}</p></article>` : ''}
-            <div class="retro-summary"><article class="retro-card"><h3>What worked well</h3><ul class="retro-list">${workedMarkup}</ul></article><article class="retro-card stress"><h3>Friction and stressors</h3><ul class="retro-list">${stressMarkup}</ul></article></div>
-            ${outcomeMarkup ? `<div class="section-head"><h2>Meal outcomes</h2><span>${outcomes.length} recorded</span></div><div class="compact-list">${outcomeMarkup}</div>` : ''}`;
-        } else if (!retroUnavailable) {
-          retroMarkup = '<div class="callout"><strong>No weekly retro saved</strong><p>Your latest end-of-week reflection will appear here.</p></div>';
-        }
-
-        const feedbackMarkup = feedback.length ? feedback.slice(0, 8).map((item) => {
+        if (!feedback.length) return '<div class="callout"><strong>No feedback saved yet</strong><p>Meal notes, what worked, and next-time changes from weekly check-ins will appear here.</p></div>';
+        const rows = feedback.slice(0, 8).map((item) => {
           const occurrence = item.occurrence || {};
-          const title = occurrence.title || item.meal_title || item.title || 'Meal feedback';
+          const title = occurrence.title || item.meal_title || item.title || 'Weekly feedback';
           const type = humanize(item.feedback_type || item.feedbackType || 'feedback');
           const rating = item.rating ? ` · ${escapeHtml(item.rating)}/5` : '';
           const nextTime = pick(item, 'nextTime', 'next_time');
           return `<article class="feedback-row"><div class="feedback-row-head"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(type)}${rating}</small></div><p>${escapeHtml(item.note || item.content || 'Saved feedback')}</p>${nextTime ? `<small class="next-time">Next time: ${escapeHtml(nextTime)}</small>` : ''}</article>`;
-        }).join('') : '';
-        const feedbackSection = feedbackMarkup ? `<div class="section-head"><h2>Meal feedback</h2><span>${feedback.length} saved</span></div><div class="feedback-list">${feedbackMarkup}</div>` : feedbackUnavailable ? '' : '<div class="callout"><strong>No meal feedback saved</strong><p>Dish-specific wins and next-time adjustments will appear here.</p></div>';
-        return `<section class="tab-panel">${retroMarkup}${feedbackSection}</section>`;
-      }
-
-      function renderRetroCard() {
-        if (sectionStatus('retro') === 'unavailable') return cardShell('retro', 'Latest weekly retro', 'R', unavailableCard('Weekly retro'));
-        const retro = sectionValue('retro');
-        if (!retro) return cardShell('retro', 'Latest weekly retro', 'R', '<div class="card-empty">No weekly retro saved yet.</div>', 'Empty');
-        const workedWell = asArray(pick(retro, 'workedWell', 'worked_well'));
-        const stressors = asArray(retro.stressors);
-        const highlights = [
-          ...workedWell.slice(0, 2).map((item) => `Worked: ${reflectionText(item)}`),
-          ...stressors.slice(0, 2).map((item) => `Friction: ${reflectionText(item)}`),
-        ];
-        const body = highlights.length
-          ? `<ul class="fact-list">${highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
-          : `<div class="card-empty">${escapeHtml(retro.note || 'This retrospective has no highlights yet.')}</div>`;
-        const week = pick(retro, 'weekStart', 'week_start');
-        return cardShell('retro', 'Latest weekly retro', 'R', body, week ? `Week of ${week}` : 'Saved');
+        }).join('');
+        return `<section class="tab-panel"><div class="section-head"><h2>Feedback</h2><span>${feedback.length} saved</span></div><div class="feedback-list">${rows}</div></section>`;
       }
 
       const DASHBOARD_CARDS = [
@@ -498,9 +448,8 @@
         { id: 'shopping-list', label: 'Shopping list', render: renderShoppingListCard },
         { id: 'pantry', label: 'Pantry', render: renderPantryCard },
         { id: 'recipes', label: 'Recipes', render: renderRecipesCard },
-        { id: 'retro', label: 'Latest weekly retro', render: renderRetroCard },
-        { id: 'feedback', label: 'Meal feedback', render: renderFeedbackCard },
-        { id: 'memories', label: 'Learned memory', render: renderMemoriesCard },
+        { id: 'feedback', label: 'Feedback', render: renderFeedbackCard },
+        { id: 'memories', label: 'What works for us', render: renderMemoriesCard },
       ];
       const dashboardCardById = new Map(DASHBOARD_CARDS.map((card) => [card.id, card]));
 
@@ -591,9 +540,9 @@
         if (data.kind === 'household_snapshot') renderHouseholdSnapshot(data);
         else if (data.kind === 'onboarding') root.innerHTML = renderOnboarding(data.household);
         else if (data.kind === 'recipe_library') root.innerHTML = renderRecipeLibrary(asArray(data.recipes));
-        else if (data.kind === 'household_reviews') {
+        else if (data.kind === 'feedback') {
           householdSnapshot = { sections: data.sections || {} };
-          root.innerHTML = renderReviews();
+          root.innerHTML = renderFeedback();
         }
         else if (data.kind === 'shopping_list') root.innerHTML = renderShopping(data.shoppingList);
         else if (data.kind === 'meal_plan') root.innerHTML = renderPlan(data.plan);

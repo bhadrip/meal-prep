@@ -14,13 +14,12 @@ from ..config import Settings, get_settings
 
 PLANNING_TABLES = {
     "weekly_schedules": "weekly schedules",
-    "weekly_retros": "weekly retrospectives",
-    "feedback_entries": "experience feedback",
-    "household_memories": "household memory",
+    "feedback_entries": "feedback",
+    "household_memories": "household preferences",
 }
 PLANNING_FUNCTIONS = {
-    "rpc/get_experience_feedback": "experience feedback",
-    "rpc/save_experience_feedback": "experience feedback",
+    "rpc/get_experience_feedback": "feedback",
+    "rpc/save_experience_feedback": "feedback",
 }
 
 
@@ -272,52 +271,6 @@ class SupabaseRepository:
         )
         return rows[0]
 
-    async def get_latest_retro(self, before_week_start: str | None = None) -> dict[str, Any] | None:
-        household_id = await self.household_id()
-        params = {
-            "select": "*",
-            "household_id": f"eq.{household_id}",
-            "order": "week_start.desc",
-            "limit": "1",
-        }
-        if before_week_start:
-            params["week_start"] = f"lt.{before_week_start}"
-        rows = await self.request("GET", "weekly_retros", params=params)
-        return rows[0] if rows else None
-
-    async def get_weekly_retro(self, week_start: str | None = None) -> dict[str, Any] | None:
-        if not week_start:
-            return await self.get_latest_retro()
-        household_id = await self.household_id()
-        params = {
-            "select": "*",
-            "household_id": f"eq.{household_id}",
-            "order": "week_start.desc",
-            "limit": "1",
-        }
-        params["week_start"] = f"eq.{week_start}"
-        rows = await self.request(
-            "GET",
-            "weekly_retros",
-            params=params,
-        )
-        return rows[0] if rows else None
-
-    async def save_weekly_retro(self, retro: dict[str, Any]) -> dict[str, Any]:
-        household_id = await self.household_id()
-        row = {
-            "household_id": household_id,
-            "week_start": retro["weekStart"],
-            "outcomes": retro.get("outcomes", []),
-            "worked_well": retro.get("workedWell", []),
-            "stressors": retro.get("stressors", []),
-            "note": str(retro.get("note", ""))[:600],
-        }
-        rows = await self.request(
-            "POST", "weekly_retros", params={"on_conflict": "household_id,week_start"}, json=row
-        )
-        return rows[0]
-
     async def get_feedback(
         self,
         recipe_id: str | None = None,
@@ -476,7 +429,6 @@ class DemoRepository:
         "is_normal_week": True,
         "remember_rhythm": True,
     }
-    _latest_retro = None
     _feedback: list[dict[str, Any]] = []
     _occurrences: list[dict[str, Any]] = []
     _variants: list[dict[str, Any]] = []
@@ -563,32 +515,6 @@ class DemoRepository:
             "remember_rhythm": schedule.get("rememberRhythm", True),
         }
         type(self)._weekly_schedule = value
-        return deepcopy(value)
-
-    async def get_latest_retro(self, before_week_start: str | None = None) -> dict[str, Any] | None:
-        value = type(self)._latest_retro
-        if before_week_start and value and value.get("week_start", before_week_start) >= before_week_start:
-            return None
-        return deepcopy(value)
-
-    async def get_weekly_retro(self, week_start: str | None = None) -> dict[str, Any] | None:
-        if not week_start:
-            return await self.get_latest_retro()
-        value = type(self)._latest_retro
-        if week_start and (not value or value.get("week_start") != week_start):
-            return None
-        return deepcopy(value)
-
-    async def save_weekly_retro(self, retro: dict[str, Any]) -> dict[str, Any]:
-        value = {
-            "id": str(uuid4()),
-            "week_start": retro["weekStart"],
-            "outcomes": deepcopy(retro.get("outcomes", [])),
-            "worked_well": deepcopy(retro.get("workedWell", [])),
-            "stressors": deepcopy(retro.get("stressors", [])),
-            "note": str(retro.get("note", ""))[:600],
-        }
-        type(self)._latest_retro = value
         return deepcopy(value)
 
     async def get_feedback(

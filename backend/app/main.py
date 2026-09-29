@@ -21,7 +21,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Meal Prep Backend",
     description="Application services exposed through MCP and HTTP transport adapters.",
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
