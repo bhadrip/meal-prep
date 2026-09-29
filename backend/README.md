@@ -15,7 +15,7 @@ app/
 
 ## What is included
 
-- Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes, pantry, shopping, feedback, reviews, memory, and dashboard settings
+- Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes and recipe sharing, pantry, shopping, feedback, reviews, memory, and dashboard settings
 - Authenticated JSON API under `/api` for the website and future mobile clients
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
@@ -158,6 +158,7 @@ Data tools:
 - `get_planning_context`
 - `update_household_preferences`
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
+- `create_recipe_share`, `list_recipe_shares`, `revoke_recipe_share`, `copy_shared_recipe`
 - `get_pantry`, `update_pantry_item`
 - `get_weekly_schedule`, `save_weekly_schedule`
 - `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`
@@ -179,3 +180,4 @@ Presentation tools:
 - Demo mode is intentionally in memory; production MCP data is durable in Supabase.
 - The plugin stores plans and shopping lists but never places orders. Commerce remains a separate, explicitly confirmed tool flow.
 - The service does not provide medical guidance or fabricate food-safety dates.
+- Recipe shares publish a fixed, allowlisted snapshot at `/s/{token}`. Anyone with the active link can view it; signed-in users can save an independent copy. Share creation requires a household recipe, and the URL is returned only once. The creator can list and revoke links. Shares omit cooking feedback and household details.

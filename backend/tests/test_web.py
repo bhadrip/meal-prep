@@ -80,3 +80,29 @@ def test_web_api_requires_and_checks_supabase_session(monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"householdId": "test"}
     assert captured == ["valid"]
+
+
+def test_local_website_can_share_copy_and_revoke_a_recipe():
+    demo_repository.cache_clear()
+    client = TestClient(app)
+    recipe = client.put("/api/recipes", json={
+        "title": "Shareable lentil soup", "description": "Weeknight soup",
+        "servings": 2, "ingredients": [{"name": "Lentils"}],
+        "instructions": ["Simmer lentils"],
+    }).json()
+    share_response = client.post(f"/api/recipes/{recipe['id']}/shares")
+    assert share_response.status_code == 200
+    share = share_response.json()
+    assert share["url"].endswith(f"/s/{share['token']}")
+    assert client.get(f"/s/{share['token']}").status_code == 200
+    assert any(item["id"] == share["id"] for item in client.get("/api/recipe-shares").json()["items"])
+
+    copy_response = client.post(f"/api/shares/{share['token']}/save")
+    assert copy_response.status_code == 200
+    copied = client.get(f"/api/recipes/{copy_response.json()['recipeId']}").json()
+    assert copied["title"] == recipe["title"]
+    assert copied["id"] != recipe["id"]
+
+    assert client.delete(f"/api/recipe-shares/{share['id']}").json()["revoked"]
+    assert client.get(f"/s/{share['token']}").status_code == 404
+    demo_repository.cache_clear()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
+from secrets import token_hex
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -183,6 +184,22 @@ class SupabaseRepository:
         if not rows:
             raise RepositoryError("Recipe was not found")
         return rows[0]
+
+    async def create_recipe_share(self, recipe_id: str, expires_at: str | None = None) -> dict[str, Any]:
+        return await self.rpc("create_recipe_share", {
+            "requested_recipe_id": recipe_id,
+            "requested_expires_at": expires_at,
+        })
+
+    async def list_recipe_shares(self) -> list[dict[str, Any]]:
+        return await self.rpc("list_recipe_shares") or []
+
+    async def revoke_recipe_share(self, share_id: str) -> bool:
+        return bool(await self.rpc("revoke_recipe_share", {"requested_share_id": share_id}))
+
+    async def copy_shared_recipe(self, token: str) -> str:
+        await self.household_id()
+        return str(await self.rpc("copy_shared_recipe", {"raw_token": token}))
 
     async def get_pantry(self) -> list[dict[str, Any]]:
         household_id = await self.household_id()
@@ -388,6 +405,7 @@ class DemoRepository:
             "instructions": ["Cook rice.", "Sear paneer.", "Assemble bowls."],
         }
     ]
+    _shares: dict[str, dict[str, Any]] = {}
     _pantry = [
         {
             "id": "22222222-2222-2222-2222-222222222222",
@@ -469,6 +487,63 @@ class DemoRepository:
         row["archived_at"] = datetime.now(UTC).isoformat()
         self._recipes = [item for item in self._recipes if item["id"] != recipe_id]
         return row
+
+    async def create_recipe_share(self, recipe_id: str, expires_at: str | None = None) -> dict[str, Any]:
+        recipe = await self.get_recipe(recipe_id)
+        if not recipe or recipe.get("archived_at"):
+            raise RepositoryError("Recipe was not found")
+        token = token_hex(32)
+        share_id = str(uuid4())
+        snapshot = {
+            key: deepcopy(recipe.get(source))
+            for key, source in {
+                "title": "title", "description": "description", "servings": "servings",
+                "activeMinutes": "active_minutes", "totalMinutes": "total_minutes",
+                "tags": "tags", "ingredients": "ingredients", "instructions": "instructions",
+                "sourceType": "source_type", "sourceUrl": "source_url",
+            }.items()
+        }
+        type(self)._shares[token] = {
+            "id": share_id, "kind": "recipe", "recipe": snapshot,
+            "recipeId": recipe_id, "createdAt": datetime.now(UTC).isoformat(),
+            "expiresAt": expires_at, "revokedAt": None,
+        }
+        return {"id": share_id, "token": token, "expiresAt": expires_at}
+
+    async def list_recipe_shares(self) -> list[dict[str, Any]]:
+        return [
+            {key: share[key] for key in ("id", "recipeId", "createdAt", "expiresAt", "revokedAt")}
+            | {"title": share["recipe"]["title"]}
+            for share in type(self)._shares.values()
+        ]
+
+    async def revoke_recipe_share(self, share_id: str) -> bool:
+        share = next((s for s in type(self)._shares.values() if s["id"] == share_id), None)
+        if not share:
+            return False
+        share["revokedAt"] = datetime.now(UTC).isoformat()
+        return True
+
+    async def copy_shared_recipe(self, token: str) -> str:
+        share = self.read_shared_recipe(token)
+        if not share:
+            raise RepositoryError("Share was not found")
+        snapshot = share["recipe"]
+        row = await self.save_recipe({
+            **snapshot,
+            "sourceType": "shared",
+            "sourceSnapshot": {"shareId": share["id"]},
+        })
+        return row["id"]
+
+    @classmethod
+    def read_shared_recipe(cls, token: str) -> dict[str, Any] | None:
+        share = cls._shares.get(token)
+        if not share or share["revokedAt"]:
+            return None
+        if share["expiresAt"] and datetime.fromisoformat(share["expiresAt"].replace("Z", "+00:00")) <= datetime.now(UTC):
+            return None
+        return deepcopy({key: share[key] for key in ("id", "kind", "recipe", "createdAt")})
 
     async def get_pantry(self) -> list[dict[str, Any]]:
         return deepcopy(self._pantry)

@@ -41,6 +41,10 @@ class MealPrepRepository(Protocol):
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None: ...
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]: ...
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]: ...
+    async def create_recipe_share(self, recipe_id: str, expires_at: str | None = None) -> dict[str, Any]: ...
+    async def list_recipe_shares(self) -> list[dict[str, Any]]: ...
+    async def revoke_recipe_share(self, share_id: str) -> bool: ...
+    async def copy_shared_recipe(self, token: str) -> str: ...
     async def get_pantry(self) -> list[dict[str, Any]]: ...
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]: ...
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]: ...
@@ -227,6 +231,29 @@ class RecipePantryService:
 
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]:
         return await self.repository.archive_recipe(recipe_id)
+
+    async def create_recipe_share(self, recipe_id: str, expires_at: str | None = None) -> dict[str, Any]:
+        if not await self.repository.get_recipe(recipe_id):
+            raise ApplicationError("Recipe was not found")
+        if expires_at:
+            try:
+                parsed = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if parsed.tzinfo is None or parsed <= datetime.now(UTC):
+                    raise ValueError
+            except ValueError as exc:
+                raise ApplicationError("expires_at must be a future ISO 8601 timestamp") from exc
+        return await self.repository.create_recipe_share(recipe_id, expires_at)
+
+    async def list_recipe_shares(self) -> list[dict[str, Any]]:
+        return await self.repository.list_recipe_shares()
+
+    async def revoke_recipe_share(self, share_id: str) -> dict[str, Any]:
+        if not await self.repository.revoke_recipe_share(share_id):
+            raise ApplicationError("Share was not found")
+        return {"id": share_id, "revoked": True}
+
+    async def copy_shared_recipe(self, token: str) -> dict[str, Any]:
+        return {"recipeId": await self.repository.copy_shared_recipe(token)}
 
     async def get_pantry(self) -> list[dict[str, Any]]:
         return await self.repository.get_pantry()
