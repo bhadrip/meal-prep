@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 
+from app.application.errors import RepositoryError, StorageNotInstalledError
+from app.application.services import RecipePantryService
 from app.config import Settings
 from app.infrastructure.repositories import demo_repository
 from app.main import app
@@ -80,6 +82,40 @@ def test_web_api_requires_and_checks_supabase_session(monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"householdId": "test"}
     assert captured == ["valid"]
+
+
+def test_repository_details_are_not_sent_to_browser(monkeypatch):
+    monkeypatch.setattr(http, "get_settings", lambda: Settings(supabase_url="", supabase_anon_key=""))
+    food = SimpleNamespace(
+        get_recipe=AsyncMock(side_effect=RepositoryError("Apply the checked-in Supabase migrations"))
+    )
+    monkeypatch.setattr(http, "services_for_request", lambda: SimpleNamespace(food=food))
+
+    response = TestClient(app).get("/api/recipes/recipe-1")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "This part of Meal Prep is temporarily unavailable. Please try again later."
+    }
+
+
+def test_recipe_api_returns_recipe_when_feedback_store_is_missing(monkeypatch):
+    monkeypatch.setattr(http, "get_settings", lambda: Settings(supabase_url="", supabase_anon_key=""))
+    repository = SimpleNamespace(
+        get_recipe=AsyncMock(return_value={"id": "recipe-1", "title": "Lentil soup"}),
+        get_feedback=AsyncMock(side_effect=StorageNotInstalledError("feedback")),
+    )
+    monkeypatch.setattr(
+        http,
+        "services_for_request",
+        lambda: SimpleNamespace(food=RecipePantryService(repository)),
+    )
+
+    response = TestClient(app).get("/api/recipes/recipe-1")
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Lentil soup"
+    assert response.json()["feedbackUnavailable"] is True
 
 
 def test_local_website_can_share_copy_and_revoke_a_recipe():

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import re
 from typing import Any, Awaitable, Callable, Protocol
 
-from .errors import ApplicationError, RepositoryError
+from .errors import ApplicationError, RepositoryError, StorageNotInstalledError
 
 
 DASHBOARD_CARD_IDS = (
@@ -219,9 +219,16 @@ class RecipePantryService:
         recipe = await self.repository.get_recipe(recipe_id)
         if not recipe:
             raise ApplicationError("Recipe was not found")
+        try:
+            feedback = await self.repository.get_feedback(recipe_id=recipe_id, limit=25)
+        except StorageNotInstalledError as exc:
+            if exc.feature != "feedback":
+                raise
+            return {**recipe, "feedback": [], "feedbackUnavailable": True}
         return {
             **recipe,
-            "feedback": await self.repository.get_feedback(recipe_id=recipe_id, limit=25),
+            "feedback": feedback,
+            "feedbackUnavailable": False,
         }
 
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]:

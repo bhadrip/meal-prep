@@ -1,5 +1,6 @@
 import httpx
 
+from app.application.errors import StorageNotInstalledError
 from app.infrastructure.repositories import _repository_error
 
 
@@ -59,6 +60,8 @@ def test_missing_feedback_rpc_has_actionable_error():
 
     mapped = _repository_error("rpc/get_experience_feedback", error)
 
+    assert isinstance(mapped, StorageNotInstalledError)
+    assert mapped.feature == "feedback"
     assert str(mapped) == (
         "Feedback storage is not installed. "
         "Apply the checked-in Supabase migrations before using this feature."
