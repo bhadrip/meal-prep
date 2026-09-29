@@ -41,7 +41,7 @@
       .identity h1 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:1.08rem; }
       .identity p { margin-top:3px; color:var(--muted); font-size:.76rem; }
       .owner-badge { flex:0 0 auto; padding:5px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:.68rem; font-weight:750; }
-      .tabs { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; padding:4px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+      .tabs { display:grid; grid-template-columns:repeat(6,1fr); gap:4px; padding:4px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
       .tabs button { padding:7px 8px; border-radius:8px; background:transparent; color:var(--muted); font-size:.75rem; }
       .tabs button.active { background:var(--accent); color:white; }
       .tab-panel { display:grid; gap:10px; }
@@ -130,11 +130,27 @@
       .recipe-note { padding:9px 10px; border-left:3px solid var(--accent); border-radius:8px; background:var(--soft); }
       .recipe-note p { color:var(--muted); font-size:.7rem; line-height:1.4; }
       .recipe-note small { display:block; margin-top:5px; color:var(--accent); font-size:.64rem; font-weight:700; }
+      .retro-card { padding:13px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+      .retro-card h3 { font-size:.78rem; }
+      .retro-card > p { margin-top:6px; color:var(--muted); font-size:.72rem; line-height:1.4; }
+      .retro-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+      .retro-list { display:grid; gap:7px; margin:9px 0 0; padding:0; list-style:none; }
+      .retro-list li { display:grid; grid-template-columns:17px 1fr; gap:7px; color:var(--muted); font-size:.7rem; line-height:1.35; }
+      .retro-list li::before { content:"✓"; color:var(--accent); font-weight:800; }
+      .retro-card.stress .retro-list li::before { content:"!"; color:color-mix(in srgb, CanvasText 72%, #b54708); }
+      .feedback-list { display:grid; gap:8px; }
+      .feedback-row { padding:10px 11px; border:1px solid var(--line); border-radius:11px; background:var(--surface); }
+      .feedback-row-head { display:flex; align-items:center; justify-content:space-between; gap:9px; }
+      .feedback-row strong { font-size:.74rem; }
+      .feedback-row p { margin-top:5px; color:var(--muted); font-size:.7rem; line-height:1.4; }
+      .feedback-row small { color:var(--muted); font-size:.62rem; text-transform:capitalize; }
+      .next-time { display:block; margin-top:6px; color:var(--accent)!important; font-weight:700; }
       @media (max-width:700px) {
         .grid { grid-template-columns:repeat(7,150px); }
         .signal-grid { grid-template-columns:1fr; }
         .data-strip { grid-template-columns:repeat(2,1fr); }
-        .recipe-grid,.recipe-columns { grid-template-columns:1fr; }
+        .recipe-grid,.recipe-columns,.retro-summary { grid-template-columns:1fr; }
+        .tabs { grid-template-columns:repeat(6,minmax(86px,1fr)); overflow-x:auto; }
       }
       .onboarding { max-width:760px; margin:0 auto; }
       .onboarding-hero { padding:18px; border-radius:18px; background:var(--soft); }
@@ -251,7 +267,8 @@
           ['pantry', dataCount('pantry'), 'Pantry'],
           ['recipes', dataCount('recipes'), 'Recipes'],
           ['week', sectionStatus('schedule') === 'unavailable' ? '—' : dataCount('schedule'), 'Schedule'],
-          [null, sectionStatus('feedback') === 'unavailable' ? '—' : dataCount('feedback'), 'Feedback'],
+          ['reviews', sectionStatus('retro') === 'unavailable' ? '—' : dataCount('retro'), 'Latest retro'],
+          ['reviews', sectionStatus('feedback') === 'unavailable' ? '—' : dataCount('feedback'), 'Feedback'],
           ['week', dataCount('mealPlan'), 'Meal plan'],
           [null, dataCount('shoppingList'), 'Shopping lists'],
           ['memory', sectionStatus('memories') === 'unavailable' ? '—' : dataCount('memories'), 'Memories'],
@@ -373,10 +390,50 @@
         return `<section class="tab-panel"><div class="section-head"><h2>Learned memory</h2><span>${memories.length} active</span></div><div class="compact-list">${rows}</div></section>`;
       }
 
+      function reflectionText(item) {
+        return typeof item === 'string' ? item : pick(item, 'meal', 'title', 'note', 'outcome') || humanize(item);
+      }
+
+      function renderReviews() {
+        const retroUnavailable = sectionStatus('retro') === 'unavailable';
+        const feedbackUnavailable = sectionStatus('feedback') === 'unavailable';
+        if (retroUnavailable && feedbackUnavailable) return unavailable('Reviews');
+        const retro = sectionValue('retro');
+        const feedback = asArray(sectionValue('feedback'));
+        if (!retro && !feedback.length) return '<div class="callout"><strong>No reviews saved yet</strong><p>Weekly retrospectives and meal feedback will appear here without being promoted to long-term memory.</p></div>';
+
+        let retroMarkup = '';
+        if (retro) {
+          const workedWell = asArray(pick(retro, 'workedWell', 'worked_well'));
+          const stressors = asArray(retro.stressors);
+          const outcomes = asArray(retro.outcomes);
+          const workedMarkup = workedWell.length ? workedWell.map((item) => `<li><span>${escapeHtml(reflectionText(item))}</span></li>`).join('') : '<li><span>No wins recorded for this week.</span></li>';
+          const stressMarkup = stressors.length ? stressors.map((item) => `<li><span>${escapeHtml(reflectionText(item))}</span></li>`).join('') : '<li><span>No stressors recorded for this week.</span></li>';
+          const outcomeMarkup = outcomes.map((item) => `<div class="compact-row"><div><strong>${escapeHtml(pick(item, 'meal', 'title', 'name') || 'Meal')}</strong><small>${escapeHtml(item.note || '')}</small></div><span class="row-meta">${escapeHtml(humanize(item.outcome || item.status || 'recorded'))}</span></div>`).join('');
+          retroMarkup = `<div class="section-head"><h2>Latest weekly retro</h2><span>Week of ${escapeHtml(pick(retro, 'weekStart', 'week_start') || '')}</span></div>
+            ${retro.note ? `<article class="retro-card"><h3>Week note</h3><p>${escapeHtml(retro.note)}</p></article>` : ''}
+            <div class="retro-summary"><article class="retro-card"><h3>What worked well</h3><ul class="retro-list">${workedMarkup}</ul></article><article class="retro-card stress"><h3>Friction and stressors</h3><ul class="retro-list">${stressMarkup}</ul></article></div>
+            ${outcomeMarkup ? `<div class="section-head"><h2>Meal outcomes</h2><span>${outcomes.length} recorded</span></div><div class="compact-list">${outcomeMarkup}</div>` : ''}`;
+        } else if (!retroUnavailable) {
+          retroMarkup = '<div class="callout"><strong>No weekly retro saved</strong><p>Your latest end-of-week reflection will appear here.</p></div>';
+        }
+
+        const feedbackMarkup = feedback.length ? feedback.slice(0, 8).map((item) => {
+          const occurrence = item.occurrence || {};
+          const title = occurrence.title || item.meal_title || item.title || 'Meal feedback';
+          const type = humanize(item.feedback_type || item.feedbackType || 'feedback');
+          const rating = item.rating ? ` · ${escapeHtml(item.rating)}/5` : '';
+          const nextTime = pick(item, 'nextTime', 'next_time');
+          return `<article class="feedback-row"><div class="feedback-row-head"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(type)}${rating}</small></div><p>${escapeHtml(item.note || item.content || 'Saved feedback')}</p>${nextTime ? `<small class="next-time">Next time: ${escapeHtml(nextTime)}</small>` : ''}</article>`;
+        }).join('') : '';
+        const feedbackSection = feedbackMarkup ? `<div class="section-head"><h2>Meal feedback</h2><span>${feedback.length} saved</span></div><div class="feedback-list">${feedbackMarkup}</div>` : feedbackUnavailable ? '' : '<div class="callout"><strong>No meal feedback saved</strong><p>Dish-specific wins and next-time adjustments will appear here.</p></div>';
+        return `<section class="tab-panel">${retroMarkup}${feedbackSection}</section>`;
+      }
+
       function renderSnapshotTab(tab) {
         const panel = root.querySelector('#snapshot-body');
         if (!panel || !householdSnapshot) return;
-        panel.innerHTML = tab === 'pantry' ? renderPantry() : tab === 'recipes' ? renderRecipesTab() : tab === 'week' ? renderWeek() : tab === 'memory' ? renderMemory() : renderOverview();
+        panel.innerHTML = tab === 'pantry' ? renderPantry() : tab === 'recipes' ? renderRecipesTab() : tab === 'week' ? renderWeek() : tab === 'reviews' ? renderReviews() : tab === 'memory' ? renderMemory() : renderOverview();
         root.querySelectorAll('[data-tab].tab-button').forEach((button) => {
           const active = button.dataset.tab === tab;
           button.classList.toggle('active', active);
@@ -390,7 +447,7 @@
         const name = pick(household, 'householdName', 'household_name', 'name') || 'My household';
         const size = pick(household, 'householdSize', 'household_size');
         const role = pick(household, 'role', 'householdRole', 'household_role') || 'Owner';
-        root.innerHTML = `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><nav class="tabs" aria-label="Household data"><button class="tab-button active" data-tab="overview" aria-selected="true">Overview</button><button class="tab-button" data-tab="recipes" aria-selected="false">Recipes</button><button class="tab-button" data-tab="pantry" aria-selected="false">Pantry</button><button class="tab-button" data-tab="week" aria-selected="false">Week</button><button class="tab-button" data-tab="memory" aria-selected="false">Memory</button></nav><div id="snapshot-body"></div></section>`;
+        root.innerHTML = `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><nav class="tabs" aria-label="Household data"><button class="tab-button active" data-tab="overview" aria-selected="true">Overview</button><button class="tab-button" data-tab="recipes" aria-selected="false">Recipes</button><button class="tab-button" data-tab="pantry" aria-selected="false">Pantry</button><button class="tab-button" data-tab="week" aria-selected="false">Week</button><button class="tab-button" data-tab="reviews" aria-selected="false">Reviews</button><button class="tab-button" data-tab="memory" aria-selected="false">Memory</button></nav><div id="snapshot-body"></div></section>`;
         renderSnapshotTab('overview');
       }
 
@@ -456,6 +513,10 @@
         if (data.kind === 'household_snapshot') renderHouseholdSnapshot(data);
         else if (data.kind === 'onboarding') root.innerHTML = renderOnboarding(data.household);
         else if (data.kind === 'recipe_library') root.innerHTML = renderRecipeLibrary(asArray(data.recipes));
+        else if (data.kind === 'household_reviews') {
+          householdSnapshot = { sections: data.sections || {} };
+          root.innerHTML = renderReviews();
+        }
         else if (data.kind === 'shopping_list') root.innerHTML = renderShopping(data.shoppingList);
         else if (data.kind === 'meal_plan') root.innerHTML = renderPlan(data.plan);
         else if (data.onboardingCompletedAt) root.innerHTML = renderOnboardingSuccess(data);
@@ -570,7 +631,7 @@
           await rpc('ui/initialize', {
             protocolVersion: '2026-01-26',
             appCapabilities: {},
-            appInfo: { name: 'meal-prep-ui', version: '1.4.0' },
+            appInfo: { name: 'meal-prep-ui', version: '1.5.0' },
           });
           notify('ui/notifications/initialized');
         } catch (reason) {

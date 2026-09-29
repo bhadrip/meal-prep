@@ -145,6 +145,7 @@ Presentation tools:
 
 - `render_household_snapshot`
 - `render_recipe_library`
+- `render_household_reviews`
 - `render_onboarding`
 - `render_meal_plan`
 - `render_shopping_list`
