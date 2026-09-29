@@ -65,6 +65,7 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "render_meal_plan",
         "render_shopping_list",
         "render_household_snapshot",
+        "render_recipe_library",
         "get_weekly_schedule",
         "save_weekly_schedule",
         "get_planning_context",
@@ -86,6 +87,7 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     }
     assert render_uris == {
         "render_household_snapshot": "ui://meal-prep/household-snapshot-v2.html",
+        "render_recipe_library": "ui://meal-prep/recipe-library-v1.html",
         "render_onboarding": "ui://meal-prep/onboarding-v2.html",
         "render_meal_plan": "ui://meal-prep/meal-plan-v2.html",
         "render_shopping_list": "ui://meal-prep/shopping-list-v2.html",
@@ -259,6 +261,30 @@ def test_household_snapshot_collects_chatgpt_ui_data_without_flattening_it_to_te
     assert rendered["sections"]["pantry"]["status"] in {"ready", "empty", "unavailable"}
 
 
+def test_recipe_library_is_served_as_a_visual_mcp_app(client: TestClient):
+    rendered = rpc(
+        client,
+        "tools/call",
+        {"name": "render_recipe_library", "arguments": {}},
+        request_id=24,
+    )["structuredContent"]
+
+    assert rendered["kind"] == "recipe_library"
+    assert rendered["count"] == len(rendered["recipes"])
+    assert rendered["recipes"][0]["title"] == "Paneer rice bowls"
+
+    contents = rpc(
+        client,
+        "resources/read",
+        {"uri": "ui://meal-prep/recipe-library-v1.html"},
+        request_id=25,
+    )["contents"]
+    html = contents[0]["text"]
+    assert "recipe-grid" in html
+    assert "Ingredients" in html
+    assert "Instructions" in html
+
+
 def test_onboarding_is_served_as_an_mcp_app(client: TestClient):
     rendered = rpc(
         client,
@@ -295,7 +321,7 @@ def test_mcp_app_completes_the_standard_ui_handshake(client: TestClient):
 
     assert "protocolVersion: '2026-01-26'" in html
     assert "appCapabilities: {}" in html
-    assert "appInfo: { name: 'meal-prep-ui', version: '1.3.0' }" in html
+    assert "appInfo: { name: 'meal-prep-ui', version: '1.4.0' }" in html
     assert "notify('ui/notifications/initialized')" in html
     assert html.index("await rpc('ui/initialize'") < html.index("notify('ui/notifications/initialized')")
     assert "clientInfo:" not in html

@@ -17,7 +17,7 @@ app/
 
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
-- MCP Apps resources for household onboarding, the weekly plan, and the shopping checklist
+- MCP Apps resources for household onboarding, the recipe library, the weekly plan, and the shopping checklist
 - MCP-served onboarding for household constraints, planning coverage, preferred stores, cooking time, and leftovers
 - Remembered weekly rhythms, pre-planning retrospectives, graph-shaped experience learning across recipes, variants, meal occurrences, weeks, canonical tags, and user-reviewable household memory
 - Supabase Auth bearer-token validation and OAuth 2.1 discovery through the MCP SDK
@@ -144,6 +144,7 @@ Data tools:
 Presentation tools:
 
 - `render_household_snapshot`
+- `render_recipe_library`
 - `render_onboarding`
 - `render_meal_plan`
 - `render_shopping_list`

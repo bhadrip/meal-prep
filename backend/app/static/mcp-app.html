@@ -41,7 +41,7 @@
       .identity h1 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:1.08rem; }
       .identity p { margin-top:3px; color:var(--muted); font-size:.76rem; }
       .owner-badge { flex:0 0 auto; padding:5px 8px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:.68rem; font-weight:750; }
-      .tabs { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; padding:4px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+      .tabs { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; padding:4px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
       .tabs button { padding:7px 8px; border-radius:8px; background:transparent; color:var(--muted); font-size:.75rem; }
       .tabs button.active { background:var(--accent); color:white; }
       .tab-panel { display:grid; gap:10px; }
@@ -90,10 +90,51 @@
       .callout { padding:14px; border:1px dashed var(--line); border-radius:13px; text-align:center; }
       .callout strong { display:block; font-size:.82rem; }
       .callout p { max-width:420px; margin:4px auto 0; color:var(--muted); font-size:.72rem; line-height:1.4; }
+      .recipe-library { display:grid; gap:12px; }
+      .recipe-library-head { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; }
+      .recipe-library-head h1 { font-size:1.08rem; }
+      .recipe-library-head p { margin-top:3px; color:var(--muted); font-size:.72rem; }
+      .recipe-search { position:relative; width:min(240px,48%); }
+      .recipe-search input { min-height:38px; padding-left:32px; }
+      .recipe-search span { position:absolute; left:11px; top:50%; translate:0 -50%; color:var(--muted); font-size:.8rem; pointer-events:none; }
+      .recipe-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+      .recipe-card { display:grid; grid-template-columns:52px minmax(0,1fr); gap:11px; min-width:0; padding:11px; border:1px solid var(--line); border-radius:14px; background:var(--surface); color:CanvasText; text-align:left; }
+      .recipe-card:hover { border-color:color-mix(in srgb, var(--accent) 55%, var(--line)); }
+      .recipe-art { display:grid; place-items:center; width:52px; height:52px; border-radius:13px; background:linear-gradient(145deg,var(--gold-soft),var(--clay-soft)); color:color-mix(in srgb, CanvasText 74%, var(--accent)); font-size:1.15rem; font-weight:850; }
+      .recipe-card:nth-child(3n+2) .recipe-art { background:linear-gradient(145deg,var(--accent-soft),var(--gold-soft)); }
+      .recipe-card:nth-child(3n+3) .recipe-art { background:linear-gradient(145deg,var(--clay-soft),var(--accent-soft)); }
+      .recipe-card-copy { min-width:0; }
+      .recipe-card h3 { overflow:hidden; font-size:.82rem; text-overflow:ellipsis; white-space:nowrap; }
+      .recipe-card p { display:-webkit-box; min-height:2.5em; margin-top:4px; overflow:hidden; color:var(--muted); font-size:.68rem; line-height:1.25; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+      .recipe-facts { display:flex; flex-wrap:wrap; gap:5px 9px; margin-top:7px; color:var(--muted); font-size:.64rem; }
+      .recipe-tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+      .recipe-tag { padding:3px 6px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:.6rem; font-weight:700; }
+      .recipe-detail { display:grid; gap:14px; }
+      .recipe-back { justify-self:start; display:flex; align-items:center; gap:6px; padding:7px 10px; background:transparent; border:1px solid var(--line); color:CanvasText; font-size:.7rem; }
+      .recipe-hero { display:grid; grid-template-columns:64px minmax(0,1fr); gap:13px; align-items:center; padding:14px; border:1px solid var(--line); border-radius:16px; background:var(--surface); }
+      .recipe-hero .recipe-art { width:64px; height:64px; font-size:1.35rem; }
+      .recipe-hero h1 { font-size:1.12rem; line-height:1.2; }
+      .recipe-hero p { margin-top:5px; color:var(--muted); font-size:.74rem; line-height:1.4; }
+      .recipe-columns { display:grid; grid-template-columns:.9fr 1.1fr; gap:12px; }
+      .recipe-section { padding:13px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+      .recipe-section h2 { margin-bottom:10px; font-size:.82rem; }
+      .recipe-list,.recipe-steps { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+      .recipe-list li { display:flex; justify-content:space-between; gap:10px; padding-bottom:7px; border-bottom:1px solid var(--line); font-size:.7rem; line-height:1.35; }
+      .recipe-list li:last-child { padding-bottom:0; border-bottom:0; }
+      .recipe-list small { color:var(--muted); white-space:nowrap; }
+      .recipe-steps { counter-reset:step; }
+      .recipe-steps li { display:grid; grid-template-columns:22px 1fr; gap:8px; color:var(--muted); font-size:.7rem; line-height:1.4; counter-increment:step; }
+      .recipe-steps li::before { content:counter(step); display:grid; place-items:center; width:22px; height:22px; border-radius:7px; background:var(--accent-soft); color:var(--accent); font-size:.62rem; font-weight:800; }
+      .recipe-source { color:var(--accent); font-size:.68rem; font-weight:700; text-decoration:none; }
+      .recipe-notes { display:grid; gap:8px; }
+      .recipe-note { padding:9px 10px; border-left:3px solid var(--accent); border-radius:8px; background:var(--soft); }
+      .recipe-note p { color:var(--muted); font-size:.7rem; line-height:1.4; }
+      .recipe-note small { display:block; margin-top:5px; color:var(--accent); font-size:.64rem; font-weight:700; }
       @media (max-width:700px) {
         .grid { grid-template-columns:repeat(7,150px); }
         .signal-grid { grid-template-columns:1fr; }
         .data-strip { grid-template-columns:repeat(2,1fr); }
+        .recipe-grid,.recipe-columns { grid-template-columns:1fr; }
       }
       .onboarding { max-width:760px; margin:0 auto; }
       .onboarding-hero { padding:18px; border-radius:18px; background:var(--soft); }
@@ -107,7 +148,7 @@
       .field-note { margin:0 0 11px; }
       .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
       .field { display:grid; grid-template-columns:1fr; gap:6px; align-content:start; color:color-mix(in srgb, CanvasText 72%, transparent); font-size:.76rem; font-weight:650; }
-      input[type="text"],input[type="number"],select { width:100%; min-height:42px; padding:9px 10px; border:1px solid var(--line); border-radius:10px; background:Canvas; color:CanvasText; font:inherit; }
+      input[type="text"],input[type="number"],input[type="search"],select { width:100%; min-height:42px; padding:9px 10px; border:1px solid var(--line); border-radius:10px; background:Canvas; color:CanvasText; font:inherit; }
       .choice-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
       .choice { position:relative; display:block; }
       .choice input { position:absolute; opacity:0; }
@@ -137,11 +178,13 @@
       const root = document.querySelector('#root');
       let requestId = 0;
       let householdSnapshot = null;
+      let recipeLibrary = [];
       const pending = new Map();
       const escapeHtml = (value) => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
       const pick = (object, ...keys) => keys.map((key) => object?.[key]).find((value) => value !== undefined && value !== null);
       const asArray = (value) => Array.isArray(value) ? value : [];
       const humanize = (value) => String(value || '').replaceAll('_', ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (letter) => letter.toUpperCase());
+      const safeHttpUrl = (value) => { try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) ? url.href : ''; } catch { return ''; } };
 
       function rpc(method, params = {}) {
         const id = ++requestId;
@@ -206,7 +249,7 @@
         const storeMarkup = stores.slice(0, 3).map((item, index) => `<span class="store"><b>${escapeHtml(item.priority || index + 1)}</b>${escapeHtml(item.store || item.name || item)}</span>`).join('');
         const tiles = [
           ['pantry', dataCount('pantry'), 'Pantry'],
-          [null, dataCount('recipes'), 'Recipes'],
+          ['recipes', dataCount('recipes'), 'Recipes'],
           ['week', sectionStatus('schedule') === 'unavailable' ? '—' : dataCount('schedule'), 'Schedule'],
           [null, sectionStatus('feedback') === 'unavailable' ? '—' : dataCount('feedback'), 'Feedback'],
           ['week', dataCount('mealPlan'), 'Meal plan'],
@@ -238,6 +281,81 @@
         return `<section class="tab-panel"><div class="section-head"><h2>Pantry inventory</h2><span>${items.length} item${items.length === 1 ? '' : 's'}</span></div><div class="compact-list">${rows}</div></section>`;
       }
 
+      function recipeTime(recipe) {
+        return pick(recipe, 'totalMinutes', 'total_minutes', 'activeMinutes', 'active_minutes');
+      }
+
+      function recipeInitial(recipe) {
+        return String(recipe.title || 'Recipe').trim().slice(0, 1).toUpperCase();
+      }
+
+      function ingredientParts(ingredient) {
+        if (typeof ingredient === 'string') return { name: ingredient, amount: '' };
+        const quantity = pick(ingredient, 'quantity', 'amount');
+        const unit = pick(ingredient, 'unit', 'measurement');
+        return {
+          name: pick(ingredient, 'name', 'ingredient', 'item') || 'Ingredient',
+          amount: [quantity, unit].filter((value) => value !== undefined && value !== null && value !== '').join(' '),
+        };
+      }
+
+      function instructionText(instruction) {
+        return typeof instruction === 'string' ? instruction : pick(instruction, 'text', 'instruction', 'description', 'step') || '';
+      }
+
+      function renderRecipeCards(recipes) {
+        if (!recipes.length) return '<div class="callout"><strong>No matching recipes</strong><p>Try a different title, description, or tag.</p></div>';
+        return `<div class="recipe-grid">${recipes.map((recipe) => {
+          const time = recipeTime(recipe);
+          const servings = pick(recipe, 'servings', 'yield');
+          const ingredients = asArray(recipe.ingredients);
+          const tags = asArray(recipe.tags).slice(0, 3);
+          return `<button class="recipe-card" data-recipe-id="${escapeHtml(recipe.id)}" aria-label="Open ${escapeHtml(recipe.title || 'recipe')}">
+            <span class="recipe-art" aria-hidden="true">${escapeHtml(recipeInitial(recipe))}</span>
+            <span class="recipe-card-copy"><h3>${escapeHtml(recipe.title || 'Untitled recipe')}</h3><p>${escapeHtml(recipe.description || 'Saved recipe')}</p>
+            <span class="recipe-facts">${time ? `<span>◷ ${escapeHtml(time)} min</span>` : ''}${servings ? `<span>♙ ${escapeHtml(servings)} servings</span>` : ''}${ingredients.length ? `<span>${ingredients.length} ingredients</span>` : ''}</span>
+            ${tags.length ? `<span class="recipe-tags">${tags.map((tag) => `<span class="recipe-tag">${escapeHtml(tag)}</span>`).join('')}</span>` : ''}</span>
+          </button>`;
+        }).join('')}</div>`;
+      }
+
+      function renderRecipeLibrary(recipes, options = {}) {
+        recipeLibrary = recipes;
+        const title = options.title || 'Your recipes';
+        return `<section class="recipe-library">
+          <div class="recipe-library-head"><div><h1>${escapeHtml(title)}</h1><p><span id="recipe-count">${recipes.length}</span> saved recipe${recipes.length === 1 ? '' : 's'} · select one to see the full recipe</p></div>
+          <label class="recipe-search"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" placeholder="Search recipes" aria-label="Search recipes"></label></div>
+          <div id="recipe-results">${recipes.length ? renderRecipeCards(recipes) : '<div class="callout"><strong>No saved recipes yet</strong><p>Recipes you save will appear here as visual cards with ingredients and instructions.</p></div>'}</div>
+        </section>`;
+      }
+
+      function renderRecipeDetail(recipe) {
+        const ingredients = asArray(recipe.ingredients);
+        const instructions = asArray(recipe.instructions);
+        const time = recipeTime(recipe);
+        const active = pick(recipe, 'activeMinutes', 'active_minutes');
+        const servings = pick(recipe, 'servings', 'yield');
+        const tags = asArray(recipe.tags);
+        const sourceUrl = safeHttpUrl(pick(recipe, 'sourceUrl', 'source_url'));
+        const sourceType = pick(recipe, 'sourceType', 'source_type');
+        const feedback = asArray(recipe.feedback).slice(0, 4);
+        const facts = [time ? `◷ ${time} min total` : '', active && active !== time ? `${active} min active` : '', servings ? `${servings} servings` : ''].filter(Boolean);
+        const ingredientMarkup = ingredients.length ? ingredients.map((ingredient) => { const part = ingredientParts(ingredient); return `<li><span>${escapeHtml(part.name)}</span><small>${escapeHtml(part.amount)}</small></li>`; }).join('') : '<li><span>Ingredients have not been added yet.</span></li>';
+        const instructionMarkup = instructions.length ? instructions.map((instruction) => `<li><span>${escapeHtml(instructionText(instruction))}</span></li>`).join('') : '<li><span>Instructions have not been added yet.</span></li>';
+        return `<section class="recipe-detail">
+          <button class="recipe-back" data-recipe-back>← All recipes</button>
+          <div class="recipe-hero"><span class="recipe-art" aria-hidden="true">${escapeHtml(recipeInitial(recipe))}</span><div><h1>${escapeHtml(recipe.title || 'Untitled recipe')}</h1><p>${escapeHtml(recipe.description || 'Saved recipe')}</p><div class="recipe-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${tags.length ? `<div class="recipe-tags">${tags.map((tag) => `<span class="recipe-tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}</div></div>
+          <div class="recipe-columns"><section class="recipe-section"><h2>Ingredients</h2><ul class="recipe-list">${ingredientMarkup}</ul></section><section class="recipe-section"><h2>Instructions</h2><ol class="recipe-steps">${instructionMarkup}</ol></section></div>
+          ${feedback.length ? `<section class="recipe-section"><h2>Cooking notes</h2><div class="recipe-notes">${feedback.map((item) => `<article class="recipe-note"><p>${escapeHtml(item.note || item.content || 'Saved feedback')}</p>${pick(item, 'nextTime', 'next_time') ? `<small>Next time: ${escapeHtml(pick(item, 'nextTime', 'next_time'))}</small>` : ''}</article>`).join('')}</div></section>` : ''}
+          ${sourceUrl ? `<a class="recipe-source" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">Open original recipe ↗</a>` : sourceType ? `<span class="recipe-source">Source: ${escapeHtml(humanize(sourceType))}</span>` : ''}
+        </section>`;
+      }
+
+      function renderRecipesTab() {
+        if (sectionStatus('recipes') === 'unavailable') return unavailable('Recipes');
+        return renderRecipeLibrary(asArray(sectionValue('recipes')), { title: 'Recipe library' });
+      }
+
       function renderWeek() {
         const scheduleState = sectionStatus('schedule');
         const schedule = sectionValue('schedule');
@@ -258,7 +376,7 @@
       function renderSnapshotTab(tab) {
         const panel = root.querySelector('#snapshot-body');
         if (!panel || !householdSnapshot) return;
-        panel.innerHTML = tab === 'pantry' ? renderPantry() : tab === 'week' ? renderWeek() : tab === 'memory' ? renderMemory() : renderOverview();
+        panel.innerHTML = tab === 'pantry' ? renderPantry() : tab === 'recipes' ? renderRecipesTab() : tab === 'week' ? renderWeek() : tab === 'memory' ? renderMemory() : renderOverview();
         root.querySelectorAll('[data-tab].tab-button').forEach((button) => {
           const active = button.dataset.tab === tab;
           button.classList.toggle('active', active);
@@ -272,7 +390,7 @@
         const name = pick(household, 'householdName', 'household_name', 'name') || 'My household';
         const size = pick(household, 'householdSize', 'household_size');
         const role = pick(household, 'role', 'householdRole', 'household_role') || 'Owner';
-        root.innerHTML = `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><nav class="tabs" aria-label="Household data"><button class="tab-button active" data-tab="overview" aria-selected="true">Overview</button><button class="tab-button" data-tab="pantry" aria-selected="false">Pantry</button><button class="tab-button" data-tab="week" aria-selected="false">Week</button><button class="tab-button" data-tab="memory" aria-selected="false">Memory</button></nav><div id="snapshot-body"></div></section>`;
+        root.innerHTML = `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><nav class="tabs" aria-label="Household data"><button class="tab-button active" data-tab="overview" aria-selected="true">Overview</button><button class="tab-button" data-tab="recipes" aria-selected="false">Recipes</button><button class="tab-button" data-tab="pantry" aria-selected="false">Pantry</button><button class="tab-button" data-tab="week" aria-selected="false">Week</button><button class="tab-button" data-tab="memory" aria-selected="false">Memory</button></nav><div id="snapshot-body"></div></section>`;
         renderSnapshotTab('overview');
       }
 
@@ -337,6 +455,7 @@
         if (!data) return;
         if (data.kind === 'household_snapshot') renderHouseholdSnapshot(data);
         else if (data.kind === 'onboarding') root.innerHTML = renderOnboarding(data.household);
+        else if (data.kind === 'recipe_library') root.innerHTML = renderRecipeLibrary(asArray(data.recipes));
         else if (data.kind === 'shopping_list') root.innerHTML = renderShopping(data.shoppingList);
         else if (data.kind === 'meal_plan') root.innerHTML = renderPlan(data.plan);
         else if (data.onboardingCompletedAt) root.innerHTML = renderOnboardingSuccess(data);
@@ -354,9 +473,41 @@
         if (message.method === 'ui/notifications/tool-result') applyResult(message.params);
       }, { passive: true });
 
-      root.addEventListener('click', (event) => {
+      root.addEventListener('click', async (event) => {
         const tab = event.target.closest('[data-tab]');
-        if (tab) renderSnapshotTab(tab.dataset.tab);
+        if (tab) {
+          renderSnapshotTab(tab.dataset.tab);
+          return;
+        }
+        const recipeCard = event.target.closest('[data-recipe-id]');
+        if (recipeCard) {
+          const recipe = recipeLibrary.find((item) => String(item.id) === recipeCard.dataset.recipeId);
+          const target = root.querySelector('#snapshot-body') || root;
+          if (recipe) {
+            recipeCard.disabled = true;
+            try {
+              const result = await rpc('tools/call', { name: 'get_recipe', arguments: { recipe_id: recipe.id } });
+              target.innerHTML = renderRecipeDetail(result?.structuredContent || result || recipe);
+            } catch {
+              target.innerHTML = renderRecipeDetail(recipe);
+            }
+          }
+          return;
+        }
+        if (event.target.closest('[data-recipe-back]')) {
+          if (root.querySelector('#snapshot-body')) renderSnapshotTab('recipes');
+          else root.innerHTML = renderRecipeLibrary(recipeLibrary);
+        }
+      });
+
+      root.addEventListener('input', (event) => {
+        if (!event.target.matches('#recipe-search')) return;
+        const query = event.target.value.trim().toLowerCase();
+        const matches = recipeLibrary.filter((recipe) => [recipe.title, recipe.description, ...asArray(recipe.tags)].some((value) => String(value || '').toLowerCase().includes(query)));
+        const results = root.querySelector('#recipe-results');
+        const count = root.querySelector('#recipe-count');
+        if (results) results.innerHTML = renderRecipeCards(matches);
+        if (count) count.textContent = String(matches.length);
       });
 
       root.addEventListener('change', async (event) => {
@@ -419,7 +570,7 @@
           await rpc('ui/initialize', {
             protocolVersion: '2026-01-26',
             appCapabilities: {},
-            appInfo: { name: 'meal-prep-ui', version: '1.3.0' },
+            appInfo: { name: 'meal-prep-ui', version: '1.4.0' },
           });
           notify('ui/notifications/initialized');
         } catch (reason) {
