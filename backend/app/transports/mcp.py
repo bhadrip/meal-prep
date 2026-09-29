@@ -20,6 +20,8 @@ MEAL_PLAN_UI_URI = "ui://meal-prep/meal-plan-v2.html"
 SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v2.html"
 HOUSEHOLD_UI_URI = "ui://meal-prep/household-snapshot-v2.html"
 ONBOARDING_UI_URI = "ui://meal-prep/onboarding-v2.html"
+RECIPE_LIBRARY_UI_URI = "ui://meal-prep/recipe-library-v1.html"
+HOUSEHOLD_REVIEWS_UI_URI = "ui://meal-prep/household-reviews-v1.html"
 
 auth_settings = None
 token_verifier = None
@@ -54,6 +56,10 @@ mcp = FastMCP(
         "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
         "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
         "a compact interactive view instead of a long text inventory. "
+        "When the user asks to see, browse, or list saved recipes, use render_recipe_library so the recipes "
+        "appear as visual cards with expandable ingredients and instructions instead of a text list. "
+        "When the user asks about retrospectives, what worked, or meal feedback, use render_household_reviews "
+        "so weekly evidence appears separately from explicit preferences and durable household memory. "
         "Never place or imply an order; external commerce requires a separate confirmation flow."
     ),
     stateless_http=True,
@@ -286,6 +292,34 @@ async def render_household_snapshot() -> dict[str, Any]:
 
 @mcp.tool(
     annotations=READ_ONLY,
+    meta={"ui": {"resourceUri": RECIPE_LIBRARY_UI_URI}},
+    structured_output=True,
+)
+async def render_recipe_library(query: str = "", limit: int = 50) -> dict[str, Any]:
+    """Render saved recipes as a visual library with expandable recipe details."""
+    recipes = await services_for_request().food.search_recipes(query=query, limit=limit)
+    return {"kind": "recipe_library", "recipes": recipes, "query": query, "count": len(recipes)}
+
+
+@mcp.tool(
+    annotations=READ_ONLY,
+    meta={"ui": {"resourceUri": HOUSEHOLD_REVIEWS_UI_URI}},
+    structured_output=True,
+)
+async def render_household_reviews() -> dict[str, Any]:
+    """Render the latest weekly retro and meal feedback separately from household memory."""
+    snapshot = await services_for_request().household.snapshot()
+    return {
+        "kind": "household_reviews",
+        "sections": {
+            "retro": snapshot["sections"]["retro"],
+            "feedback": snapshot["sections"]["feedback"],
+        },
+    }
+
+
+@mcp.tool(
+    annotations=READ_ONLY,
     meta={"ui": {"resourceUri": ONBOARDING_UI_URI}},
     structured_output=True,
 )
@@ -362,6 +396,30 @@ def household_snapshot_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def onboarding_resource() -> str:
+    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    RECIPE_LIBRARY_UI_URI,
+    name="recipe-library-ui",
+    title="Recipe library",
+    description="A visual, searchable library of saved household recipes.",
+    mime_type="text/html;profile=mcp-app",
+    meta={"ui": {"prefersBorder": True}},
+)
+def recipe_library_resource() -> str:
+    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    HOUSEHOLD_REVIEWS_UI_URI,
+    name="household-reviews-ui",
+    title="Household meal reviews",
+    description="The latest weekly retrospective and saved meal feedback.",
+    mime_type="text/html;profile=mcp-app",
+    meta={"ui": {"prefersBorder": True}},
+)
+def household_reviews_resource() -> str:
     return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
 
 

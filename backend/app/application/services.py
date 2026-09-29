@@ -119,6 +119,7 @@ class HouseholdService:
                 "pantry": await section(self.repository.get_pantry),
                 "recipes": await section(lambda: self.repository.search_recipes(query="", limit=25)),
                 "schedule": await section(self.repository.get_weekly_schedule),
+                "retro": await section(self.repository.get_latest_retro),
                 "feedback": await section(lambda: self.repository.get_feedback(limit=25)),
                 "memories": await section(self.repository.get_household_memory),
                 "mealPlan": await section(self.repository.get_meal_plan),
