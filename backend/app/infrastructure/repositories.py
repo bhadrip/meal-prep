@@ -15,7 +15,12 @@ from ..config import Settings, get_settings
 PLANNING_TABLES = {
     "weekly_schedules": "weekly schedules",
     "weekly_retros": "weekly retrospectives",
+    "feedback_entries": "experience feedback",
     "household_memories": "household memory",
+}
+PLANNING_FUNCTIONS = {
+    "rpc/get_experience_feedback": "experience feedback",
+    "rpc/save_experience_feedback": "experience feedback",
 }
 
 
@@ -34,6 +39,11 @@ def _repository_error(path: str, exc: httpx.HTTPError | ValueError) -> Repositor
             if code == "PGRST205" and table in PLANNING_TABLES:
                 return RepositoryError(
                     f"{PLANNING_TABLES[table].capitalize()} storage is not installed. "
+                    "Apply the checked-in Supabase migrations before using this feature."
+                )
+            if code == "PGRST202" and table in PLANNING_FUNCTIONS:
+                return RepositoryError(
+                    f"{PLANNING_FUNCTIONS[table].capitalize()} storage is not installed. "
                     "Apply the checked-in Supabase migrations before using this feature."
                 )
     return RepositoryError(detail or str(exc))
@@ -308,6 +318,32 @@ class SupabaseRepository:
         )
         return rows[0]
 
+    async def get_feedback(
+        self,
+        recipe_id: str | None = None,
+        week_start: str | None = None,
+        tags: list[str] | None = None,
+        feedback_type: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        value = await self.rpc(
+            "get_experience_feedback",
+            {
+                "requested_recipe_id": recipe_id,
+                "requested_week_start": week_start,
+                "requested_tags": tags or None,
+                "requested_feedback_type": feedback_type,
+                "result_limit": min(max(limit, 1), 100),
+            },
+        )
+        return value if isinstance(value, list) else []
+
+    async def save_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]:
+        value = await self.rpc("save_experience_feedback", {"feedback": feedback})
+        if not isinstance(value, dict):
+            raise RepositoryError("Feedback could not be saved")
+        return value
+
     async def get_household_memory(
         self,
         include_inactive: bool = False,
@@ -441,6 +477,10 @@ class DemoRepository:
         "remember_rhythm": True,
     }
     _latest_retro = None
+    _feedback: list[dict[str, Any]] = []
+    _occurrences: list[dict[str, Any]] = []
+    _variants: list[dict[str, Any]] = []
+    _feedback_tags: list[dict[str, Any]] = []
     _memories = [
         {
             "id": "77777777-7777-7777-7777-777777777777",
@@ -549,6 +589,148 @@ class DemoRepository:
             "note": str(retro.get("note", ""))[:600],
         }
         type(self)._latest_retro = value
+        return deepcopy(value)
+
+    async def get_feedback(
+        self,
+        recipe_id: str | None = None,
+        week_start: str | None = None,
+        tags: list[str] | None = None,
+        feedback_type: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        items = type(self)._feedback
+        if recipe_id:
+            items = [
+                item
+                for item in items
+                if (item.get("occurrence") or {}).get("recipe_id") == recipe_id
+            ]
+        if week_start:
+            items = [
+                item
+                for item in items
+                if item.get("week_start") == week_start
+                or (item.get("occurrence") or {}).get("week_start") == week_start
+            ]
+        if tags:
+            items = [
+                item
+                for item in items
+                if set(tags).issubset(
+                    tag.get("slug") for tag in item.get("tags", []) if isinstance(tag, dict)
+                )
+            ]
+        if feedback_type:
+            items = [item for item in items if item.get("feedback_type") == feedback_type]
+        return deepcopy(items[: min(max(limit, 1), 100)])
+
+    async def save_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]:
+        week_start = feedback.get("weekStart")
+        schedule = await self.get_weekly_schedule(week_start) if week_start else None
+        occurrence_id = feedback.get("occurrenceId")
+        if not occurrence_id and feedback.get("id"):
+            existing_feedback = next(
+                (item for item in type(self)._feedback if item["id"] == feedback["id"]),
+                None,
+            )
+            occurrence_id = (existing_feedback or {}).get("occurrence_id")
+        occurrence = None
+        if occurrence_id:
+            occurrence = next(
+                (item for item in type(self)._occurrences if item["id"] == occurrence_id),
+                None,
+            )
+            if not occurrence:
+                raise RepositoryError("Meal occurrence was not found")
+        recipe_id = feedback.get("recipeId") or (occurrence or {}).get("recipe_id")
+        recipe = await self.get_recipe(recipe_id) if recipe_id else None
+        if recipe_id and not recipe:
+            raise RepositoryError("Recipe was not found")
+        variant = None
+        if feedback.get("variantName") and recipe_id:
+            variant = next(
+                (
+                    item
+                    for item in type(self)._variants
+                    if item["recipe_id"] == recipe_id
+                    and item["name"].lower() == feedback["variantName"].lower()
+                ),
+                None,
+            )
+            if not variant:
+                variant = {
+                    "id": str(uuid4()),
+                    "recipe_id": recipe_id,
+                    "name": feedback["variantName"],
+                    "adaptations": deepcopy(feedback.get("adaptations", [])),
+                }
+                type(self)._variants.append(variant)
+            elif feedback.get("adaptations"):
+                variant["adaptations"] = deepcopy(feedback["adaptations"])
+
+        if occurrence and variant:
+            occurrence.update(
+                {
+                    "recipe_variant_id": variant["id"],
+                    "variation_snapshot": {
+                        "name": variant["name"],
+                        "adaptations": deepcopy(variant["adaptations"]),
+                    },
+                    "variant": deepcopy(variant),
+                }
+            )
+        elif not occurrence and recipe_id:
+            occurrence = {
+                "id": str(uuid4()),
+                "meal_plan_entry_id": feedback.get("mealPlanEntryId"),
+                "weekly_schedule_id": schedule.get("id") if schedule else None,
+                "week_start": week_start,
+                "occurred_on": feedback.get("occurredOn"),
+                "slot": feedback.get("slot"),
+                "title": feedback.get("mealTitle") or (recipe or {}).get("title") or "Meal",
+                "recipe_id": recipe_id,
+                "recipe_variant_id": variant.get("id") if variant else None,
+                "variation_snapshot": {
+                    "name": variant["name"],
+                    "adaptations": deepcopy(variant["adaptations"]),
+                } if variant else {},
+                "variant": deepcopy(variant),
+            }
+            type(self)._occurrences.append(occurrence)
+
+        canonical_tags = []
+        for tag_record in feedback.get("tagRecords", []):
+            tag = next(
+                (
+                    item
+                    for item in type(self)._feedback_tags
+                    if item["slug"] == tag_record["slug"]
+                ),
+                None,
+            )
+            if not tag:
+                tag = {"id": str(uuid4()), **deepcopy(tag_record)}
+                type(self)._feedback_tags.append(tag)
+            canonical_tags.append(deepcopy(tag))
+
+        value = {
+            "id": feedback.get("id") or str(uuid4()),
+            "occurrence_id": occurrence.get("id") if occurrence else None,
+            "weekly_schedule_id": schedule.get("id") if schedule else None,
+            "week_start": week_start,
+            "feedback_type": feedback.get("feedbackType", "change_next_time"),
+            "note": feedback["note"],
+            "next_time": feedback.get("nextTime", ""),
+            "tags": canonical_tags,
+            "rating": feedback.get("rating"),
+            "created_at": datetime.now(UTC).isoformat(),
+            "occurrence": deepcopy(occurrence),
+        }
+        type(self)._feedback = [
+            item for item in type(self)._feedback if item["id"] != value["id"]
+        ] + [value]
+        type(self)._feedback.sort(key=lambda item: item["created_at"], reverse=True)
         return deepcopy(value)
 
     async def get_household_memory(

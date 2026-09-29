@@ -208,6 +208,7 @@
           ['pantry', dataCount('pantry'), 'Pantry'],
           [null, dataCount('recipes'), 'Recipes'],
           ['week', sectionStatus('schedule') === 'unavailable' ? '—' : dataCount('schedule'), 'Schedule'],
+          [null, sectionStatus('feedback') === 'unavailable' ? '—' : dataCount('feedback'), 'Feedback'],
           ['week', dataCount('mealPlan'), 'Meal plan'],
           [null, dataCount('shoppingList'), 'Shopping lists'],
           ['memory', sectionStatus('memories') === 'unavailable' ? '—' : dataCount('memories'), 'Memories'],
@@ -249,7 +250,7 @@
       function renderMemory() {
         if (sectionStatus('memories') === 'unavailable') return unavailable('Learned memory');
         const memories = asArray(sectionValue('memories'));
-        if (!memories.length) return '<div class="callout"><strong>No learned memories yet</strong><p>Confirmed patterns and reviewable suggestions from retrospectives will appear here.</p></div>';
+        if (!memories.length) return '<div class="callout"><strong>No learned memories yet</strong><p>Confirmed patterns and reviewable suggestions from retrospectives or feedback will appear here.</p></div>';
         const rows = memories.slice(0, 6).map((item) => `<article class="memory-row"><div class="memory-meta"><span>${escapeHtml(humanize(item.category || 'planning'))}</span><span class="status ${item.status === 'suggested' ? 'suggested' : ''}">${escapeHtml(item.status || 'confirmed')}</span></div><p>${escapeHtml(item.content)}</p></article>`).join('');
         return `<section class="tab-panel"><div class="section-head"><h2>Learned memory</h2><span>${memories.length} active</span></div><div class="compact-list">${rows}</div></section>`;
       }

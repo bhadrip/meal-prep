@@ -37,7 +37,8 @@ mcp = FastMCP(
     "meal-prep",
     instructions=(
         "Call get_planning_context before drafting or revising a weekly meal plan. It returns household "
-        "preferences, the requested or remembered weekly schedule, the relevant retrospective, and active "
+        "preferences, the requested or remembered weekly schedule, the relevant retrospective, recent "
+        "experience feedback, and active "
         "household memories. If onboardingComplete is false, call render_onboarding so the user can complete "
         "the MCP-served setup for household size, dietary restrictions, store priority, weeknight cooking limit, "
         "lunch leftovers, and the planning areas they want coordinated. Save those areas in "
@@ -45,7 +46,10 @@ mcp = FastMCP(
         "fields as saved preferences. Respect hard dietary restrictions. "
         "Do not assume a weekly plan is dinner-only. Give each saved entry an explicit slot such as breakfast, "
         "lunch, snack, dinner, or prep, and keep repeated breakfasts and packed lunches simple unless variety is requested. "
-        "Use confirmed memories as preferences; treat suggested memories and retrospectives only as evidence. "
+        "Use confirmed memories as preferences; treat suggested memories, retrospectives, and feedback only as evidence. "
+        "When someone reports how a dish or week went, save atomic feedback linked to the meal occurrence, recipe, "
+        "and week whenever those subjects are known. Use canonical tags for reusable themes and audiences, preserve "
+        "an actionable nextTime, and query recipe lessons before repeating a dish. "
         "A null schedule or retrospective means no record exists, not permission to invent one. "
         "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
         "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
@@ -206,6 +210,43 @@ async def get_weekly_retro(week_start: str | None = None) -> dict[str, Any]:
 async def save_weekly_retro(retro: dict[str, Any]) -> dict[str, Any]:
     """Save a weekly reflection. Do not promote its observations to durable preferences automatically."""
     return await services_for_request().planning.save_retro(retro)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_feedback(
+    recipe_id: str | None = None,
+    week_start: str | None = None,
+    tags: list[str] | None = None,
+    feedback_type: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Traverse experience feedback by recipe, week, canonical tags, or outcome type."""
+    items = await services_for_request().feedback.list(
+        recipe_id, week_start, tags, feedback_type, limit
+    )
+    return {"items": items, "count": len(items)}
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_feedback(feedback: dict[str, Any]) -> dict[str, Any]:
+    """Save one observation and its graph links to an occurrence, recipe or variant, week, and canonical tags."""
+    return await services_for_request().feedback.save(feedback)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_what_worked(
+    week_start: str | None = None,
+    tags: list[str] | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Return recent successful meal experiences, optionally filtered by week or canonical tags."""
+    return await services_for_request().feedback.what_worked(week_start, tags, limit)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_recipe_lessons(recipe_id: str, limit: int = 50) -> dict[str, Any]:
+    """Summarize what worked, next-time corrections, tags, and successful variants for one recipe."""
+    return await services_for_request().feedback.recipe_lessons(recipe_id, limit)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)

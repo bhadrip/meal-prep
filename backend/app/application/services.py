@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import re
 from typing import Any, Awaitable, Callable, Protocol
 
 from .errors import ApplicationError, RepositoryError
@@ -31,6 +33,15 @@ class MealPrepRepository(Protocol):
     async def get_latest_retro(self, before_week_start: str | None = None) -> dict[str, Any] | None: ...
     async def get_weekly_retro(self, week_start: str | None = None) -> dict[str, Any] | None: ...
     async def save_weekly_retro(self, retro: dict[str, Any]) -> dict[str, Any]: ...
+    async def get_feedback(
+        self,
+        recipe_id: str | None = None,
+        week_start: str | None = None,
+        tags: list[str] | None = None,
+        feedback_type: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]: ...
+    async def save_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]: ...
     async def get_household_memory(
         self,
         include_inactive: bool = False,
@@ -108,6 +119,7 @@ class HouseholdService:
                 "pantry": await section(self.repository.get_pantry),
                 "recipes": await section(lambda: self.repository.search_recipes(query="", limit=25)),
                 "schedule": await section(self.repository.get_weekly_schedule),
+                "feedback": await section(lambda: self.repository.get_feedback(limit=25)),
                 "memories": await section(self.repository.get_household_memory),
                 "mealPlan": await section(self.repository.get_meal_plan),
                 "shoppingList": await section(self.repository.get_shopping_list),
@@ -126,7 +138,10 @@ class RecipePantryService:
         recipe = await self.repository.get_recipe(recipe_id)
         if not recipe:
             raise ApplicationError("Recipe was not found")
-        return recipe
+        return {
+            **recipe,
+            "feedback": await self.repository.get_feedback(recipe_id=recipe_id, limit=25),
+        }
 
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]:
         if not str(recipe.get("title", "")).strip():
@@ -154,6 +169,7 @@ class PlanningService:
             "household": await self.repository.get_household_context(),
             "schedule": await self.repository.get_weekly_schedule(week_start),
             "retro": await self.repository.get_latest_retro(before_week_start=week_start),
+            "feedback": await self.repository.get_feedback(limit=25),
             "memories": await self.repository.get_household_memory(),
             "requestedWeekStart": week_start,
         }
@@ -187,6 +203,228 @@ class PlanningService:
         if missing_slot:
             raise ApplicationError("Every plan entry must include a meal slot")
         return await self.repository.save_meal_plan(plan)
+
+
+class FeedbackService:
+    FEEDBACK_TYPES = {"worked_well", "change_next_time", "problem", "preference"}
+    TAG_ALIASES = {
+        "very-good": "worked-well",
+        "great": "worked-well",
+        "loved-it": "worked-well",
+        "success": "worked-well",
+        "didnt-work": "did-not-work",
+        "too-hot": "too-spicy",
+        "children": "family:kids",
+        "kids": "family:kids",
+        "adults": "family:adults",
+    }
+    TAG_FACETS = {
+        "worked-well": "outcome",
+        "did-not-work": "outcome",
+        "change-next-time": "outcome",
+        "preference": "outcome",
+        "too-spicy": "taste",
+        "too-salty": "taste",
+        "bland": "taste",
+        "too-dry": "texture",
+        "too-soft": "texture",
+        "crispy": "texture",
+        "quick": "operations",
+        "too-much-prep": "operations",
+        "easy-cleanup": "operations",
+        "successful-substitution": "adaptation",
+        "serve-component-separately": "adaptation",
+    }
+    FEEDBACK_TYPE_TAG = {
+        "worked_well": "worked-well",
+        "change_next_time": "change-next-time",
+        "problem": "did-not-work",
+        "preference": "preference",
+    }
+
+    def __init__(self, repository: MealPrepRepository):
+        self.repository = repository
+
+    async def list(
+        self,
+        recipe_id: str | None = None,
+        week_start: str | None = None,
+        tags: list[str] | None = None,
+        feedback_type: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        if feedback_type not in self.FEEDBACK_TYPES | {None}:
+            raise ApplicationError(
+                "feedback_type must be worked_well, change_next_time, problem, or preference"
+            )
+        normalized_tags = [tag["slug"] for tag in self._tag_records(tags or [])]
+        return await self.repository.get_feedback(
+            recipe_id=recipe_id,
+            week_start=week_start,
+            tags=normalized_tags,
+            feedback_type=feedback_type,
+            limit=min(max(limit, 1), 100),
+        )
+
+    async def save(self, feedback: dict[str, Any]) -> dict[str, Any]:
+        note = str(feedback.get("note", "")).strip()
+        if not note:
+            raise ApplicationError("feedback.note is required")
+        if len(note) > 600:
+            raise ApplicationError("feedback.note must be 600 characters or fewer")
+        if not any(
+            feedback.get(key)
+            for key in ("recipeId", "weekStart", "mealPlanEntryId", "occurrenceId")
+        ):
+            raise ApplicationError(
+                "feedback must identify a recipe, week, meal-plan entry, or meal occurrence"
+            )
+        if feedback.get("occurrenceId") and feedback.get("mealPlanEntryId"):
+            raise ApplicationError(
+                "feedback must identify either an occurrenceId or a mealPlanEntryId, not both"
+            )
+
+        tag_records = self._tag_records(feedback.get("tags", []))
+        tag_slugs = {tag["slug"] for tag in tag_records}
+        feedback_type = feedback.get("feedbackType")
+        if not feedback_type:
+            if "worked-well" in tag_slugs:
+                feedback_type = "worked_well"
+            elif "did-not-work" in tag_slugs:
+                feedback_type = "problem"
+            else:
+                feedback_type = "change_next_time"
+        if feedback_type not in self.FEEDBACK_TYPES:
+            raise ApplicationError(
+                "feedback.feedbackType must be worked_well, change_next_time, problem, or preference"
+            )
+        outcome_tag = self.FEEDBACK_TYPE_TAG[feedback_type]
+        if outcome_tag not in tag_slugs:
+            tag_records.extend(self._tag_records([outcome_tag]))
+            tag_slugs.add(outcome_tag)
+        if len(tag_records) > 12:
+            raise ApplicationError("feedback.tags may contain at most 12 tags including its outcome")
+
+        rating = feedback.get("rating")
+        if rating is not None and (
+            isinstance(rating, bool) or not isinstance(rating, int) or not 1 <= rating <= 5
+        ):
+            raise ApplicationError("feedback.rating must be an integer from 1 to 5")
+
+        next_time = str(feedback.get("nextTime", "")).strip()
+        if len(next_time) > 600:
+            raise ApplicationError("feedback.nextTime must be 600 characters or fewer")
+
+        variant_name = str(feedback.get("variantName", "")).strip()
+        adaptations = feedback.get("adaptations", [])
+        if not isinstance(adaptations, list):
+            raise ApplicationError("feedback.adaptations must be a list")
+        if (variant_name or adaptations) and not (
+            feedback.get("recipeId") or feedback.get("mealPlanEntryId") or feedback.get("occurrenceId")
+        ):
+            raise ApplicationError("A recipe-backed occurrence is required for a variant")
+
+        normalized = {
+            **feedback,
+            "note": note,
+            "feedbackType": feedback_type,
+            "tags": [tag["slug"] for tag in tag_records],
+            "tagRecords": tag_records,
+            "nextTime": next_time,
+            "variantName": variant_name,
+            "adaptations": adaptations,
+        }
+        return await self.repository.save_feedback(normalized)
+
+    async def what_worked(
+        self,
+        week_start: str | None = None,
+        tags: list[str] | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        items = await self.list(
+            week_start=week_start,
+            tags=tags,
+            feedback_type="worked_well",
+            limit=limit,
+        )
+        tag_counts = Counter(
+            tag["slug"]
+            for item in items
+            for tag in item.get("tags", [])
+            if isinstance(tag, dict) and tag.get("slug") != "worked-well"
+        )
+        recipe_counts = Counter(
+            (
+                (item.get("occurrence") or {}).get("recipe_id"),
+                (item.get("occurrence") or {}).get("title"),
+            )
+            for item in items
+            if (item.get("occurrence") or {}).get("recipe_id")
+        )
+        return {
+            "items": items,
+            "count": len(items),
+            "question": "what_worked",
+            "tagSummary": [
+                {"slug": slug, "count": count} for slug, count in tag_counts.most_common()
+            ],
+            "recipeSummary": [
+                {"recipeId": recipe_id, "title": title, "count": count}
+                for (recipe_id, title), count in recipe_counts.most_common()
+            ],
+        }
+
+    async def recipe_lessons(self, recipe_id: str, limit: int = 50) -> dict[str, Any]:
+        recipe = await self.repository.get_recipe(recipe_id)
+        if not recipe:
+            raise ApplicationError("Recipe was not found")
+        items = await self.list(recipe_id=recipe_id, limit=limit)
+        tag_counts = Counter(
+            tag["slug"]
+            for item in items
+            for tag in item.get("tags", [])
+            if isinstance(tag, dict) and tag.get("slug")
+        )
+        variants: dict[str, dict[str, Any]] = {}
+        for item in items:
+            variant = (item.get("occurrence") or {}).get("variant")
+            if variant and variant.get("id"):
+                variants[variant["id"]] = variant
+        return {
+            "recipeId": recipe_id,
+            "recipeTitle": recipe.get("title"),
+            "evidenceCount": len(items),
+            "workedWell": [item for item in items if item.get("feedback_type") == "worked_well"],
+            "nextTime": [item for item in items if item.get("next_time")],
+            "problems": [item for item in items if item.get("feedback_type") == "problem"],
+            "preferences": [item for item in items if item.get("feedback_type") == "preference"],
+            "tagSummary": [
+                {"slug": slug, "count": count} for slug, count in tag_counts.most_common()
+            ],
+            "variants": list(variants.values()),
+        }
+
+    def _tag_records(self, tags: list[str]) -> list[dict[str, str]]:
+        if not isinstance(tags, list):
+            raise ApplicationError("feedback.tags must be a list")
+        records: dict[str, dict[str, str]] = {}
+        for value in tags:
+            raw = str(value).strip().lower().replace("'", "")
+            slug = re.sub(r"[^a-z0-9:_-]+", "-", raw.replace("_", "-")).strip("-")
+            slug = self.TAG_ALIASES.get(slug, slug)
+            if not slug or len(slug) > 48:
+                raise ApplicationError("feedback tags must normalize to 1-48 characters")
+            facet = (
+                "audience"
+                if slug.startswith("family:")
+                else self.TAG_FACETS.get(slug, "other")
+            )
+            label = slug.split(":", 1)[-1].replace("-", " ").title()
+            records[slug] = {"slug": slug, "label": label, "facet": facet}
+        if len(records) > 12:
+            raise ApplicationError("feedback.tags may contain at most 12 tags")
+        return list(records.values())
 
 
 class MemoryService:
@@ -243,5 +481,6 @@ class MealPrepServices:
     household: HouseholdService
     food: RecipePantryService
     planning: PlanningService
+    feedback: FeedbackService
     memory: MemoryService
     shopping: ShoppingService

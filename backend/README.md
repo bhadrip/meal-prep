@@ -19,7 +19,7 @@ app/
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
 - MCP Apps resources for household onboarding, the weekly plan, and the shopping checklist
 - MCP-served onboarding for household constraints, planning coverage, preferred stores, cooking time, and leftovers
-- Remembered weekly rhythms, pre-planning retrospectives, and user-reviewable household memory
+- Remembered weekly rhythms, pre-planning retrospectives, graph-shaped experience learning across recipes, variants, meal occurrences, weeks, canonical tags, and user-reviewable household memory
 - Supabase Auth bearer-token validation and OAuth 2.1 discovery through the MCP SDK
 - Supabase schema, transactional functions, and RLS policies
 - Vercel serverless entrypoint and deployment configuration
@@ -136,6 +136,7 @@ Data tools:
 - `get_pantry`, `update_pantry_item`
 - `get_weekly_schedule`, `save_weekly_schedule`
 - `get_latest_retro`, `get_weekly_retro`, `save_weekly_retro`
+- `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_lessons`
 - `get_household_memory`, `save_household_memory`, `review_household_memory`
 - `save_meal_plan`, `get_meal_plan`
 - `save_shopping_list`, `get_shopping_list`, `mark_item_purchased`

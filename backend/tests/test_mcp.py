@@ -71,6 +71,10 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "get_latest_retro",
         "get_weekly_retro",
         "save_weekly_retro",
+        "get_feedback",
+        "save_feedback",
+        "get_what_worked",
+        "get_recipe_lessons",
         "get_household_memory",
         "save_household_memory",
         "review_household_memory",
@@ -113,6 +117,73 @@ def test_demo_retro_is_saved_as_evidence(client: TestClient):
     assert missing["retro"] is None
 
 
+def test_feedback_links_a_recipe_to_the_week_and_is_recalled_next_time(client: TestClient):
+    days = [
+        {"day": day, "mode": "quick"}
+        for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    ]
+    rpc(
+        client,
+        "tools/call",
+        {
+            "name": "save_weekly_schedule",
+            "arguments": {"schedule": {"weekStart": "2026-09-28", "days": days}},
+        },
+        request_id=18,
+    )
+    recipe_id = "11111111-1111-1111-1111-111111111111"
+    saved = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "save_feedback",
+            "arguments": {
+                "feedback": {
+                    "recipeId": recipe_id,
+                    "weekStart": "2026-09-28",
+                    "feedbackType": "change_next_time",
+                    "note": "The sauce was too spicy for the kids.",
+                    "nextTime": "Serve chili oil at the table instead.",
+                    "tags": ["spice", "family:kids"],
+                    "rating": 3,
+                }
+            },
+        },
+        request_id=19,
+    )["structuredContent"]
+    assert saved["occurrence"]["recipe_id"] == recipe_id
+    assert saved["weekly_schedule_id"]
+
+    filtered = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "get_feedback",
+            "arguments": {"recipe_id": recipe_id, "tags": ["family:kids"]},
+        },
+        request_id=20,
+    )["structuredContent"]
+    assert filtered["count"] >= 1
+    assert filtered["items"][0]["next_time"] == "Serve chili oil at the table instead."
+
+    recipe = rpc(
+        client,
+        "tools/call",
+        {"name": "get_recipe", "arguments": {"recipe_id": recipe_id}},
+        request_id=21,
+    )["structuredContent"]
+    assert any(item["id"] == saved["id"] for item in recipe["feedback"])
+
+    lessons = rpc(
+        client,
+        "tools/call",
+        {"name": "get_recipe_lessons", "arguments": {"recipe_id": recipe_id}},
+        request_id=22,
+    )["structuredContent"]
+    assert lessons["evidenceCount"] >= 1
+    assert any(item["id"] == saved["id"] for item in lessons["nextTime"])
+
+
 def test_demo_memory_requires_explicit_review(client: TestClient):
     saved = rpc(client, "tools/call", {"name": "save_household_memory", "arguments": {"memory": {"content": "Keep Wednesday meals quick", "category": "schedule", "status": "suggested", "sourceType": "retro"}}}, request_id=5)["structuredContent"]
     assert saved["status"] == "suggested"
@@ -149,6 +220,7 @@ def test_planning_context_returns_all_durable_inputs(client: TestClient):
     assert context["household"]["householdId"]
     assert context["schedule"]["week_start"] == "2026-09-28"
     assert context["retro"]["week_start"] == "2026-09-21"
+    assert "feedback" in context
     assert any(item["status"] == "confirmed" for item in context["memories"])
 
 
@@ -182,7 +254,7 @@ def test_household_snapshot_collects_chatgpt_ui_data_without_flattening_it_to_te
     assert rendered["kind"] == "household_snapshot"
     assert rendered["household"]["householdSize"] == 4
     assert set(rendered["sections"]) == {
-        "pantry", "recipes", "schedule", "memories", "mealPlan", "shoppingList"
+        "pantry", "recipes", "schedule", "feedback", "memories", "mealPlan", "shoppingList"
     }
     assert rendered["sections"]["pantry"]["status"] in {"ready", "empty", "unavailable"}
 

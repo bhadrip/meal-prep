@@ -54,14 +54,47 @@ food preferences, or create a shopping list.
    corresponding data tool has returned the final data. Data tools must remain
    usable without UI.
 
+## Experience feedback workflow
+
+Use atomic experience feedback when somebody describes how a dish or week
+actually went. The service models recipes, variants, meal occurrences,
+feedback, weeks, and canonical tags as a relational graph. This is more precise
+than putting every observation into the single weekly retrospective.
+
+1. Center dish feedback on the specific meal occurrence. Call `save_feedback`
+   with `mealPlanEntryId` when the feedback concerns a planned meal. Otherwise
+   include `recipeId` and, when known, `weekStart`, `occurredOn`, `slot`, and
+   `mealTitle`. Use `occurrenceId` to add another observation to an already
+   recorded experience. Schedule-only feedback may use `weekStart` without a
+   recipe. The service resolves and connects the saved schedule and recipe.
+2. Put the observation in `note` and a concrete correction in `nextTime`, such
+   as reducing salt, starting prep earlier, or serving a spicy component on the
+   side. Use `feedbackType` to distinguish `worked_well`, `change_next_time`,
+   `problem`, and `preference`.
+3. Use tags only for reusable themes and audiences, such as `worked-well`,
+   `too-spicy`, `easy-cleanup`, `successful-substitution`, or `family:kids`.
+   Natural aliases such as "very good" are normalized to canonical tags. IDs
+   are relationships, not tags.
+4. When the household names a distinct preparation, include `variantName` and
+   structured `adaptations`. The service links that recipe variant to the meal
+   occurrence and snapshots what was actually tried.
+5. Before recommending or adapting a saved recipe, call `get_recipe_lessons`.
+   Use `get_what_worked` for recent successes and `get_feedback` to traverse a
+   particular week, tag combination, feedback type, or recipe. `get_recipe`
+   also includes that recipe's recent feedback history.
+6. Treat each entry as evidence from one occurrence. If several entries reveal
+   a stable family pattern, offer a suggested household memory with
+   `sourceType: feedback`; do not silently turn it into a confirmed preference.
+
 ## Changes and confirmation
 
 - Explicit preference changes may be saved with
   `update_household_preferences`. Never turn a one-time situation or inferred
   behavior into a durable preference without asking.
-- Retrospective observations are evidence, not permanent preferences. Save them
-  as suggested memories and use `review_household_memory` only after the user
-  confirms, corrects, or asks to forget one.
+- Retrospectives and experience feedback are evidence, not permanent
+  preferences. Save repeated patterns as suggested memories and use
+  `review_household_memory` only after the user confirms, corrects, or asks to
+  forget one.
 - Use confirmed household memories as planning defaults. Suggested memories may
   influence a question or option but must not be presented as settled facts.
 - A null weekly schedule or retrospective means no saved record exists. Ask for
