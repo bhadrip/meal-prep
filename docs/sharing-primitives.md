@@ -9,19 +9,19 @@ Meal Prep stores recipes under a household and currently returns private cooking
 3. **Presentation:** the link renders a compact preview and a full recipe page. Social previews and a shareable image can be derived from the snapshot without changing the grant model.
 4. **Receipt:** a signed-in recipient can save a recipe as a new recipe in their own household, retaining source attribution. The copy is independent of later edits to the original. Viewing a link does not add anything to the recipient's library.
 
-## Proposed first release
+## First release
 
-- Create a share from a household recipe, show its URL, list active shares, and revoke a share.
-- Let anyone holding an active link view the recipe snapshot. Support an optional expiration time.
+- Create a share from a household recipe, show its URL, list link metadata, and revoke a share. The raw URL is returned only when created; it cannot be retrieved later.
+- Let anyone holding an active link view the recipe snapshot. Expiration is optional; by default the link remains active until revoked.
 - Let an authenticated recipient copy the shared recipe into their own household.
 - Keep all sharing opt-in. Archiving or editing the original does not silently change an already published snapshot; revocation removes access to it.
 - Do not expose email lookup, a follower graph, public household profiles, or arbitrary private records through this release.
 
-## Open decisions
+## Decisions and next item types
 
-- Should the first release use revocable links, named recipients, or both?
-- Should a received recipe be an independent copy or a live reference?
-- Should a share expire by default, or remain active until revoked?
-- Which event should count as a Meal Prep achievement, and should it be app-verified or user-authored?
+- The first release uses revocable links. Named recipients can be added as a second grant type without changing recipe snapshots.
+- A received recipe is an independent copy. The source share ID is retained as provenance, not as an edit link.
+- Achievements need a source model before they can be shared as app-verified facts. An achievement snapshot can use the same grant and presentation path, with its own allowlist and card renderer.
+- Candidate achievements to discuss: meals planned, recipes tried, pantry items used before expiry, or a weekly prep streak. The event definition, time window, and whether users can edit the wording determine what the card can truthfully claim.
 
-The implementation should enforce authorization in the database, not only in the MCP or HTTP layer. Public reads should require the link token and return the allowlisted snapshot only. Tests should cover another household's inability to read or modify the source and the behavior of revoked or expired links.
+Authorization is enforced in the database. Public reads require the link token and return the allowlisted snapshot only. A token is random and hashed at rest. The public page uses noindex and no-referrer headers; revocation and expiration are checked on every read and copy.
