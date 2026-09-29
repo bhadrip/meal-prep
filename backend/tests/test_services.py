@@ -14,6 +14,16 @@ async def test_household_service_owns_onboarding_rules():
 
 
 @pytest.mark.asyncio
+async def test_household_service_rejects_invalid_dashboard_cards():
+    service = HouseholdService(DemoRepository())
+
+    with pytest.raises(ApplicationError, match="Unknown dashboard card IDs"):
+        await service.configure_dashboard(card_order=["shopping-list", "weather"])
+    with pytest.raises(ApplicationError, match="duplicate"):
+        await service.configure_dashboard(card_order=["pantry", "pantry"])
+
+
+@pytest.mark.asyncio
 async def test_planning_service_requires_an_explicit_slot_for_every_entry():
     service = PlanningService(DemoRepository())
     plan = {

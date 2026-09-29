@@ -1,6 +1,6 @@
 ---
 name: meal-prep-planning
-description: Coordinate the household food week across breakfasts, lunches, dinners, prep, pantry inventory, and store-prioritized shopping lists with the Meal Prep MCP tools.
+description: Coordinate the household food week and open or configure its card dashboard with the Meal Prep MCP tools. Use for meal planning, recipes, prep, pantry inventory, shopping lists, household food preferences, or dashboard requests.
 ---
 
 # Meal prep planning
@@ -48,11 +48,38 @@ food preferences, or create a shopping list.
 7. Call `save_shopping_list` only for the resulting durable list. Never state
    or imply that saving a list placed an order.
 8. Use `render_onboarding` for incomplete household setup. Use
-   `render_household_snapshot` when the user asks what Meal Prep knows or wants
-   to inspect household rules, pantry, schedule, or memory without a wall of
-   prose. Use `render_meal_plan` or `render_shopping_list` only after the
-   corresponding data tool has returned the final data. Data tools must remain
-   usable without UI.
+   `render_household_snapshot` when the user asks to open, show, view, or
+   customize their dashboard, asks what Meal Prep knows, or wants to inspect
+   household rules, pantry, schedule, or memory without a wall of prose. Use
+   `render_meal_plan` or `render_shopping_list` only after the corresponding
+   data tool has returned the final data. Data tools must remain usable without
+   UI.
+
+## Dashboard workflow
+
+The household snapshot starts from one shared card template and is configured
+through chat. It has individual cards for food rules, planning defaults,
+preferred stores, weekly rhythm, meal plan, shopping list, pantry, recipes,
+meal feedback, and learned memory.
+
+- For “show my dashboard,” call `render_household_snapshot`.
+- For a general request such as “help me customize my dashboard,” call
+  `get_dashboard_layout`, present the available cards concisely, and ask what
+  the user wants to show, hide, or move.
+- For an exact request such as “put shopping first” or “hide feedback,” call
+  `get_dashboard_layout`, then call `configure_dashboard`. Pass prioritized
+  card IDs in `card_order`; the tool keeps unmentioned cards in their existing
+  relative order. Pass the complete desired hidden set in `hidden_cards`; omit
+  either argument to preserve that part of the current layout. Then call
+  `render_household_snapshot` so the user can verify the result.
+- For “reset my dashboard,” call `configure_dashboard` with
+  `reset_to_default: true`, then render the dashboard.
+- Valid card IDs are `food-rules`, `planning-defaults`, `stores`, `schedule`,
+  `meal-plan`, `shopping-list`, `pantry`, `recipes`, `retro`, `feedback`, and
+  `memories`.
+- Do not use `update_household_preferences` for dashboard layout. The dedicated
+  dashboard tool preserves cooking time, leftovers, focus areas, and other
+  planning preferences automatically.
 
 ## Experience feedback workflow
 

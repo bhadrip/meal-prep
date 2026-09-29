@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "meal-prep",
-  "version": "0.5.0",
+  "version": "0.5.0+codex.20260929171525",
   "description": "Coordinate the household food week across meals, prep, pantry inventory, and shopping.",
   "author": {
     "name": "BhadriP",
@@ -25,7 +25,7 @@
         "defaultPrompt": [
           "Plan our household food week, including breakfasts, lunches, dinners, and weekend prep.",
           "Use what is already in my pantry and build a shopping list grouped by preferred store.",
-          "Show what needs to be prepared this weekend to make the coming week easier."
+          "Show my dashboard and put the shopping list first."
         ]
       }
     }

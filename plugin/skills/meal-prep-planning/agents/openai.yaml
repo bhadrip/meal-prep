@@ -1,6 +1,7 @@
 interface:
   display_name: "Meal Prep Planning"
-  short_description: "Coordinate meals, prep, pantry, and shopping"
+  short_description: "Plan meals and configure your food dashboard"
   icon_small: "./assets/meal-prep-icon-96.png"
   icon_large: "./assets/meal-prep-icon-96.png"
   brand_color: "#F2632E"
+  default_prompt: "Use $meal-prep-planning to open my dashboard or coordinate this week's meals, pantry, and shopping."

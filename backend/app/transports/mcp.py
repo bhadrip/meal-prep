@@ -18,7 +18,7 @@ settings = get_settings()
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 MEAL_PLAN_UI_URI = "ui://meal-prep/meal-plan-v2.html"
 SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v2.html"
-HOUSEHOLD_UI_URI = "ui://meal-prep/household-snapshot-v2.html"
+HOUSEHOLD_UI_URI = "ui://meal-prep/household-dashboard-v4.html"
 ONBOARDING_UI_URI = "ui://meal-prep/onboarding-v2.html"
 RECIPE_LIBRARY_UI_URI = "ui://meal-prep/recipe-library-v1.html"
 HOUSEHOLD_REVIEWS_UI_URI = "ui://meal-prep/household-reviews-v1.html"
@@ -55,7 +55,8 @@ mcp = FastMCP(
         "A null schedule or retrospective means no record exists, not permission to invent one. "
         "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
         "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
-        "a compact interactive view instead of a long text inventory. "
+        "a compact card dashboard instead of a long text inventory. When the user asks to change that "
+        "dashboard, use get_dashboard_layout and configure_dashboard, then render it again for verification. "
         "When the user asks to see, browse, or list saved recipes, use render_recipe_library so the recipes "
         "appear as visual cards with expandable ingredients and instructions instead of a text list. "
         "When the user asks about retrospectives, what worked, or meal feedback, use render_household_reviews "
@@ -105,6 +106,26 @@ async def update_household_preferences(
         store_priority=store_priority,
         planning_preferences=planning_preferences,
         complete_onboarding=complete_onboarding,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_dashboard_layout() -> dict[str, Any]:
+    """Return the dashboard card order, hidden cards, and valid card IDs without changing anything."""
+    return await services_for_request().household.get_dashboard_layout()
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def configure_dashboard(
+    card_order: list[str] | None = None,
+    hidden_cards: list[str] | None = None,
+    reset_to_default: bool = False,
+) -> dict[str, Any]:
+    """Configure the dashboard from chat; prioritized card IDs move first, omitted values stay unchanged, and reset restores the shared starting template."""
+    return await services_for_request().household.configure_dashboard(
+        card_order=card_order,
+        hidden_cards=hidden_cards,
+        reset_to_default=reset_to_default,
     )
 
 
@@ -285,7 +306,7 @@ async def review_household_memory(memory_id: str, action: str, content: str | No
     structured_output=True,
 )
 async def render_household_snapshot() -> dict[str, Any]:
-    """Render a compact in-chat view of household rules, pantry, schedule, saved data, and memory."""
+    """Render the chat-configured card dashboard of household rules, pantry, schedule, saved data, and memory."""
     snapshot = await services_for_request().household.snapshot()
     return {"kind": "household_snapshot", **snapshot}
 
@@ -377,9 +398,9 @@ def shopping_list_resource() -> str:
 
 @mcp.resource(
     HOUSEHOLD_UI_URI,
-    name="household-snapshot-ui",
-    title="Household meal-prep snapshot",
-    description="A compact, tabbed view of household rules and saved meal-prep data.",
+    name="household-dashboard-ui",
+    title="Household meal-prep dashboard",
+    description="A chat-configured card dashboard of household rules and saved meal-prep data.",
     mime_type="text/html;profile=mcp-app",
     meta={"ui": {"prefersBorder": True}},
 )

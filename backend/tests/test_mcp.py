@@ -59,6 +59,8 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     names = {tool["name"] for tool in tools}
     assert {
         "get_household_context",
+        "get_dashboard_layout",
+        "configure_dashboard",
         "save_meal_plan",
         "save_shopping_list",
         "render_onboarding",
@@ -87,7 +89,7 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         if tool["name"].startswith("render_")
     }
     assert render_uris == {
-        "render_household_snapshot": "ui://meal-prep/household-snapshot-v2.html",
+        "render_household_snapshot": "ui://meal-prep/household-dashboard-v4.html",
         "render_recipe_library": "ui://meal-prep/recipe-library-v1.html",
         "render_household_reviews": "ui://meal-prep/household-reviews-v1.html",
         "render_onboarding": "ui://meal-prep/onboarding-v2.html",
@@ -301,6 +303,45 @@ def test_household_reviews_are_served_separately_from_memory(client: TestClient)
     assert rendered["sections"]["retro"]["status"] in {"ready", "empty", "unavailable"}
 
 
+def test_dashboard_layout_can_be_configured_incrementally_from_chat(client: TestClient):
+    initial = rpc(
+        client,
+        "tools/call",
+        {"name": "get_dashboard_layout", "arguments": {}},
+        request_id=24,
+    )["structuredContent"]
+    assert initial["cardOrder"][0] == "food-rules"
+    assert initial["hiddenCards"] == []
+
+    configured = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "configure_dashboard",
+            "arguments": {
+                "card_order": ["shopping-list"],
+                "hidden_cards": ["feedback", "memories"],
+            },
+        },
+        request_id=25,
+    )["structuredContent"]
+    assert configured["cardOrder"][0] == "shopping-list"
+    assert configured["hiddenCards"] == ["feedback", "memories"]
+    assert configured["household"]["planningPreferences"]["weeknightMaxMinutes"] == 30
+
+    reset = rpc(
+        client,
+        "tools/call",
+        {
+            "name": "configure_dashboard",
+            "arguments": {"reset_to_default": True},
+        },
+        request_id=26,
+    )["structuredContent"]
+    assert reset["cardOrder"] == initial["availableCards"]
+    assert reset["hiddenCards"] == []
+
+
 def test_onboarding_is_served_as_an_mcp_app(client: TestClient):
     rendered = rpc(
         client,
@@ -330,7 +371,7 @@ def test_mcp_app_completes_the_standard_ui_handshake(client: TestClient):
     contents = rpc(
         client,
         "resources/read",
-        {"uri": "ui://meal-prep/household-snapshot-v2.html"},
+        {"uri": "ui://meal-prep/household-dashboard-v4.html"},
         request_id=18,
     )["contents"]
     html = contents[0]["text"]
@@ -341,6 +382,25 @@ def test_mcp_app_completes_the_standard_ui_handshake(client: TestClient):
     assert "notify('ui/notifications/initialized')" in html
     assert html.index("await rpc('ui/initialize'") < html.index("notify('ui/notifications/initialized')")
     assert "clientInfo:" not in html
+
+
+def test_household_dashboard_exposes_chat_configured_individual_cards(client: TestClient):
+    contents = rpc(
+        client,
+        "resources/read",
+        {"uri": "ui://meal-prep/household-dashboard-v4.html"},
+        request_id=23,
+    )["contents"]
+    html = contents[0]["text"]
+
+    for card_id in (
+        "food-rules", "planning-defaults", "stores", "schedule", "meal-plan",
+        "shopping-list", "pantry", "recipes", "retro", "feedback", "memories",
+    ):
+        assert f"id: '{card_id}'" in html
+    assert "Ask Meal Prep in chat to show, hide, reorder, or reset dashboard cards." in html
+    assert 'data-action="customize-dashboard"' not in html
+    assert 'data-dashboard-toggle=' not in html
 
 
 def test_household_onboarding_can_be_completed_only_with_full_answers(client: TestClient):

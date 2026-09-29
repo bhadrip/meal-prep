@@ -145,12 +145,29 @@
       .feedback-row p { margin-top:5px; color:var(--muted); font-size:.7rem; line-height:1.4; }
       .feedback-row small { color:var(--muted); font-size:.62rem; text-transform:capitalize; }
       .next-time { display:block; margin-top:6px; color:var(--accent)!important; font-weight:700; }
+      button:disabled { cursor:not-allowed; opacity:.52; }
+      .dashboard-intro { color:var(--muted); font-size:.73rem; line-height:1.4; }
+      .dashboard-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-items:start; }
+      .dashboard-card { min-width:0; padding:13px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+      .dashboard-card.wide { grid-column:1 / -1; }
+      .dashboard-card .signal-title { margin-bottom:10px; }
+      .card-empty { padding:12px; border:1px dashed var(--line); border-radius:10px; color:var(--muted); font-size:.72rem; line-height:1.4; text-align:center; }
+      .recipe-preview,.feedback-preview,.shopping-preview { display:grid; gap:7px; }
+      .recipe-row,.feedback-preview .feedback-row,.shopping-row { min-width:0; padding:8px 9px; border:1px solid var(--line); border-radius:10px; background:Canvas; }
+      .recipe-row strong,.recipe-row small,.feedback-preview .feedback-row strong,.feedback-preview .feedback-row small,.shopping-row strong,.shopping-row small { display:block; }
+      .recipe-row strong,.shopping-row strong { overflow:hidden; font-size:.75rem; text-overflow:ellipsis; white-space:nowrap; }
+      .recipe-row small,.feedback-preview .feedback-row small,.shopping-row small { margin-top:3px; color:var(--muted); font-size:.65rem; line-height:1.35; }
+      .feedback-preview .feedback-row strong { font-size:.72rem; line-height:1.35; }
+      .shopping-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; }
+      .shopping-row.done strong { text-decoration:line-through; opacity:.58; }
+      .dashboard-empty { grid-column:1 / -1; padding:24px; border:1px dashed var(--line); border-radius:14px; color:var(--muted); text-align:center; }
       @media (max-width:700px) {
         .grid { grid-template-columns:repeat(7,150px); }
         .signal-grid { grid-template-columns:1fr; }
         .data-strip { grid-template-columns:repeat(2,1fr); }
         .recipe-grid,.recipe-columns,.retro-summary { grid-template-columns:1fr; }
-        .tabs { grid-template-columns:repeat(6,minmax(86px,1fr)); overflow-x:auto; }
+        .dashboard-grid { grid-template-columns:1fr; }
+        .dashboard-card.wide { grid-column:auto; }
       }
       .onboarding { max-width:760px; margin:0 auto; }
       .onboarding-hero { padding:18px; border-radius:18px; background:var(--soft); }
@@ -185,7 +202,10 @@
         .form-actions { display:grid; }
         .form-actions button { width:100%; }
       }
-      @media (max-width:420px) { .form-grid,.choice-grid { grid-template-columns:1fr; } }
+      @media (max-width:420px) {
+        .form-grid,.choice-grid { grid-template-columns:1fr; }
+        .snapshot-head { align-items:start; }
+      }
     </style>
   </head>
   <body>
@@ -233,13 +253,6 @@
 
       function sectionValue(name) { return householdSnapshot?.sections?.[name]?.value; }
       function sectionStatus(name) { return householdSnapshot?.sections?.[name]?.status || 'unavailable'; }
-      function dataCount(name) {
-        const value = sectionValue(name);
-        if (Array.isArray(value)) return value.length;
-        if (Array.isArray(value?.items)) return value.items.length;
-        if (Array.isArray(value?.entries)) return value.entries.length;
-        return value ? 1 : 0;
-      }
 
       function planningFacts(preferences) {
         const facts = [];
@@ -255,47 +268,41 @@
         return [...new Set(facts.filter(Boolean))].slice(0, 5);
       }
 
-      function renderOverview() {
+      function cardShell(id, title, icon, body, badge = '', wide = false) {
+        return `<article class="dashboard-card${wide ? ' wide' : ''}" data-card-id="${id}"><div class="signal-title"><div><span class="signal-icon" aria-hidden="true">${icon}</span><h2>${escapeHtml(title)}</h2></div>${badge ? `<span class="count-badge">${escapeHtml(badge)}</span>` : ''}</div>${body}</article>`;
+      }
+
+      function unavailableCard(label) {
+        return `<div class="card-empty">${escapeHtml(label)} will appear once its database table is installed.</div>`;
+      }
+
+      function renderFoodRulesCard() {
         const household = householdSnapshot.household || {};
         const restrictions = asArray(pick(household, 'dietaryRestrictions', 'dietary_restrictions'));
+        const ruleChips = restrictions.slice(0, 8).map((rule) => `<span class="chip">${escapeHtml(rule)}</span>`).join('') + (restrictions.length > 8 ? `<span class="chip">+${restrictions.length - 8} more</span>` : '');
+        return cardShell('food-rules', 'Food rules', '✓', `<div class="chip-cloud">${ruleChips || '<span class="chip allow">No restrictions saved</span>'}</div>`, `${restrictions.length} saved`);
+      }
+
+      function renderPlanningDefaultsCard() {
+        const household = householdSnapshot.household || {};
         const preferences = pick(household, 'planningPreferences', 'planning_preferences') || {};
         const facts = planningFacts(preferences);
+        return cardShell('planning-defaults', 'Planning defaults', '◷', `<ul class="fact-list">${(facts.length ? facts : ['No planning defaults saved']).map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}</ul>`);
+      }
+
+      function renderStoresCard() {
+        const household = householdSnapshot.household || {};
         const stores = asArray(pick(household, 'storePriority', 'store_priority'));
-        const ruleChips = restrictions.slice(0, 4).map((rule) => `<span class="chip">${escapeHtml(rule)}</span>`).join('') + (restrictions.length > 4 ? `<span class="chip">+${restrictions.length - 4} more</span>` : '');
-        const storeMarkup = stores.slice(0, 3).map((item, index) => `<span class="store"><b>${escapeHtml(item.priority || index + 1)}</b>${escapeHtml(item.store || item.name || item)}</span>`).join('');
-        const tiles = [
-          ['pantry', dataCount('pantry'), 'Pantry'],
-          ['recipes', dataCount('recipes'), 'Recipes'],
-          ['week', sectionStatus('schedule') === 'unavailable' ? '—' : dataCount('schedule'), 'Schedule'],
-          ['reviews', sectionStatus('retro') === 'unavailable' ? '—' : dataCount('retro'), 'Latest retro'],
-          ['reviews', sectionStatus('feedback') === 'unavailable' ? '—' : dataCount('feedback'), 'Feedback'],
-          ['week', dataCount('mealPlan'), 'Meal plan'],
-          [null, dataCount('shoppingList'), 'Shopping lists'],
-          ['memory', sectionStatus('memories') === 'unavailable' ? '—' : dataCount('memories'), 'Memories'],
-        ].map(([tab, count, label]) => {
-          const content = `<strong>${count}</strong><small>${label}</small>`;
-          return tab ? `<button class="data-tile ${count === '—' ? 'unavailable' : ''}" data-tab="${tab}">${content}</button>` : `<div class="data-tile">${content}</div>`;
-        }).join('');
-        return `<section class="tab-panel">
-          <div class="signal-grid">
-            <article class="signal-card"><div class="signal-title"><div><span class="signal-icon">✓</span><h2>Food rules</h2></div><span class="count-badge">${restrictions.length} saved</span></div><div class="chip-cloud">${ruleChips || '<span class="chip allow">No restrictions saved</span>'}</div></article>
-            <article class="signal-card"><div class="signal-title"><div><span class="signal-icon">◷</span><h2>Planning defaults</h2></div></div><ul class="fact-list">${(facts.length ? facts : ['No planning defaults saved']).map((fact) => `<li>${escapeHtml(fact)}</li>`).join('')}</ul></article>
-          </div>
-          <article class="signal-card"><div class="signal-title"><div><span class="signal-icon">⌂</span><h2>Preferred stores</h2></div><span class="count-badge">in order</span></div><div class="store-row">${storeMarkup || '<span class="store">None saved</span>'}</div></article>
-          <div class="data-strip">${tiles}</div>
-        </section>`;
+        const storeMarkup = stores.slice(0, 6).map((item, index) => `<span class="store"><b>${escapeHtml(item.priority || index + 1)}</b>${escapeHtml(item.store || item.name || item)}</span>`).join('');
+        return cardShell('stores', 'Preferred stores', '⌂', `<div class="store-row">${storeMarkup || '<span class="store">None saved</span>'}</div>`, 'in order');
       }
 
-      function unavailable(title) {
-        return `<div class="callout"><strong>${escapeHtml(title)} is not available yet</strong><p>The household profile is still usable. This section will appear once its database table is installed.</p></div>`;
-      }
-
-      function renderPantry() {
-        if (sectionStatus('pantry') === 'unavailable') return unavailable('Pantry');
+      function renderPantryCard() {
+        if (sectionStatus('pantry') === 'unavailable') return cardShell('pantry', 'Pantry', 'P', unavailableCard('Pantry'));
         const items = asArray(sectionValue('pantry'));
-        if (!items.length) return '<div class="callout"><strong>No pantry items saved</strong><p>Add ingredients as they arrive; Meal Prep can then use them in plans and avoid duplicate shopping.</p></div>';
         const rows = items.slice(0, 8).map((item) => `<div class="compact-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.storage_location || item.storageLocation || 'Pantry')} · ${escapeHtml(item.quantity_confidence || item.quantityConfidence || 'quantity not verified')}</small></div><span class="row-meta">${escapeHtml(item.quantity || '')} ${escapeHtml(item.unit || '')}</span></div>`).join('');
-        return `<section class="tab-panel"><div class="section-head"><h2>Pantry inventory</h2><span>${items.length} item${items.length === 1 ? '' : 's'}</span></div><div class="compact-list">${rows}</div></section>`;
+        const body = rows ? `<div class="compact-list">${rows}</div>` : '<div class="card-empty">No pantry items saved yet.</div>';
+        return cardShell('pantry', 'Pantry', 'P', body, `${items.length} item${items.length === 1 ? '' : 's'}`);
       }
 
       function recipeTime(recipe) {
@@ -368,26 +375,61 @@
         </section>`;
       }
 
-      function renderRecipesTab() {
-        if (sectionStatus('recipes') === 'unavailable') return unavailable('Recipes');
-        return renderRecipeLibrary(asArray(sectionValue('recipes')), { title: 'Recipe library' });
+      function renderRecipesCard() {
+        if (sectionStatus('recipes') === 'unavailable') return cardShell('recipes', 'Recipes', 'R', unavailableCard('Recipes'));
+        const recipes = asArray(sectionValue('recipes'));
+        const rows = recipes.slice(0, 5).map((recipe) => {
+          const minutes = pick(recipe, 'total_minutes', 'totalMinutes');
+          const servings = pick(recipe, 'servings');
+          const meta = [minutes ? `${minutes} min` : '', servings ? `${servings} servings` : ''].filter(Boolean).join(' · ');
+          return `<div class="recipe-row"><strong>${escapeHtml(recipe.title || 'Untitled recipe')}</strong><small>${escapeHtml(meta || recipe.description || 'Saved recipe')}</small></div>`;
+        }).join('');
+        return cardShell('recipes', 'Recipes', 'R', rows ? `<div class="recipe-preview">${rows}</div>` : '<div class="card-empty">No recipes saved yet.</div>', `${recipes.length} saved`);
       }
 
-      function renderWeek() {
+      function renderScheduleCard() {
         const scheduleState = sectionStatus('schedule');
         const schedule = sectionValue('schedule');
-        const plan = sectionValue('mealPlan');
-        const scheduleMarkup = scheduleState === 'unavailable' ? unavailable('Weekly schedule') : !schedule ? '<div class="callout"><strong>No weekly rhythm saved</strong><p>Meal Prep will ask before using a schedule as a recurring default.</p></div>' : `<div class="week-grid">${asArray(schedule.days).map((day) => `<div class="week-day"><strong>${escapeHtml(String(day.day || '').slice(0, 3))}</strong><small>${escapeHtml(humanize(day.mode))}</small></div>`).join('')}</div>`;
-        const planRows = asArray(plan?.entries).slice(0, 4).map((entry) => `<div class="compact-row"><div><strong>${escapeHtml(entry.meal || entry.title)}</strong><small>${escapeHtml(entry.day || entry.date)}</small></div><span class="row-meta">${escapeHtml(entry.servings || '')}${entry.servings ? ' servings' : ''}</span></div>`).join('');
-        return `<section class="tab-panel"><div class="section-head"><h2>Weekly rhythm</h2><span>${schedule?.is_normal_week === false ? 'Different week' : 'Usual week'}</span></div>${scheduleMarkup}<div class="section-head"><h2>Saved meal plan</h2><span>${planRows ? `${asArray(plan.entries).length} meals` : 'Empty'}</span></div>${planRows ? `<div class="compact-list">${planRows}</div>` : '<div class="callout"><strong>No meal plan saved</strong><p>Approved weekly plans will appear here.</p></div>'}</section>`;
+        const body = scheduleState === 'unavailable' ? unavailableCard('Weekly schedule') : !schedule ? '<div class="card-empty">No weekly rhythm saved yet.</div>' : `<div class="week-grid">${asArray(schedule.days).map((day) => `<div class="week-day"><strong>${escapeHtml(String(day.day || '').slice(0, 3))}</strong><small>${escapeHtml(humanize(day.mode))}</small></div>`).join('')}</div>`;
+        const badge = schedule ? (schedule.is_normal_week === false || schedule.isNormalWeek === false ? 'Different week' : 'Usual week') : '';
+        return cardShell('schedule', 'Weekly rhythm', 'W', body, badge, true);
       }
 
-      function renderMemory() {
-        if (sectionStatus('memories') === 'unavailable') return unavailable('Learned memory');
+      function renderMealPlanCard() {
+        if (sectionStatus('mealPlan') === 'unavailable') return cardShell('meal-plan', 'Meal plan', 'M', unavailableCard('Meal plan'), '', true);
+        const plan = sectionValue('mealPlan');
+        const planRows = asArray(plan?.entries).slice(0, 4).map((entry) => `<div class="compact-row"><div><strong>${escapeHtml(entry.meal || entry.title)}</strong><small>${escapeHtml(entry.day || entry.date)}</small></div><span class="row-meta">${escapeHtml(entry.servings || '')}${entry.servings ? ' servings' : ''}</span></div>`).join('');
+        const body = planRows ? `<div class="compact-list">${planRows}</div>` : '<div class="card-empty">No meal plan saved yet.</div>';
+        return cardShell('meal-plan', 'Meal plan', 'M', body, planRows ? `${asArray(plan.entries).length} meals` : 'Empty', true);
+      }
+
+      function renderShoppingListCard() {
+        if (sectionStatus('shoppingList') === 'unavailable') return cardShell('shopping-list', 'Shopping list', 'S', unavailableCard('Shopping list'));
+        const list = sectionValue('shoppingList');
+        const items = asArray(list?.items);
+        const purchased = items.filter((item) => item.purchased).length;
+        const rows = items.slice(0, 6).map((item) => `<div class="shopping-row${item.purchased ? ' done' : ''}"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.store || item.store_name || 'Store not assigned')}</small></div><span class="row-meta">${escapeHtml(item.quantity || '')} ${escapeHtml(item.unit || '')}</span></div>`).join('');
+        const body = rows ? `<div class="shopping-preview">${rows}</div>` : '<div class="card-empty">No shopping list saved yet.</div>';
+        return cardShell('shopping-list', list?.name || 'Shopping list', 'S', body, items.length ? `${purchased}/${items.length} bought` : 'Empty');
+      }
+
+      function renderFeedbackCard() {
+        if (sectionStatus('feedback') === 'unavailable') return cardShell('feedback', 'Meal feedback', 'F', unavailableCard('Meal feedback'));
+        const feedback = asArray(sectionValue('feedback'));
+        const rows = feedback.slice(0, 4).map((item) => {
+          const subject = item.occurrence?.title || item.meal_title || item.recipe_title || humanize(item.feedback_type || 'Meal note');
+          const note = item.note || item.next_time || 'Saved feedback';
+          return `<div class="feedback-row"><strong>${escapeHtml(note)}</strong><small>${escapeHtml(subject)}${item.rating ? ` · ${escapeHtml(item.rating)}/5` : ''}</small></div>`;
+        }).join('');
+        return cardShell('feedback', 'Meal feedback', 'F', rows ? `<div class="feedback-preview">${rows}</div>` : '<div class="card-empty">No meal feedback saved yet.</div>', `${feedback.length} saved`);
+      }
+
+      function renderMemoriesCard() {
+        if (sectionStatus('memories') === 'unavailable') return cardShell('memories', 'Learned memory', 'L', unavailableCard('Learned memory'));
         const memories = asArray(sectionValue('memories'));
-        if (!memories.length) return '<div class="callout"><strong>No learned memories yet</strong><p>Confirmed patterns and reviewable suggestions from retrospectives or feedback will appear here.</p></div>';
         const rows = memories.slice(0, 6).map((item) => `<article class="memory-row"><div class="memory-meta"><span>${escapeHtml(humanize(item.category || 'planning'))}</span><span class="status ${item.status === 'suggested' ? 'suggested' : ''}">${escapeHtml(item.status || 'confirmed')}</span></div><p>${escapeHtml(item.content)}</p></article>`).join('');
-        return `<section class="tab-panel"><div class="section-head"><h2>Learned memory</h2><span>${memories.length} active</span></div><div class="compact-list">${rows}</div></section>`;
+        const body = rows ? `<div class="compact-list">${rows}</div>` : '<div class="card-empty">No learned memories yet.</div>';
+        return cardShell('memories', 'Learned memory', 'L', body, `${memories.length} active`);
       }
 
       function reflectionText(item) {
@@ -397,7 +439,7 @@
       function renderReviews() {
         const retroUnavailable = sectionStatus('retro') === 'unavailable';
         const feedbackUnavailable = sectionStatus('feedback') === 'unavailable';
-        if (retroUnavailable && feedbackUnavailable) return unavailable('Reviews');
+        if (retroUnavailable && feedbackUnavailable) return '<div class="callout"><strong>Reviews unavailable</strong><p>Review data will appear once its database tables are installed.</p></div>';
         const retro = sectionValue('retro');
         const feedback = asArray(sectionValue('feedback'));
         if (!retro && !feedback.length) return '<div class="callout"><strong>No reviews saved yet</strong><p>Weekly retrospectives and meal feedback will appear here without being promoted to long-term memory.</p></div>';
@@ -430,25 +472,61 @@
         return `<section class="tab-panel">${retroMarkup}${feedbackSection}</section>`;
       }
 
-      function renderSnapshotTab(tab) {
-        const panel = root.querySelector('#snapshot-body');
-        if (!panel || !householdSnapshot) return;
-        panel.innerHTML = tab === 'pantry' ? renderPantry() : tab === 'recipes' ? renderRecipesTab() : tab === 'week' ? renderWeek() : tab === 'reviews' ? renderReviews() : tab === 'memory' ? renderMemory() : renderOverview();
-        root.querySelectorAll('[data-tab].tab-button').forEach((button) => {
-          const active = button.dataset.tab === tab;
-          button.classList.toggle('active', active);
-          button.setAttribute('aria-selected', String(active));
-        });
+      function renderRetroCard() {
+        if (sectionStatus('retro') === 'unavailable') return cardShell('retro', 'Latest weekly retro', 'R', unavailableCard('Weekly retro'));
+        const retro = sectionValue('retro');
+        if (!retro) return cardShell('retro', 'Latest weekly retro', 'R', '<div class="card-empty">No weekly retro saved yet.</div>', 'Empty');
+        const workedWell = asArray(pick(retro, 'workedWell', 'worked_well'));
+        const stressors = asArray(retro.stressors);
+        const highlights = [
+          ...workedWell.slice(0, 2).map((item) => `Worked: ${reflectionText(item)}`),
+          ...stressors.slice(0, 2).map((item) => `Friction: ${reflectionText(item)}`),
+        ];
+        const body = highlights.length
+          ? `<ul class="fact-list">${highlights.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+          : `<div class="card-empty">${escapeHtml(retro.note || 'This retrospective has no highlights yet.')}</div>`;
+        const week = pick(retro, 'weekStart', 'week_start');
+        return cardShell('retro', 'Latest weekly retro', 'R', body, week ? `Week of ${week}` : 'Saved');
       }
 
-      function renderHouseholdSnapshot(data) {
+      const DASHBOARD_CARDS = [
+        { id: 'food-rules', label: 'Food rules', render: renderFoodRulesCard },
+        { id: 'planning-defaults', label: 'Planning defaults', render: renderPlanningDefaultsCard },
+        { id: 'stores', label: 'Preferred stores', render: renderStoresCard },
+        { id: 'schedule', label: 'Weekly rhythm', render: renderScheduleCard },
+        { id: 'meal-plan', label: 'Meal plan', render: renderMealPlanCard },
+        { id: 'shopping-list', label: 'Shopping list', render: renderShoppingListCard },
+        { id: 'pantry', label: 'Pantry', render: renderPantryCard },
+        { id: 'recipes', label: 'Recipes', render: renderRecipesCard },
+        { id: 'retro', label: 'Latest weekly retro', render: renderRetroCard },
+        { id: 'feedback', label: 'Meal feedback', render: renderFeedbackCard },
+        { id: 'memories', label: 'Learned memory', render: renderMemoriesCard },
+      ];
+      const dashboardCardById = new Map(DASHBOARD_CARDS.map((card) => [card.id, card]));
+
+      function normalizedDashboardLayout() {
+        const household = householdSnapshot?.household || {};
+        const preferences = pick(household, 'planningPreferences', 'planning_preferences') || {};
+        const saved = pick(preferences, 'dashboard', 'dashboardLayout', 'dashboard_layout') || {};
+        const requestedOrder = asArray(pick(saved, 'cardOrder', 'card_order'));
+        const order = [...new Set(requestedOrder.filter((id) => dashboardCardById.has(id)))];
+        DASHBOARD_CARDS.forEach((card) => { if (!order.includes(card.id)) order.push(card.id); });
+        const hidden = asArray(pick(saved, 'hiddenCards', 'hidden_cards')).filter((id) => dashboardCardById.has(id));
+        return { order, hidden: [...new Set(hidden)] };
+      }
+
+      function renderVisibleCards(layout) {
+        return layout.order.filter((id) => !layout.hidden.includes(id)).map((id) => dashboardCardById.get(id).render()).join('') || '<div class="dashboard-empty">All cards are hidden. Ask Meal Prep in chat to restore cards or reset the dashboard.</div>';
+      }
+
+      function renderHouseholdSnapshot(data = householdSnapshot) {
         householdSnapshot = data;
-        const household = data.household || {};
+        const household = data?.household || {};
         const name = pick(household, 'householdName', 'household_name', 'name') || 'My household';
         const size = pick(household, 'householdSize', 'household_size');
         const role = pick(household, 'role', 'householdRole', 'household_role') || 'Owner';
-        root.innerHTML = `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><nav class="tabs" aria-label="Household data"><button class="tab-button active" data-tab="overview" aria-selected="true">Overview</button><button class="tab-button" data-tab="recipes" aria-selected="false">Recipes</button><button class="tab-button" data-tab="pantry" aria-selected="false">Pantry</button><button class="tab-button" data-tab="week" aria-selected="false">Week</button><button class="tab-button" data-tab="reviews" aria-selected="false">Reviews</button><button class="tab-button" data-tab="memory" aria-selected="false">Memory</button></nav><div id="snapshot-body"></div></section>`;
-        renderSnapshotTab('overview');
+        const layout = normalizedDashboardLayout();
+        root.innerHTML = `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><p class="dashboard-intro">Your food week at a glance. Ask Meal Prep in chat to show, hide, reorder, or reset dashboard cards.</p><div class="dashboard-grid">${renderVisibleCards(layout)}</div></section>`;
       }
 
       function renderOnboarding(household = {}) {
@@ -535,29 +613,22 @@
       }, { passive: true });
 
       root.addEventListener('click', async (event) => {
-        const tab = event.target.closest('[data-tab]');
-        if (tab) {
-          renderSnapshotTab(tab.dataset.tab);
-          return;
-        }
         const recipeCard = event.target.closest('[data-recipe-id]');
         if (recipeCard) {
           const recipe = recipeLibrary.find((item) => String(item.id) === recipeCard.dataset.recipeId);
-          const target = root.querySelector('#snapshot-body') || root;
           if (recipe) {
             recipeCard.disabled = true;
             try {
               const result = await rpc('tools/call', { name: 'get_recipe', arguments: { recipe_id: recipe.id } });
-              target.innerHTML = renderRecipeDetail(result?.structuredContent || result || recipe);
+              root.innerHTML = renderRecipeDetail(result?.structuredContent || result || recipe);
             } catch {
-              target.innerHTML = renderRecipeDetail(recipe);
+              root.innerHTML = renderRecipeDetail(recipe);
             }
           }
           return;
         }
         if (event.target.closest('[data-recipe-back]')) {
-          if (root.querySelector('#snapshot-body')) renderSnapshotTab('recipes');
-          else root.innerHTML = renderRecipeLibrary(recipeLibrary);
+          root.innerHTML = renderRecipeLibrary(recipeLibrary);
         }
       });
 

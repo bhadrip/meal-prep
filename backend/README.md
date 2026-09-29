@@ -130,6 +130,7 @@ Deploy, then verify:
 Data tools:
 
 - `get_household_context`
+- `get_dashboard_layout`, `configure_dashboard`
 - `get_planning_context`
 - `update_household_preferences`
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`

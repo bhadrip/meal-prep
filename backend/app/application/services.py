@@ -9,6 +9,31 @@ from typing import Any, Awaitable, Callable, Protocol
 from .errors import ApplicationError, RepositoryError
 
 
+DASHBOARD_CARD_IDS = (
+    "food-rules",
+    "planning-defaults",
+    "stores",
+    "schedule",
+    "meal-plan",
+    "shopping-list",
+    "pantry",
+    "recipes",
+    "retro",
+    "feedback",
+    "memories",
+)
+
+
+def _dashboard_layout(preferences: dict[str, Any]) -> dict[str, list[str]]:
+    saved = preferences.get("dashboard") or {}
+    requested_order = saved.get("cardOrder") or saved.get("card_order") or []
+    order = list(dict.fromkeys(card_id for card_id in requested_order if card_id in DASHBOARD_CARD_IDS))
+    order.extend(card_id for card_id in DASHBOARD_CARD_IDS if card_id not in order)
+    requested_hidden = saved.get("hiddenCards") or saved.get("hidden_cards") or []
+    hidden = list(dict.fromkeys(card_id for card_id in requested_hidden if card_id in DASHBOARD_CARD_IDS))
+    return {"cardOrder": order, "hiddenCards": hidden}
+
+
 class MealPrepRepository(Protocol):
     async def get_household_context(self, *, create_if_missing: bool = True) -> dict[str, Any]: ...
     async def update_household_preferences(self, patch: dict[str, Any]) -> dict[str, Any]: ...
@@ -102,6 +127,59 @@ class HouseholdService:
         if complete_onboarding:
             patch["onboardingCompletedAt"] = datetime.now(UTC).isoformat()
         return await self.repository.update_household_preferences(patch)
+
+    async def get_dashboard_layout(self) -> dict[str, Any]:
+        household = await self.repository.get_household_context()
+        preferences = household.get("planningPreferences") or household.get("planning_preferences") or {}
+        return {
+            **_dashboard_layout(preferences),
+            "availableCards": list(DASHBOARD_CARD_IDS),
+        }
+
+    async def configure_dashboard(
+        self,
+        *,
+        card_order: list[str] | None = None,
+        hidden_cards: list[str] | None = None,
+        reset_to_default: bool = False,
+    ) -> dict[str, Any]:
+        household = await self.repository.get_household_context()
+        preferences = household.get("planningPreferences") or household.get("planning_preferences") or {}
+        current = _dashboard_layout(preferences)
+
+        if reset_to_default:
+            order = list(DASHBOARD_CARD_IDS)
+            hidden: list[str] = []
+        else:
+            requested_order = card_order or []
+            requested_hidden = hidden_cards if hidden_cards is not None else current["hiddenCards"]
+            invalid = sorted(
+                {
+                    card_id
+                    for card_id in [*requested_order, *requested_hidden]
+                    if card_id not in DASHBOARD_CARD_IDS
+                }
+            )
+            if invalid:
+                raise ApplicationError(f"Unknown dashboard card IDs: {', '.join(invalid)}")
+            if len(requested_order) != len(set(requested_order)):
+                raise ApplicationError("card_order cannot contain duplicate card IDs")
+            if len(requested_hidden) != len(set(requested_hidden)):
+                raise ApplicationError("hidden_cards cannot contain duplicate card IDs")
+            order = requested_order + [
+                card_id for card_id in current["cardOrder"] if card_id not in requested_order
+            ] if card_order is not None else current["cardOrder"]
+            hidden = requested_hidden
+
+        layout = {"cardOrder": order, "hiddenCards": hidden}
+        updated = await self.repository.update_household_preferences(
+            {"planningPreferences": {**preferences, "dashboard": layout}}
+        )
+        return {
+            **layout,
+            "availableCards": list(DASHBOARD_CARD_IDS),
+            "household": updated,
+        }
 
     async def snapshot(self) -> dict[str, Any]:
         async def section(loader: Callable[[], Awaitable[Any]]) -> dict[str, Any]:
