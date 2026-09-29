@@ -15,7 +15,7 @@ app/
 
 ## What is included
 
-- Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes, pantry, shopping, feedback, reviews, memory, and dashboard settings
+- Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes and recipe sharing, pantry, shopping, feedback, reviews, memory, and dashboard settings
 - Authenticated JSON API under `/api` for the website and future mobile clients
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists

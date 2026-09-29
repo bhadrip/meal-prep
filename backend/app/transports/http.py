@@ -150,6 +150,23 @@ async def archive_recipe(recipe_id: str, services: WebServices) -> dict:
     return await services.food.archive_recipe(recipe_id)
 
 
+@router.post("/api/recipes/{recipe_id}/shares")
+async def create_recipe_share(recipe_id: str, services: WebServices) -> dict:
+    share = await services.food.create_recipe_share(recipe_id)
+    return {**share, "url": f"{get_settings().app_base_url.rstrip('/')}/s/{share['token']}"}
+
+
+@router.get("/api/recipe-shares")
+async def list_recipe_shares(services: WebServices) -> dict:
+    items = await services.food.list_recipe_shares()
+    return {"items": items, "count": len(items)}
+
+
+@router.delete("/api/recipe-shares/{share_id}")
+async def revoke_recipe_share(share_id: str, services: WebServices) -> dict:
+    return await services.food.revoke_recipe_share(share_id)
+
+
 @router.get("/api/recipes/{recipe_id}/lessons")
 async def get_recipe_lessons(recipe_id: str, services: WebServices, limit: int = 50) -> dict:
     return await services.feedback.recipe_lessons(recipe_id, limit)
@@ -276,6 +293,8 @@ async def review_household_memory(
     memory_id: str, payload: dict[str, Any], services: WebServices
 ) -> dict:
     return await services.memory.review(memory_id, payload.get("action", ""), payload.get("content"))
+
+
 @router.get("/s/{token}", response_class=HTMLResponse, include_in_schema=False)
 async def shared_recipe_page(token: str) -> HTMLResponse:
     try:

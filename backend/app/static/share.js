@@ -3,21 +3,26 @@ const message = document.querySelector('#message');
 
 saveButton?.addEventListener('click', async () => {
   const token = location.pathname.split('/').pop();
-  const accessToken = sessionStorage.getItem('meal-prep-access-token');
-  if (!accessToken) {
-    location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
-    return;
-  }
   saveButton.disabled = true;
   message.textContent = 'Saving…';
   try {
+    const config = await fetch('/api/auth/config').then((response) => response.json());
+    let accessToken = null;
+    if (config.supabaseUrl && config.supabaseAnonKey) {
+      const client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+      const { data, error } = await client.auth.getSession();
+      if (error || !data.session?.access_token) {
+        location.assign(`/login?next=${encodeURIComponent(location.pathname)}`);
+        return;
+      }
+      accessToken = data.session.access_token;
+    }
     const response = await fetch(`/api/shares/${encodeURIComponent(token)}/save`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     });
     if (response.status === 401) {
-      sessionStorage.removeItem('meal-prep-access-token');
-      location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+      location.assign(`/login?next=${encodeURIComponent(location.pathname)}`);
       return;
     }
     if (!response.ok) throw new Error('Could not save this recipe. The link may have expired or been revoked.');

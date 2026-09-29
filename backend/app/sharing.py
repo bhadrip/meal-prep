@@ -76,4 +76,4 @@ h1,h2{{font-family:Georgia,serif}}h1{{font-size:clamp(2rem,5vw,3.3rem);margin:.4
 <div class="columns"><section><h2>Ingredients</h2><ul>{ingredients}</ul></section><section><h2>Instructions</h2><ol>{instructions}</ol></section></div>
 {source_link}
 <button id="save-recipe" type="button">Save to my recipes</button><p id="message" role="status"></p>
-</main><script src="/static/share.js" defer></script></body></html>"""
+</main><script src="/static/vendor/supabase.js" defer></script><script src="/static/share.js" defer></script></body></html>"""
