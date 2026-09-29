@@ -28,6 +28,12 @@ def test_website_uses_plugin_logo_and_self_hosted_type():
     assert client.get("/static/meal-prep-icon.svg").text == plugin_logo.read_text()
 
 
+def test_retired_weekly_review_api_is_not_exposed():
+    client = TestClient(app)
+    assert client.get("/api/retros").status_code == 404
+    assert client.put("/api/retros", json={"note": "Old format"}).status_code == 404
+
+
 def test_local_website_edits_share_application_data_across_requests():
     demo_repository.cache_clear()
     client = TestClient(app)

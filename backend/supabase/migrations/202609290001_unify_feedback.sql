@@ -11,7 +11,12 @@ create temporary table migrated_weekly_feedback (
   outcome_tag text not null,
   created_by uuid not null,
   created_at timestamptz not null,
-  updated_at timestamptz not null
+  updated_at timestamptz not null,
+  occurrence_id uuid,
+  recipe_id uuid,
+  occurrence_title text,
+  variation_snapshot jsonb not null default '{}'::jsonb,
+  next_time text not null default ''
 );
 
 insert into migrated_weekly_feedback
@@ -19,7 +24,8 @@ select
   gen_random_uuid(), wr.household_id, ws.id, wr.week_start,
   'worked_well',
   left(case when jsonb_typeof(item.value) = 'string' then item.value #>> '{}' else item.value::text end, 600),
-  'worked-well', h.created_by, wr.created_at, wr.updated_at
+  'worked-well', h.created_by, wr.created_at, wr.updated_at,
+  null::uuid, null::uuid, null::text, '{}'::jsonb, ''::text
 from public.weekly_retros wr
 join public.households h on h.id = wr.household_id
 left join public.weekly_schedules ws
@@ -31,7 +37,8 @@ select
   gen_random_uuid(), wr.household_id, ws.id, wr.week_start,
   'problem',
   left(case when jsonb_typeof(item.value) = 'string' then item.value #>> '{}' else item.value::text end, 600),
-  'did-not-work', h.created_by, wr.created_at, wr.updated_at
+  'did-not-work', h.created_by, wr.created_at, wr.updated_at,
+  null::uuid, null::uuid, null::text, '{}'::jsonb, ''::text
 from public.weekly_retros wr
 join public.households h on h.id = wr.household_id
 left join public.weekly_schedules ws
@@ -52,12 +59,26 @@ select
     end,
     600
   ),
-  'change-next-time', h.created_by, wr.created_at, wr.updated_at
+  'change-next-time', h.created_by, wr.created_at, wr.updated_at,
+  case when r.id is not null then gen_random_uuid() end,
+  r.id,
+  left(coalesce(nullif(trim(item.value->>'meal'), ''), r.title, 'Meal'), 180),
+  case when jsonb_typeof(item.value) = 'object' then item.value else '{}'::jsonb end,
+  coalesce(left(case
+    when jsonb_typeof(item.value->'nextTime') = 'array' then (
+      select string_agg(change.value, '; ' order by change.ordinality)
+      from jsonb_array_elements_text(item.value->'nextTime') with ordinality as change(value, ordinality)
+    )
+    when jsonb_typeof(item.value->'nextTime') = 'string' then item.value->>'nextTime'
+    else ''
+  end, 600), '')
 from public.weekly_retros wr
 join public.households h on h.id = wr.household_id
 left join public.weekly_schedules ws
   on ws.household_id = wr.household_id and ws.week_start = wr.week_start
 cross join lateral jsonb_array_elements(wr.outcomes) item
+left join public.recipes r
+  on r.household_id = wr.household_id and r.id::text = item.value->>'recipeId'
 where length(trim(
   case
     when jsonb_typeof(item.value) = 'object' then concat_ws(
@@ -71,20 +92,33 @@ union all
 select
   gen_random_uuid(), wr.household_id, ws.id, wr.week_start,
   'change_next_time', left(wr.note, 600), 'change-next-time',
-  h.created_by, wr.created_at, wr.updated_at
+  h.created_by, wr.created_at, wr.updated_at,
+  null::uuid, null::uuid, null::text, '{}'::jsonb, ''::text
 from public.weekly_retros wr
 join public.households h on h.id = wr.household_id
 left join public.weekly_schedules ws
   on ws.household_id = wr.household_id and ws.week_start = wr.week_start
 where length(trim(wr.note)) > 0;
 
-insert into public.feedback_entries (
-  id, household_id, weekly_schedule_id, week_start, feedback_type, note,
-  next_time, created_by, created_at, updated_at
+-- Recipe-linked review outcomes need an occurrence so recipe feedback queries
+-- can find them. Preserve the source JSON, including preparation details.
+insert into public.meal_occurrences (
+  id, household_id, weekly_schedule_id, week_start, title, recipe_id,
+  variation_snapshot, created_at, updated_at
 )
 select
-  id, household_id, weekly_schedule_id, week_start, feedback_type, note,
-  '', created_by, created_at, updated_at
+  occurrence_id, household_id, weekly_schedule_id, week_start,
+  occurrence_title, recipe_id, variation_snapshot, created_at, updated_at
+from migrated_weekly_feedback
+where occurrence_id is not null;
+
+insert into public.feedback_entries (
+  id, household_id, occurrence_id, weekly_schedule_id, week_start,
+  feedback_type, note, next_time, created_by, created_at, updated_at
+)
+select
+  id, household_id, occurrence_id, weekly_schedule_id, week_start,
+  feedback_type, note, next_time, created_by, created_at, updated_at
 from migrated_weekly_feedback;
 
 insert into public.feedback_tags (household_id, slug, label, facet)
@@ -166,4 +200,6 @@ alter table public.household_memories
   check (source_type in ('user', 'onboarding', 'schedule', 'feedback', 'observation'));
 
 drop table migrated_weekly_feedback;
-drop table public.weekly_retros;
+-- Retain the original review rows until the backfill has been checked in production.
+comment on table public.weekly_retros is
+  'Legacy weekly reviews retained for verification after feedback migration.';

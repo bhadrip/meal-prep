@@ -233,16 +233,6 @@ async def get_planning_context(services: WebServices, week_start: str | None = N
     return await services.planning.get_context(week_start)
 
 
-@router.get("/api/retros")
-async def get_weekly_retro(services: WebServices, week_start: str | None = None) -> dict:
-    return {"retro": await services.planning.get_retro(week_start)}
-
-
-@router.put("/api/retros")
-async def save_weekly_retro(retro: dict[str, Any], services: WebServices) -> dict:
-    return await services.planning.save_retro(retro)
-
-
 @router.get("/api/feedback")
 async def get_feedback(
     services: WebServices,
