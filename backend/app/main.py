@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -13,6 +14,7 @@ from .transports.mcp import mcp, mcp_app
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -39,7 +41,11 @@ async def application_error_handler(_, exc: ApplicationError) -> JSONResponse:
 
 @app.exception_handler(RepositoryError)
 async def repository_error_handler(_, exc: RepositoryError) -> JSONResponse:
-    return JSONResponse(status_code=503, content={"detail": str(exc)})
+    logger.error("Repository operation failed: %s", exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "This part of Meal Prep is temporarily unavailable. Please try again later."},
+    )
 
 
 # Mount last so the MCP ASGI app serves /mcp and OAuth metadata without

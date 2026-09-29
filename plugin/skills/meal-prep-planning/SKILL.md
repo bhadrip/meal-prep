@@ -1,6 +1,6 @@
 ---
 name: meal-prep-planning
-description: Coordinate the household food week and open or configure its card dashboard with the Meal Prep MCP tools. Use for meal planning, recipes, prep, pantry inventory, shopping lists, household food preferences, or dashboard requests.
+description: Coordinate the household food week and open or configure its card dashboard with the Meal Prep MCP tools. Use for meal planning, recipes, recipe sharing, prep, pantry inventory, shopping lists, household food preferences, or dashboard requests.
 ---
 
 # Meal prep planning
@@ -121,8 +121,24 @@ remain connected to the meal, recipe, variant, and week it describes.
   behavior into a durable preference without asking.
 - Feedback is evidence, not a permanent preference. Save repeated patterns as
   suggested household preferences and use
-  `review_household_memory` only after the user confirms, corrects, or asks to
-  forget one.
+   `review_household_memory` only after the user confirms, corrects, or asks to
+   forget one.
+
+## Recipe sharing
+
+- When the user asks to share a saved recipe, find it with `search_recipes` if
+  needed, then call `create_recipe_share` for that recipe. Give the returned
+  URL to the user. Anyone holding the active link can view its fixed recipe
+  snapshot; it excludes household details and cooking feedback.
+- `expires_at` is optional. With no value, the link stays active until revoked.
+  `list_recipe_shares` shows link metadata but cannot recover a previously
+  created URL. Create a new link if the user needs another URL.
+- If the user wants to stop sharing, call `list_recipe_shares` to find the link
+  and `revoke_recipe_share` with its ID. Revocation blocks later views and
+  copies.
+- A signed-in recipient can open the link and save an independent copy to
+  their household. In chat, use `copy_shared_recipe` only when the recipient
+  asks to save it.
 - Use confirmed household preferences as planning defaults. Suggestions may
   influence a question or option but must not be presented as settled facts.
 - A null weekly schedule means no saved record exists. Ask for

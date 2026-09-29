@@ -59,6 +59,10 @@ mcp = FastMCP(
         "dashboard, use get_dashboard_layout and configure_dashboard, then render it again for verification. "
         "When the user asks to see, browse, or list saved recipes, use render_recipe_library so the recipes "
         "appear as visual cards with expandable ingredients and instructions instead of a text list. "
+        "When the user asks to share a saved recipe, use create_recipe_share and return its URL. "
+        "Anyone with that link can view a fixed recipe snapshot. Use list_recipe_shares and "
+        "revoke_recipe_share when they ask to stop sharing. A recipient can save an independent "
+        "copy with copy_shared_recipe. "
         "When the user asks for a weekly check-in, what worked, or meal feedback, use render_feedback "
         "so feedback appears separately from confirmed household preferences. "
         "Never place or imply an order; external commerce requires a separate confirmation flow."
@@ -83,6 +87,7 @@ mcp = FastMCP(
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 ARCHIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
+SHARE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
@@ -152,6 +157,32 @@ async def save_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
 async def archive_recipe(recipe_id: str) -> dict[str, Any]:
     """Archive a recipe after the user has confirmed the removal."""
     return await services_for_request().food.archive_recipe(recipe_id)
+
+
+@mcp.tool(annotations=SHARE, structured_output=True)
+async def create_recipe_share(recipe_id: str, expires_at: str | None = None) -> dict[str, Any]:
+    """Publish an explicit snapshot of one household recipe to a revocable link. Only call when the user asks to share it. The URL can be opened by anyone holding it."""
+    share = await services_for_request().food.create_recipe_share(recipe_id, expires_at)
+    return {**share, "url": f"{settings.app_base_url.rstrip('/')}/s/{share['token']}"}
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_recipe_shares() -> dict[str, Any]:
+    """List links created by the caller, including expired and revoked links. Raw link tokens are never returned again."""
+    items = await services_for_request().food.list_recipe_shares()
+    return {"items": items, "count": len(items)}
+
+
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def revoke_recipe_share(share_id: str) -> dict[str, Any]:
+    """Revoke a recipe link created by the caller so it can no longer be opened or copied."""
+    return await services_for_request().food.revoke_recipe_share(share_id)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def copy_shared_recipe(token: str) -> dict[str, Any]:
+    """Save an independent copy of a shared recipe into the caller's household."""
+    return await services_for_request().food.copy_shared_recipe(token)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)

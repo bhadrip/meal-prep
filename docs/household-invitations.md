@@ -10,7 +10,7 @@ Let someone who manages a household invite another adult, such as a spouse, to u
 2. Supabase Auth emails a sign-in or account invitation link that leads to Meal Prep's invitation page. The page names the household. The owner can see pending invitations, resend one by entering the same email, or revoke it.
 3. The invitee opens the link, signs in or creates an account with the **same email address**, and sees the household name and what will be shared. They explicitly select **Join household**.
 4. Acceptance adds the invitee as a member of the existing household. Their next website or MCP request uses that household, so both people see and edit the same data. The owner sees them in the member list.
-5. The owner can remove a collaborator later. Removal takes effect on the next authenticated request and does not delete household data.
+5. The owner can remove a collaborator later. Removal takes effect on the next authenticated request, revokes recipe sharing links they created for the household, and does not delete household food data.
 
 ## Product rules for the first version
 

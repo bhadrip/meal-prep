@@ -155,6 +155,7 @@ begin
       and not exists (select 1 from public.meal_occurrences where household_id = h.id)
       and not exists (select 1 from public.feedback_entries where household_id = h.id)
       and not exists (select 1 from public.feedback_tags where household_id = h.id)
+      and not exists (select 1 from public.share_links where household_id = h.id)
       and not exists (select 1 from public.household_invitations where household_id = h.id and accepted_at is null and revoked_at is null and expires_at > now())
     into empty_household
     from public.households h join public.household_preferences p on p.household_id = h.id
@@ -183,6 +184,8 @@ begin
   if target_id is null then raise exception 'Only a household owner can remove people'; end if;
   delete from public.household_members where household_id = target_id and user_id = member_id and role <> 'owner';
   if not found then raise exception 'Collaborator was not found'; end if;
+  update public.share_links set revoked_at = coalesce(revoked_at, now())
+  where household_id = target_id and created_by = member_id and revoked_at is null;
   insert into public.decision_records(household_id, actor_id, action, decision, context)
   values (target_id, auth.uid(), 'household_member', 'removed', jsonb_build_object('memberId', member_id));
   return jsonb_build_object('removed', true);

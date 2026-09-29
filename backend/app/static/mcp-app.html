@@ -118,6 +118,11 @@
       .recipe-columns { display:grid; grid-template-columns:.9fr 1.1fr; gap:12px; }
       .recipe-section { padding:13px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
       .recipe-section h2 { margin-bottom:10px; font-size:.82rem; }
+      .recipe-share-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+      .recipe-share-actions button { padding:8px 11px; font-size:.72rem; }
+      .recipe-share-url { width:100%; font-size:.72rem; }
+      .recipe-share-list { display:grid; gap:6px; margin-top:10px; }
+      .recipe-share-list .compact-row { gap:10px; }
       .recipe-list,.recipe-steps { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
       .recipe-list li { display:flex; justify-content:space-between; gap:10px; padding-bottom:7px; border-bottom:1px solid var(--line); font-size:.7rem; line-height:1.35; }
       .recipe-list li:last-child { padding-bottom:0; border-bottom:0; }
@@ -362,7 +367,8 @@
           <button class="recipe-back" data-recipe-back>← All recipes</button>
           <div class="recipe-hero"><span class="recipe-art" aria-hidden="true">${escapeHtml(recipeInitial(recipe))}</span><div><h1>${escapeHtml(recipe.title || 'Untitled recipe')}</h1><p>${escapeHtml(recipe.description || 'Saved recipe')}</p><div class="recipe-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${tags.length ? `<div class="recipe-tags">${tags.map((tag) => `<span class="recipe-tag">${escapeHtml(tag)}</span>`).join('')}</div>` : ''}</div></div>
           <div class="recipe-columns"><section class="recipe-section"><h2>Ingredients</h2><ul class="recipe-list">${ingredientMarkup}</ul></section><section class="recipe-section"><h2>Instructions</h2><ol class="recipe-steps">${instructionMarkup}</ol></section></div>
-          ${feedback.length ? `<section class="recipe-section"><h2>Cooking notes</h2><div class="recipe-notes">${feedback.map((item) => `<article class="recipe-note"><p>${escapeHtml(item.note || item.content || 'Saved feedback')}</p>${pick(item, 'nextTime', 'next_time') ? `<small>Next time: ${escapeHtml(pick(item, 'nextTime', 'next_time'))}</small>` : ''}</article>`).join('')}</div></section>` : ''}
+          <section class="recipe-section"><h2>Share this recipe</h2><p>A shared link contains this recipe's ingredients and instructions. Cooking notes and household details stay private.</p><div class="recipe-share-actions"><button data-create-recipe-share="${escapeHtml(recipe.id || '')}">Create share link</button></div><div id="recipe-share-result" role="status"></div><div id="recipe-share-list" class="recipe-share-list"></div></section>
+          ${recipe.feedbackUnavailable ? '<section class="recipe-section"><h2>Cooking notes</h2><p>Cooking notes are temporarily unavailable.</p></section>' : feedback.length ? `<section class="recipe-section"><h2>Cooking notes</h2><div class="recipe-notes">${feedback.map((item) => `<article class="recipe-note"><p>${escapeHtml(item.note || item.content || 'Saved feedback')}</p>${pick(item, 'nextTime', 'next_time') ? `<small>Next time: ${escapeHtml(pick(item, 'nextTime', 'next_time'))}</small>` : ''}</article>`).join('')}</div></section>` : ''}
           ${sourceUrl ? `<a class="recipe-source" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">Open original recipe ↗</a>` : sourceType ? `<span class="recipe-source">Source: ${escapeHtml(humanize(sourceType))}</span>` : ''}
         </section>`;
       }
@@ -425,7 +431,7 @@
       }
 
       function renderFeedback() {
-        if (sectionStatus('feedback') === 'unavailable') return '<div class="callout"><strong>Feedback unavailable</strong><p>Feedback will appear once its database table is installed.</p></div>';
+        if (sectionStatus('feedback') === 'unavailable') return '<div class="callout"><strong>Feedback unavailable</strong><p>Cooking notes are temporarily unavailable. Please try again later.</p></div>';
         const feedback = asArray(sectionValue('feedback'));
         if (!feedback.length) return '<div class="callout"><strong>No feedback saved yet</strong><p>Meal notes, what worked, and next-time changes from weekly check-ins will appear here.</p></div>';
         const rows = feedback.slice(0, 8).map((item) => {
@@ -562,6 +568,38 @@
       }, { passive: true });
 
       root.addEventListener('click', async (event) => {
+        const createShare = event.target.closest('[data-create-recipe-share]');
+        if (createShare) {
+          createShare.disabled = true;
+          const status = root.querySelector('#recipe-share-result');
+          try {
+            const result = await rpc('tools/call', { name: 'create_recipe_share', arguments: { recipe_id: createShare.dataset.createRecipeShare } });
+            const share = result?.structuredContent || result;
+            status.innerHTML = `<p>Share link created. Anyone with this link can view the recipe.</p><input class="recipe-share-url" aria-label="Share link" readonly value="${escapeHtml(share.url)}"><button data-copy-recipe-share>Copy link</button>`;
+            await loadRecipeShares(createShare.dataset.createRecipeShare);
+          } catch {
+            status.textContent = 'Could not create a share link.';
+          } finally { createShare.disabled = false; }
+          return;
+        }
+        if (event.target.closest('[data-copy-recipe-share]')) {
+          const input = root.querySelector('.recipe-share-url');
+          if (input) {
+            try { await navigator.clipboard.writeText(input.value); event.target.textContent = 'Copied'; }
+            catch { input.select(); }
+          }
+          return;
+        }
+        const revokeShare = event.target.closest('[data-revoke-recipe-share]');
+        if (revokeShare) {
+          revokeShare.disabled = true;
+          try {
+            await rpc('tools/call', { name: 'revoke_recipe_share', arguments: { share_id: revokeShare.dataset.revokeRecipeShare } });
+            root.querySelector('#recipe-share-result').textContent = 'Share link revoked.';
+            await loadRecipeShares(revokeShare.dataset.recipeId);
+          } catch { revokeShare.disabled = false; }
+          return;
+        }
         const recipeCard = event.target.closest('[data-recipe-id]');
         if (recipeCard) {
           const recipe = recipeLibrary.find((item) => String(item.id) === recipeCard.dataset.recipeId);
@@ -573,6 +611,7 @@
             } catch {
               root.innerHTML = renderRecipeDetail(recipe);
             }
+            await loadRecipeShares(recipe.id);
           }
           return;
         }
@@ -580,6 +619,16 @@
           root.innerHTML = renderRecipeLibrary(recipeLibrary);
         }
       });
+
+      async function loadRecipeShares(recipeId) {
+        const list = root.querySelector('#recipe-share-list');
+        if (!list) return;
+        try {
+          const result = await rpc('tools/call', { name: 'list_recipe_shares', arguments: {} });
+          const items = asArray((result?.structuredContent || result)?.items).filter((item) => item.recipeId === recipeId && !item.revokedAt && (!item.expiresAt || new Date(item.expiresAt) > new Date()));
+          list.innerHTML = items.length ? items.map((item) => `<div class="compact-row"><small>Link created ${escapeHtml(new Date(item.createdAt).toLocaleDateString())}</small><button data-revoke-recipe-share="${escapeHtml(item.id)}" data-recipe-id="${escapeHtml(recipeId)}">Revoke</button></div>`).join('') : '';
+        } catch { list.textContent = 'Could not load share links.'; }
+      }
 
       root.addEventListener('input', (event) => {
         if (!event.target.matches('#recipe-search')) return;

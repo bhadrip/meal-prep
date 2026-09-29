@@ -4,13 +4,14 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..application import MealPrepServices
 from ..auth import SupabaseTokenVerifier
 from ..config import get_settings
 from ..container import services_for_request
+from ..sharing import read_shared_recipe, render_shared_recipe_page
 
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
@@ -154,6 +155,23 @@ async def archive_recipe(recipe_id: str, services: WebServices) -> dict:
     return await services.food.archive_recipe(recipe_id)
 
 
+@router.post("/api/recipes/{recipe_id}/shares")
+async def create_recipe_share(recipe_id: str, services: WebServices) -> dict:
+    share = await services.food.create_recipe_share(recipe_id)
+    return {**share, "url": f"{get_settings().app_base_url.rstrip('/')}/s/{share['token']}"}
+
+
+@router.get("/api/recipe-shares")
+async def list_recipe_shares(services: WebServices) -> dict:
+    items = await services.food.list_recipe_shares()
+    return {"items": items, "count": len(items)}
+
+
+@router.delete("/api/recipe-shares/{share_id}")
+async def revoke_recipe_share(share_id: str, services: WebServices) -> dict:
+    return await services.food.revoke_recipe_share(share_id)
+
+
 @router.get("/api/recipes/{recipe_id}/lessons")
 async def get_recipe_lessons(recipe_id: str, services: WebServices, limit: int = 50) -> dict:
     return await services.feedback.recipe_lessons(recipe_id, limit)
@@ -280,3 +298,25 @@ async def review_household_memory(
     memory_id: str, payload: dict[str, Any], services: WebServices
 ) -> dict:
     return await services.memory.review(memory_id, payload.get("action", ""), payload.get("content"))
+
+
+@router.get("/s/{token}", response_class=HTMLResponse, include_in_schema=False)
+async def shared_recipe_page(token: str) -> HTMLResponse:
+    try:
+        share = await read_shared_recipe(token, get_settings())
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Sharing is temporarily unavailable") from exc
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found or no longer available")
+    return HTMLResponse(
+        render_shared_recipe_page(share),
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow"},
+    )
+
+
+@router.post("/api/shares/{token}/save")
+async def save_shared_recipe(token: str, services: WebServices) -> dict:
+    share = await read_shared_recipe(token, get_settings())
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found or no longer available")
+    return await services.food.copy_shared_recipe(token)

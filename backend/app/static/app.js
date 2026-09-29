@@ -35,7 +35,7 @@ const CARD_NAMES = {
   pantry: 'Pantry', recipes: 'Recipes', retro: 'Weekly review', feedback: 'Meal feedback', memories: 'Household memory',
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' };
-const state = { view: 'overview', snapshot: null, access: null, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, search: '', client: null, session: null, config: null, editor: null };
+const state = { view: 'overview', snapshot: null, access: null, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
 const esc = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const arr = (value) => Array.isArray(value) ? value : [];
 const pick = (value, ...keys) => keys.map((key) => value?.[key]).find((item) => item !== undefined && item !== null);
@@ -182,7 +182,15 @@ function renderRecipes() {
     const recipe = state.recipe;
     const ingredients = arr(recipe.ingredients);
     const instructions = arr(recipe.instructions);
-    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div style="display:flex;gap:8px">${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">Saved recipe</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p></div><div class="hero-stat"><strong>${esc(recipe.total_minutes || '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section><div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', arr(recipe.feedback).length ? `<div class="stack">${arr(recipe.feedback).slice(0, 5).map((item) => row(item.note, item.next_time || '')).join('')}</div>` : '<p class="muted tiny">No feedback yet.</p>', `<div style="margin-top:20px">${action('Add feedback', 'add-feedback', recipe.id)}</div>`)}</div>`;
+    const activeShares = arr(state.recipeShares).filter((item) => item.recipeId === recipe.id && !item.revokedAt && (!item.expiresAt || new Date(item.expiresAt) > new Date()));
+    const shareBody = `<p class="muted tiny">Anyone with a link can view this recipe. Cooking notes and household details stay private.</p>${state.shareUrl ? `<div class="share-url"><input id="share-url" aria-label="New recipe share link" readonly value="${esc(state.shareUrl)}" />${action('Copy link', 'copy-share')}</div>` : ''}${activeShares.length ? `<div class="stack share-list">${activeShares.map((item) => row('Active link', `Created ${new Date(item.createdAt).toLocaleDateString()}`, action('Revoke', 'revoke-share', item.id, 'danger'))).join('')}</div>` : ''}`;
+    const feedbackBody = recipe.feedbackUnavailable
+      ? '<p class="muted tiny">Cooking notes are temporarily unavailable.</p>'
+      : arr(recipe.feedback).length
+        ? `<div class="stack">${arr(recipe.feedback).slice(0, 5).map((item) => row(item.note, item.next_time || '')).join('')}</div>`
+        : '<p class="muted tiny">No feedback yet.</p>';
+    const feedbackAction = recipe.feedbackUnavailable ? '' : `<div style="margin-top:20px">${action('Add feedback', 'add-feedback', recipe.id)}</div>`;
+    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div style="display:flex;gap:8px">${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">Saved recipe</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p></div><div class="hero-stat"><strong>${esc(recipe.total_minutes || '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section><div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody, `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
   }
   let html = `<div class="toolbar"><input class="search" id="recipe-search" type="search" placeholder="Search recipes" value="${esc(state.search)}" aria-label="Search recipes" />${action('Add recipe', 'add-recipe', '', 'primary')}</div>`;
   if (sectionStatus('recipes') === 'unavailable') return html + empty('Recipes unavailable', 'Try refreshing this page.');
@@ -281,6 +289,8 @@ function render() {
 function view(name) {
   state.view = name;
   state.recipe = null;
+  state.shareUrl = null;
+  state.shareId = null;
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -461,9 +471,36 @@ async function handleAction(actionName, id) {
   if (actionName === 'edit-recipe') return openEditor('recipe', state.recipe || recipes.find((item) => item.id === id));
   if (actionName === 'open-recipe') {
     state.recipe = await api(`/api/recipes/${encodeURIComponent(id)}`);
+    try { state.recipeShares = (await api('/api/recipe-shares')).items; }
+    catch { state.recipeShares = []; }
+    state.shareUrl = null;
+    state.shareId = null;
     return render();
   }
-  if (actionName === 'close-recipe') { state.recipe = null; return render(); }
+  if (actionName === 'close-recipe') { state.recipe = null; state.shareUrl = null; state.shareId = null; return render(); }
+  if (actionName === 'create-share') {
+    const share = await api(`/api/recipes/${encodeURIComponent(id)}/shares`, { method: 'POST' });
+    state.shareUrl = share.url;
+    state.shareId = share.id;
+    try { state.recipeShares = (await api('/api/recipe-shares')).items; }
+    catch { state.recipeShares = []; }
+    render();
+    return showToast('Share link created.');
+  }
+  if (actionName === 'copy-share') {
+    if (!state.shareUrl) return;
+    try { await navigator.clipboard.writeText(state.shareUrl); showToast('Link copied.'); }
+    catch { const input = document.querySelector('#share-url'); input?.focus(); input?.select(); }
+    return;
+  }
+  if (actionName === 'revoke-share') {
+    await api(`/api/recipe-shares/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (id === state.shareId) { state.shareUrl = null; state.shareId = null; }
+    try { state.recipeShares = (await api('/api/recipe-shares')).items; }
+    catch { state.recipeShares = []; }
+    render();
+    return showToast('Share link revoked.');
+  }
   if (actionName === 'archive-recipe') {
     if (!confirm('Archive this recipe? It will leave the active recipe library.')) return;
     await api(`/api/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' });

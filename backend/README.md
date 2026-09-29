@@ -15,7 +15,7 @@ app/
 
 ## What is included
 
-- Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes, pantry, shopping, feedback, reviews, memory, and dashboard settings
+- Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes and recipe sharing, pantry, shopping, feedback, reviews, memory, and dashboard settings
 - Owner-managed household invitations and shared adult access from website Settings
 - Authenticated JSON API under `/api` for the website and future mobile clients
 - Streamable HTTP MCP endpoint at `/mcp`
@@ -114,6 +114,8 @@ The first authenticated request creates an unconfigured household through `boots
 
 An account with a pending household invitation is sent to `/invite` before household bootstrap. Acceptance verifies the signed-in email and joins the existing household. If the account already has an untouched, empty bootstrap household, acceptance removes that empty household first. A configured household or one with food data blocks acceptance until a separate switching or migration flow exists. Invitation and member changes run through checked database functions; the secret key is used only to ask Supabase Auth to send an invitation or sign-in email. The Auth email link can expire before the seven-day household invitation; resending from Settings sends a fresh Auth link. Production email delivery to addresses outside the Supabase project team requires [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
 
+Removing a collaborator immediately removes their household membership and revokes recipe sharing links they created for that household. Other household data stays in place.
+
 ### Repair an existing project's migration history without a CLI
 
 If the project schema was initially applied outside the migration runner, the
@@ -164,6 +166,7 @@ Data tools:
 - `get_planning_context`
 - `update_household_preferences`
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
+- `create_recipe_share`, `list_recipe_shares`, `revoke_recipe_share`, `copy_shared_recipe`
 - `get_pantry`, `update_pantry_item`
 - `get_weekly_schedule`, `save_weekly_schedule`
 - `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`
@@ -185,3 +188,4 @@ Presentation tools:
 - Demo mode is intentionally in memory; production MCP data is durable in Supabase.
 - The plugin stores plans and shopping lists but never places orders. Commerce remains a separate, explicitly confirmed tool flow.
 - The service does not provide medical guidance or fabricate food-safety dates.
+- Recipe shares publish a fixed, allowlisted snapshot at `/s/{token}`. Anyone with the active link can view it; signed-in users can save an independent copy. Share creation requires a household recipe, and the URL is returned only once. The creator can list and revoke links. Shares omit cooking feedback and household details.
