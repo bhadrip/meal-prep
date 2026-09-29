@@ -28,14 +28,14 @@ sidebarToggle.addEventListener('click', () => {
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const SLOTS = ['breakfast', 'lunch', 'snack', 'dinner', 'prep'];
 const FOCUS = ['breakfasts', 'lunches', 'snacks', 'dinners', 'weekend-prep', 'pantry', 'shopping'];
-const CARD_IDS = ['food-rules', 'planning-defaults', 'stores', 'schedule', 'meal-plan', 'shopping-list', 'pantry', 'recipes', 'retro', 'feedback', 'memories'];
+const CARD_IDS = ['food-rules', 'planning-defaults', 'stores', 'schedule', 'meal-plan', 'shopping-list', 'pantry', 'recipes', 'feedback', 'memories'];
 const CARD_NAMES = {
   'food-rules': 'Food rules', 'planning-defaults': 'Planning defaults', stores: 'Preferred stores',
   schedule: 'Weekly rhythm', 'meal-plan': 'Meal plan', 'shopping-list': 'Shopping list',
-  pantry: 'Pantry', recipes: 'Recipes', retro: 'Weekly review', feedback: 'Meal feedback', memories: 'Household memory',
+  pantry: 'Pantry', recipes: 'Recipes', feedback: 'Meal feedback', memories: 'Household memory',
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' };
-const state = { view: 'overview', snapshot: null, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
+const state = { view: 'overview', snapshot: null, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
 const esc = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const arr = (value) => Array.isArray(value) ? value : [];
 const pick = (value, ...keys) => keys.map((key) => value?.[key]).find((item) => item !== undefined && item !== null);
@@ -151,7 +151,7 @@ function renderOverview() {
   html += `</div>`;
   html += `<div class="section-head"><div><h2>Quick access</h2><p>Pick up where you left off.</p></div></div><div class="card-grid">`;
   html += card('Recent recipes', '◇', recipes.length ? `<div class="stack">${recipes.slice(0, 3).map((recipe) => row(recipe.title, `${recipe.total_minutes || '—'} min · ${recipe.servings || '—'} servings`)).join('')}</div>` : '<p class="muted tiny">No recipes saved yet.</p>', `<div style="margin-top:20px">${action('Browse recipes', 'recipes')}</div>`);
-  html += card('Meal feedback', '♡', arr(section('feedback')).length ? `<div class="stack">${arr(section('feedback')).slice(0, 2).map((item) => row(item.occurrence?.title || 'Meal', item.note)).join('')}</div>` : '<p class="muted tiny">No meal feedback yet.</p>', `<div style="margin-top:20px">${action('View reviews', 'reviews')}</div>`);
+  html += card('Meal feedback', '♡', sectionStatus('feedback') === 'unavailable' ? '<p class="muted tiny">Cooking notes are temporarily unavailable.</p>' : arr(section('feedback')).length ? `<div class="stack">${arr(section('feedback')).slice(0, 2).map((item) => row(item.occurrence?.title || 'Weekly note', item.note)).join('')}</div>` : '<p class="muted tiny">No meal feedback yet.</p>', `<div style="margin-top:20px">${action('View reviews', 'reviews')}</div>`);
   html += card('Weekly rhythm', '◷', state.schedule ? `<div class="stack">${arr(state.schedule.days).slice(0, 3).map((day) => row(day.day, label(day.mode || 'Flexible'))).join('')}</div>` : '<p class="muted tiny">No weekly schedule saved.</p>', `<div style="margin-top:20px">${action('Open plan', 'plan')}</div>`);
   html += `</div>`;
   return html;
@@ -182,14 +182,16 @@ function renderRecipes() {
     const ingredients = arr(recipe.ingredients);
     const instructions = arr(recipe.instructions);
     const activeShares = arr(state.recipeShares).filter((item) => item.recipeId === recipe.id && !item.revokedAt && (!item.expiresAt || new Date(item.expiresAt) > new Date()));
-    const shareBody = `<p class="muted tiny">Anyone with a link can view this recipe. Cooking notes and household details stay private.</p>${state.shareUrl ? `<div class="share-url"><input id="share-url" aria-label="New recipe share link" readonly value="${esc(state.shareUrl)}" />${action('Copy link', 'copy-share')}</div>` : ''}${activeShares.length ? `<div class="stack share-list">${activeShares.map((item) => row('Active link', `Created ${new Date(item.createdAt).toLocaleDateString()}`, action('Revoke', 'revoke-share', item.id, 'danger'))).join('')}</div>` : ''}`;
+    const shareBody = state.recipeSharesUnavailable
+      ? '<p class="muted tiny">Recipe sharing is temporarily unavailable.</p>'
+      : `<p class="muted tiny">Anyone with a link can view this recipe. Cooking notes and household details stay private.</p>${state.shareUrl ? `<div class="share-url"><input id="share-url" aria-label="New recipe share link" readonly value="${esc(state.shareUrl)}" />${action('Copy link', 'copy-share')}</div>` : ''}${activeShares.length ? `<div class="stack share-list">${activeShares.map((item) => row('Active link', `Created ${new Date(item.createdAt).toLocaleDateString()}`, action('Revoke', 'revoke-share', item.id, 'danger'))).join('')}</div>` : ''}`;
     const feedbackBody = recipe.feedbackUnavailable
       ? '<p class="muted tiny">Cooking notes are temporarily unavailable.</p>'
       : arr(recipe.feedback).length
         ? `<div class="stack">${arr(recipe.feedback).slice(0, 5).map((item) => row(item.note, item.next_time || '')).join('')}</div>`
         : '<p class="muted tiny">No feedback yet.</p>';
     const feedbackAction = recipe.feedbackUnavailable ? '' : `<div style="margin-top:20px">${action('Add feedback', 'add-feedback', recipe.id)}</div>`;
-    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div style="display:flex;gap:8px">${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">Saved recipe</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p></div><div class="hero-stat"><strong>${esc(recipe.total_minutes || '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section><div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody, `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
+    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div style="display:flex;gap:8px">${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">Saved recipe</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p></div><div class="hero-stat"><strong>${esc(recipe.total_minutes || '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section><div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody, state.recipeSharesUnavailable ? '' : `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
   }
   let html = `<div class="toolbar"><input class="search" id="recipe-search" type="search" placeholder="Search recipes" value="${esc(state.search)}" aria-label="Search recipes" />${action('Add recipe', 'add-recipe', '', 'primary')}</div>`;
   if (sectionStatus('recipes') === 'unavailable') return html + empty('Recipes unavailable', 'Try refreshing this page.');
@@ -219,13 +221,12 @@ function renderShopping() {
 }
 
 function renderReviews() {
-  const retro = section('retro');
   const feedback = arr(section('feedback'));
   const memories = arr(section('memories'));
-  let html = `<div class="toolbar"><p class="muted tiny">Keep weekly reflections, meal experiences, and lasting household preferences distinct.</p><div style="display:flex;gap:8px">${action('Add meal feedback', 'add-feedback')}${action('Edit weekly review', 'edit-retro', '', 'primary')}</div></div>`;
+  const feedbackUnavailable = sectionStatus('feedback') === 'unavailable';
+  let html = `<div class="toolbar"><p class="muted tiny">Review what worked and what to change next time.</p>${feedbackUnavailable ? '' : action('Add meal feedback', 'add-feedback', '', 'primary')}</div>`;
   html += `<div class="review-grid"><div class="stack">`;
-  html += card('Latest weekly review', '◷', retro ? `<p class="muted tiny">Week of ${esc(retro.week_start || retro.weekStart)}</p><p style="margin:12px 0;font-size:.8rem;line-height:1.5">${esc(retro.note || 'No overall note.')}</p><div class="stack">${row('What worked', joinNames(retro.worked_well || retro.workedWell) || 'No notes')}${row('Stressors', joinNames(retro.stressors) || 'No notes')}</div>` : '<p class="muted tiny">No weekly review saved yet.</p>');
-  html += card('Meal feedback', '♡', feedback.length ? feedback.map((item) => `<div class="feedback"><div class="feedback-head"><strong>${esc(item.occurrence?.title || item.meal_title || 'Meal experience')}</strong><span class="pill">${esc(label(item.feedback_type || item.feedbackType || 'feedback'))}</span></div><p>${esc(item.note)}</p>${item.next_time ? `<p class="next">Next time: ${esc(item.next_time)}</p>` : ''}</div>`).join('') : '<p class="muted tiny">No meal feedback saved yet.</p>');
+  html += card('Meal feedback', '♡', feedbackUnavailable ? '<p class="muted tiny">Cooking notes are temporarily unavailable.</p>' : feedback.length ? feedback.map((item) => `<div class="feedback"><div class="feedback-head"><strong>${esc(item.occurrence?.title || item.meal_title || 'Weekly note')}</strong><span class="pill">${esc(label(item.feedback_type || item.feedbackType || 'feedback'))}</span></div><p>${esc(item.note)}</p>${item.next_time ? `<p class="next">Next time: ${esc(item.next_time)}</p>` : ''}</div>`).join('') : '<p class="muted tiny">No meal feedback saved yet.</p>');
   html += `</div><div class="stack">`;
   html += card('Household memory', '✦', memories.length ? `<div class="stack">${memories.map((item) => `<div class="row"><div class="row-copy"><strong>${esc(item.content)}</strong><small>${esc(label(item.status))} · ${esc(label(item.scope || 'persistent'))}</small></div><div style="display:flex;gap:4px">${item.status === 'suggested' ? action('Confirm', 'confirm-memory', item.id) : ''}${action('Edit', 'edit-memory', item.id)}</div></div>`).join('')}</div>` : '<p class="muted tiny">No saved memories.</p>', `<div style="margin-top:16px">${action('Add memory', 'add-memory')}</div>`);
   html += `<div class="callout"><b>How memory works</b>Meal feedback is evidence from one experience. A household memory becomes a planning default only after you confirm it.</div></div></div>`;
@@ -382,10 +383,6 @@ function openEditor(kind, item = null) {
   } else if (kind === 'schedule') {
     title = 'Weekly rhythm';
     markup = field('weekStart', 'Week of', state.weekStart, { type: 'date', required: true, wide: true }) + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('');
-  } else if (kind === 'retro') {
-    title = 'Weekly review';
-    const retro = section('retro');
-    markup = field('weekStart', 'Week of', retro?.week_start || retro?.weekStart || state.weekStart, { type: 'date', required: true }) + field('workedWell', 'What worked — one per line', arr(retro?.worked_well || retro?.workedWell).join('\n'), { type: 'textarea', wide: true }) + field('stressors', 'What was hard — one per line', arr(retro?.stressors).join('\n'), { type: 'textarea', wide: true }) + field('note', 'Overall note', retro?.note, { type: 'textarea', wide: true });
   } else if (kind === 'feedback') {
     title = 'Add meal feedback';
     markup = field('recipeId', 'Saved recipe', item?.id || '', { choices: [{ value: '', label: 'Week only' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('weekStart', 'Week of', state.weekStart, { type: 'date' }) + field('feedbackType', 'Feedback type', 'worked_well', { choices: ['worked_well', 'change_next_time', 'problem', 'preference'] }) + field('rating', 'Rating (1–5, optional)', '', { type: 'number', min: 1, max: 5 }) + field('note', 'What happened', '', { type: 'textarea', required: true, wide: true }) + field('nextTime', 'Change for next time', '', { type: 'textarea', wide: true }) + field('tags', 'Reusable tags, separated by commas', '', { wide: true }) + field('variantName', 'Preparation variant (optional)', '', { wide: true }) + field('adaptations', 'What changed — one per line', '', { type: 'textarea', wide: true });
@@ -425,8 +422,6 @@ async function submitEditor(data) {
     await save('/api/shopping-list', 'PUT', { id: list?.id, name: value('listName') || 'Weekly groceries', status: list?.status || 'draft', mealPlanId: list?.mealPlanId, items });
   } else if (kind === 'schedule') {
     await save('/api/schedule', 'PUT', { weekStart: value('weekStart'), days: DAYS.map((day) => ({ day, mode: value(day) })), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
-  } else if (kind === 'retro') {
-    await save('/api/retros', 'PUT', { weekStart: value('weekStart'), workedWell: lines('workedWell'), stressors: lines('stressors'), outcomes: arr(section('retro')?.outcomes), note: value('note') });
   } else if (kind === 'feedback') {
     if (!value('recipeId') && !value('weekStart')) throw new Error('Choose a recipe or a week.');
     await save('/api/feedback', 'POST', { recipeId: value('recipeId') || null, weekStart: value('weekStart') || null, feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: comma('tags'), rating: numberOrNull(value('rating')), variantName: value('variantName'), adaptations: lines('adaptations') });
@@ -449,8 +444,8 @@ async function handleAction(actionName, id) {
   if (actionName === 'edit-recipe') return openEditor('recipe', state.recipe || recipes.find((item) => item.id === id));
   if (actionName === 'open-recipe') {
     state.recipe = await api(`/api/recipes/${encodeURIComponent(id)}`);
-    try { state.recipeShares = (await api('/api/recipe-shares')).items; }
-    catch { state.recipeShares = []; }
+    try { state.recipeShares = (await api('/api/recipe-shares')).items; state.recipeSharesUnavailable = false; }
+    catch { state.recipeShares = []; state.recipeSharesUnavailable = true; }
     state.shareUrl = null;
     state.shareId = null;
     return render();
@@ -507,7 +502,6 @@ async function handleAction(actionName, id) {
     return refresh('Grocery item removed.');
   }
   if (actionName === 'edit-schedule') return openEditor('schedule');
-  if (actionName === 'edit-retro') return openEditor('retro');
   if (actionName === 'add-feedback') return openEditor('feedback', recipes.find((item) => item.id === id));
   if (actionName === 'add-memory') return openEditor('memory');
   if (actionName === 'edit-memory') return openEditor('memory', arr(section('memories')).find((item) => item.id === id));
