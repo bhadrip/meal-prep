@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -7,6 +8,18 @@ from app.config import Settings
 from app.infrastructure.repositories import demo_repository
 from app.main import app
 from app.transports import http
+
+
+def test_website_uses_plugin_logo_and_self_hosted_type():
+    client = TestClient(app)
+    html = client.get("/").text
+    assert '/static/meal-prep-icon.svg' in html
+    assert '/static/typography.css' in html
+    assert 'id="sidebar-toggle"' in html
+    assert client.get("/static/typography.css").status_code == 200
+
+    plugin_logo = Path(__file__).resolve().parents[2] / "plugin/assets/meal-prep-icon.svg"
+    assert client.get("/static/meal-prep-icon.svg").text == plugin_logo.read_text()
 
 
 def test_local_website_edits_share_application_data_across_requests():

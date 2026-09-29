@@ -5,27 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#252a40" />
     <title>Meal Prep</title>
-    <link rel="stylesheet" href="/static/app.css?v=2" />
+    <link rel="icon" type="image/svg+xml" href="/static/meal-prep-icon.svg" />
+    <link rel="stylesheet" href="/static/typography.css?v=1" />
+    <link rel="stylesheet" href="/static/app.css?v=5" />
     <script src="/static/vendor/supabase.js" defer></script>
-    <script src="/static/app.js?v=3" defer></script>
+    <script src="/static/app.js?v=5" defer></script>
   </head>
   <body>
     <div class="shell">
       <aside class="sidebar">
-        <a class="brand" href="/" aria-label="Meal Prep home">
-          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span>Meal Prep</span>
-        </a>
+        <div class="sidebar-head">
+          <a class="brand" href="/" aria-label="Meal Prep home" title="Meal Prep home">
+            <span class="brand-logo-frame"><img class="brand-logo" src="/static/meal-prep-icon.svg" alt="" /></span>
+            <span class="brand-name">Meal Prep</span>
+          </a>
+          <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" aria-controls="primary-nav" title="Collapse sidebar"><span aria-hidden="true">←</span></button>
+        </div>
         <nav id="primary-nav" aria-label="Main navigation">
-          <button class="nav-item active" data-view="overview"><span>⌂</span>Overview</button>
-          <button class="nav-item" data-view="plan"><span>▦</span>Weekly plan</button>
-          <button class="nav-item" data-view="recipes"><span>◇</span>Recipes</button>
-          <button class="nav-item" data-view="pantry"><span>□</span>Pantry</button>
-          <button class="nav-item" data-view="shopping"><span>✓</span>Shopping</button>
-          <button class="nav-item" data-view="reviews"><span>♡</span>Reviews</button>
+          <button class="nav-item active" data-view="overview" aria-label="Overview" title="Overview"><span class="nav-icon" aria-hidden="true">⌂</span><span class="nav-label">Overview</span></button>
+          <button class="nav-item" data-view="plan" aria-label="Weekly plan" title="Weekly plan"><span class="nav-icon" aria-hidden="true">▦</span><span class="nav-label">Weekly plan</span></button>
+          <button class="nav-item" data-view="recipes" aria-label="Recipes" title="Recipes"><span class="nav-icon" aria-hidden="true">◇</span><span class="nav-label">Recipes</span></button>
+          <button class="nav-item" data-view="pantry" aria-label="Pantry" title="Pantry"><span class="nav-icon" aria-hidden="true">□</span><span class="nav-label">Pantry</span></button>
+          <button class="nav-item" data-view="shopping" aria-label="Shopping" title="Shopping"><span class="nav-icon" aria-hidden="true">✓</span><span class="nav-label">Shopping</span></button>
+          <button class="nav-item" data-view="reviews" aria-label="Reviews" title="Reviews"><span class="nav-icon" aria-hidden="true">♡</span><span class="nav-label">Reviews</span></button>
         </nav>
         <div class="sidebar-foot">
-          <button class="nav-item" data-view="settings"><span>⚙</span>Settings</button>
+          <button class="nav-item" data-view="settings" aria-label="Settings" title="Settings"><span class="nav-icon" aria-hidden="true">⚙</span><span class="nav-label">Settings</span></button>
         </div>
       </aside>
 
@@ -38,7 +43,7 @@
           <div class="top-actions">
             <span class="mode-badge" id="mode-badge" hidden>Demo data</span>
             <button class="icon-button" id="refresh-button" aria-label="Refresh data">↻</button>
-            <button class="account-button" id="account-button"><span id="account-avatar">MP</span><span id="account-label">Account</span></button>
+            <button class="account-button" id="account-button" aria-label="Account settings"><span id="account-avatar">MP</span><span id="account-label">Account</span></button>
           </div>
         </header>
         <section id="app-content" class="content" aria-live="polite">

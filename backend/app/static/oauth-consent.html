@@ -5,13 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#252a40" />
     <title>Authorize Meal Prep</title>
+    <link rel="icon" type="image/svg+xml" href="/static/meal-prep-icon.svg" />
+    <link rel="stylesheet" href="/static/typography.css?v=1" />
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600&display=swap');
-      :root { font-family:'DM Sans',ui-sans-serif,system-ui,sans-serif; color:#25283b; background:#252a40; }
+      :root { font-family:var(--font-body); color:#25283b; background:#252a40; }
       * { box-sizing:border-box; }
       body { min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; background:repeating-linear-gradient(128deg,transparent 0 36px,rgba(255,255,255,.035) 37px 38px),#252a40; }
       main { width:min(520px,100%); background:#fffcf7; border:1px solid #dedbd5; border-radius:14px; padding:clamp(28px,5vw,44px); box-shadow:0 24px 75px rgba(15,17,30,.24); }
-      h1 { margin:0; font-family:'Newsreader',Georgia,serif; font-size:2.3rem; }
+      .logo { width:42px; height:42px; margin-bottom:24px; padding:3px; border-radius:8px; background:#fff0d4; }
+      h1 { margin:0; font-family:var(--font-display); font-size:2.3rem; font-weight:770; letter-spacing:-.05em; }
       p,li { color:#737583; line-height:1.55; }
       .actions { display:flex; gap:10px; margin-top:24px; }
       button { min-height:46px; padding:0 18px; border-radius:9px; border:1px solid #29324c; font:inherit; font-weight:700; cursor:pointer; }
@@ -23,6 +25,7 @@
   </head>
   <body>
     <main>
+      <img class="logo" src="/static/meal-prep-icon.svg" alt="" />
       <h1>Authorize Meal Prep</h1>
       <p id="summary">Loading authorization request…</p>
       <ul id="scopes"></ul>

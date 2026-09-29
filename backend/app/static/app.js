@@ -4,6 +4,26 @@ const form = document.querySelector('#editor-form');
 const fields = document.querySelector('#dialog-fields');
 const errorBox = document.querySelector('#dialog-error');
 const toastBox = document.querySelector('#toast');
+const shell = document.querySelector('.shell');
+const sidebarToggle = document.querySelector('#sidebar-toggle');
+
+function setSidebarCollapsed(collapsed) {
+  shell.classList.toggle('sidebar-collapsed', collapsed);
+  const label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  sidebarToggle.setAttribute('aria-label', label);
+  sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
+  sidebarToggle.title = label;
+  sidebarToggle.querySelector('span').textContent = collapsed ? '→' : '←';
+}
+
+try { setSidebarCollapsed(localStorage.getItem('meal-prep-sidebar-collapsed') === 'true'); }
+catch { setSidebarCollapsed(false); }
+sidebarToggle.addEventListener('click', () => {
+  const collapsed = !shell.classList.contains('sidebar-collapsed');
+  setSidebarCollapsed(collapsed);
+  try { localStorage.setItem('meal-prep-sidebar-collapsed', String(collapsed)); }
+  catch { /* Keep the control usable when browser storage is disabled. */ }
+});
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const SLOTS = ['breakfast', 'lunch', 'snack', 'dinner', 'prep'];
