@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "name": "meal-prep-ui-tests",
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "test:ui": "playwright test",
+    "test:ui:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
