@@ -16,9 +16,10 @@ async function mockInviteSession(page, session) {
   } }));
   await page.route('**/static/vendor/supabase.js', (route) => route.fulfill({
     contentType: 'application/javascript',
-    body: `window.supabase = { createClient: () => ({ auth: {
-      getSession: async () => ({ data: { session: ${JSON.stringify(session)} }, error: null }),
-      signOut: async () => ({ error: null }),
+    body: `if (sessionStorage.getItem('mock-invite-session') === null) sessionStorage.setItem('mock-invite-session', ${JSON.stringify(JSON.stringify(session))});
+      window.supabase = { createClient: () => ({ auth: {
+      getSession: async () => ({ data: { session: JSON.parse(sessionStorage.getItem('mock-invite-session')) }, error: null }),
+      signOut: async () => { sessionStorage.setItem('mock-invite-session', 'null'); return { error: null }; },
     } }) };`,
   }));
 }
