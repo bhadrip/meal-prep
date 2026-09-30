@@ -164,7 +164,7 @@ Data tools:
 - `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`
 - `get_household_memory`, `save_household_memory`, `review_household_memory`
 - `save_meal_plan`, `get_meal_plan`
-- `save_shopping_list`, `get_shopping_list`, `mark_item_purchased`
+- `save_shopping_list`, `add_shopping_item`, `get_shopping_list`, `mark_item_purchased`
 
 Presentation tools:
 

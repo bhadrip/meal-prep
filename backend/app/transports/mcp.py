@@ -53,7 +53,8 @@ mcp = FastMCP(
         "an actionable nextTime, and query the recipe feedback summary before repeating a dish. A weekly check-in "
         "is a conversation that creates ordinary feedback entries; it is not a separate data type. "
         "A null schedule means no record exists, not permission to invent one. "
-        "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
+        "Search stores in storePriority order. When someone adds a shopping item, ask which store they generally buy it at; "
+        "the store is optional and belongs to that item. Save durable plans and lists only after the user agrees. "
         "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
         "a compact card dashboard instead of a long text inventory. When the user asks to change that "
         "dashboard, use get_dashboard_layout and configure_dashboard, then render it again for verification. "
@@ -86,6 +87,7 @@ mcp = FastMCP(
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+APPEND = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 ARCHIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
 SHARE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True)
 
@@ -213,8 +215,14 @@ async def get_meal_plan(week_start: str | None = None) -> dict[str, Any]:
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_shopping_list(shopping_list: dict[str, Any]) -> dict[str, Any]:
-    """Persist a shopping list grouped by preferred store. This does not place an order."""
+    """Persist a shopping list. Each item may have an optional store tag. This does not place an order."""
     return await services_for_request().shopping.save(shopping_list)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def add_shopping_item(item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]:
+    """Add one item to a shopping list, creating a list if needed. Ask for the optional store generally used for this item; pass it as item.store. This does not place an order."""
+    return await services_for_request().shopping.add_item(item, list_id)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)

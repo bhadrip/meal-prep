@@ -47,6 +47,10 @@ food preferences, or create a shopping list.
    and orders belong to the commerce plugin, not Meal Prep.
 7. Call `save_shopping_list` only for the resulting durable list. Never state
    or imply that saving a list placed an order.
+   When somebody adds an individual shopping item, ask where they generally
+   buy it. The answer is an optional `store` tag on that item, not a household
+   store preference. Leave `store` empty if they do not specify one. Use
+   `add_shopping_item` to append it without replacing the rest of the list.
 8. Use `render_onboarding` for incomplete household setup. Use
    `render_household_snapshot` when the user asks to open, show, view, or
    customize their dashboard, asks what Meal Prep knows, or wants to inspect
