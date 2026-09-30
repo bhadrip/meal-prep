@@ -12,7 +12,7 @@ Future mobile app → HTTP API ─┘
 
 ## Website
 
-Once this change is deployed, open the [Meal Prep website](https://meal-prep-swart.vercel.app/) and sign in with the same approved Supabase email used for the MCP connection. Browser and MCP clients have separate sessions, but they share the same identity and household data. The site supports manual edits and never places grocery orders.
+Open the [Meal Prep landing page](https://meal-prep-swart.vercel.app/) and choose **Open the app**, or go straight to `/app`. Sign in with the same approved Supabase email used for the MCP connection. Browser and MCP clients have separate sessions, but they share the same identity and household data. The app supports manual edits and never places grocery orders.
 
 For local demo mode or a full local Supabase and email flow, see [`backend/README.md`](backend/README.md#run-locally).
 
@@ -40,19 +40,23 @@ codex plugin add meal-prep@badri-personal-plugins
 
 `badri-personal-plugins` resolves through [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json), which points to [`plugin/`](plugin/). A Git marketplace upgrade fetches the latest `main`; a marketplace configured from a local checkout reads that checkout instead, so update it with `git pull origin main` before reinstalling.
 
-## Connect from ChatGPT
+## Connect from a chat assistant
+
+Add the remote MCP server `https://meal-prep-swart.vercel.app/mcp` in a client that supports remote MCP and OAuth. After sign-in, the client discovers the Meal Prep tools. The same household data is available in the [web app](https://meal-prep-swart.vercel.app/app).
+
+### ChatGPT
 
 1. Enable **Developer mode** in **Settings → Security and login**.
 2. In **ChatGPT Plugins**, select **+** and create a connection named **Meal Prep**.
-3. Use `https://meal-prep-swart.vercel.app/mcp` as the MCP URL.
+3. Use the MCP URL above.
 4. Review the discovered tools and sign in with the approved Supabase account.
 5. Start a new conversation and select **Meal Prep** from the tools menu.
 
 ChatGPT connects to the deployed MCP service; installing or updating the repository package does not deploy server changes. Server and MCP UI changes must also be deployed to Vercel.
 
-## Install in Claude
+### Claude
 
-Open **Customize → Plugins → Add marketplace**, enter `bhadrip/meal-prep`, install **Meal Prep**, and connect it from the plugin’s **Connectors** tab. Use **Check for updates** or enable automatic marketplace sync for later releases.
+Open **Customize → Connectors**, add a custom connector, and enter the MCP URL above. Sign in with an approved account. This connection has not yet been tested with Claude.
 
 ## Repository
 
