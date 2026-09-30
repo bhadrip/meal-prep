@@ -36,6 +36,9 @@ def _dashboard_layout(preferences: dict[str, Any]) -> dict[str, list[str]]:
 
 class MealPrepRepository(Protocol):
     async def get_household_context(self, *, create_if_missing: bool = True) -> dict[str, Any]: ...
+    async def list_households(self) -> dict[str, Any]: ...
+    async def switch_household(self, household_id: str) -> dict[str, Any]: ...
+    async def create_household(self, name: str) -> dict[str, Any]: ...
     async def update_household_preferences(self, patch: dict[str, Any]) -> dict[str, Any]: ...
     async def search_recipes(self, query: str = "", limit: int = 10) -> list[dict[str, Any]]: ...
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None: ...
@@ -91,6 +94,15 @@ class HouseholdService:
 
     async def get_context(self) -> dict[str, Any]:
         return await self.repository.get_household_context()
+
+    async def list_households(self) -> dict[str, Any]:
+        return await self.repository.list_households()
+
+    async def switch_household(self, household_id: str) -> dict[str, Any]:
+        return await self.repository.switch_household(household_id)
+
+    async def create_household(self, name: str) -> dict[str, Any]:
+        return await self.repository.create_household(name)
 
     async def update_preferences(
         self,

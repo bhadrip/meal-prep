@@ -12,13 +12,13 @@ Future mobile app → HTTP API ─┘
 
 ## Website
 
-Open the [Meal Prep landing page](https://meal-prep-swart.vercel.app/) and choose **Open the app**, or go straight to `/app`. Sign in with the same approved Supabase email used for the MCP connection. Browser and MCP clients have separate sessions, but they share the same identity and household data. The app supports manual edits and never places grocery orders.
+Open the [Meal Prep landing page](https://meal-prep-swart.vercel.app/) and choose **Open the app**, or go straight to `/app`. Sign up or sign in with the same Supabase email used for the MCP connection. Browser and MCP clients have separate sessions, but they share the same identity and active household. The app supports manual edits and never places grocery orders.
 
 For local demo mode or a full local Supabase and email flow, see [`backend/README.md`](backend/README.md#run-locally).
 
 ## Access
 
-The hosted service uses a private Supabase project. Before signing in, contact [BhadriP](https://github.com/bhadrip) and include the email address that should be added to Supabase. Installing the plugin does not grant database access.
+Each person signs in with their own verified Supabase account. Household data is available only through membership, and the app lets a member select which of their households is active. Installing the plugin does not grant household access.
 
 ## Install in Codex
 
@@ -29,7 +29,7 @@ codex plugin marketplace add bhadrip/meal-prep --ref main
 codex plugin add meal-prep@badri-personal-plugins
 ```
 
-Start a new Codex chat after installation, open the Meal Prep connector, and sign in with the approved Supabase account.
+Start a new Codex chat after installation, open the Meal Prep connector, and sign in with your Supabase account.
 
 To fetch and install a newer version later:
 
@@ -49,7 +49,7 @@ Add the remote MCP server `https://meal-prep-swart.vercel.app/mcp` in a client t
 1. Enable **Developer mode** in **Settings → Security and login**.
 2. In **ChatGPT Plugins**, select **+** and create a connection named **Meal Prep**.
 3. Use the MCP URL above.
-4. Review the discovered tools and sign in with the approved Supabase account.
+4. Review the discovered tools and sign in with your Supabase account.
 5. Start a new conversation and select **Meal Prep** from the tools menu.
 
 ChatGPT connects to the deployed MCP service; installing or updating the repository package does not deploy server changes. Server and MCP UI changes must also be deployed to Vercel.

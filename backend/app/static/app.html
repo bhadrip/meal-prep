@@ -7,9 +7,9 @@
     <title>Meal Prep</title>
     <link rel="icon" type="image/svg+xml" href="/static/meal-prep-icon.svg" />
     <link rel="stylesheet" href="/static/typography.css?v=1" />
-    <link rel="stylesheet" href="/static/app.css?v=9" />
+    <link rel="stylesheet" href="/static/app.css?v=11" />
     <script src="/static/vendor/supabase.js" defer></script>
-    <script src="/static/app.js?v=12" defer></script>
+    <script src="/static/app.js?v=13" defer></script>
   </head>
   <body>
     <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -51,6 +51,7 @@
           </div>
           <div class="top-actions">
             <span class="mode-badge" id="mode-badge" hidden>Demo data</span>
+            <label class="household-picker" id="household-picker" hidden><span>Household</span><select id="household-select" aria-label="Active household"></select></label>
             <button class="icon-button" id="refresh-button" aria-label="Refresh data">↻</button>
             <button class="account-button" id="account-button" aria-label="Account settings"><span id="account-avatar">MP</span><span id="account-label">Account</span></button>
           </div>

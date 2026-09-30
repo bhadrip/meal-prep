@@ -36,7 +36,8 @@ def test_http_surface_serves_website_and_mcp(client: TestClient):
     assert client.get("/api/app/snapshot").status_code == 200
     login_script = client.get("/static/login.js")
     assert login_script.status_code == 200
-    assert "shouldCreateUser: false" in login_script.text
+    assert "shouldCreateUser: true" in login_script.text
+    assert client.get("/invite").status_code == 200
 
 
 def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):

@@ -62,6 +62,11 @@ async def login() -> FileResponse:
     return FileResponse(STATIC_DIR / "login.html")
 
 
+@router.get("/invite", include_in_schema=False)
+async def invitation_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "invite.html")
+
+
 @router.get("/oauth/consent", include_in_schema=False)
 async def oauth_consent() -> FileResponse:
     return FileResponse(STATIC_DIR / "oauth-consent.html")

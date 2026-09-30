@@ -16,6 +16,7 @@ app/
 ## What is included
 
 - Getting-started landing page at `/` and manual app at `/app`, with household setup, weekly plan and rhythm, recipes and recipe sharing, pantry, shopping, feedback, reviews, memory, and dashboard settings
+- Owner-managed invitations, multiple household memberships, and an active-household switcher
 - Authenticated JSON API under `/api` for the website and future mobile clients
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
@@ -68,7 +69,9 @@ SUPABASE_ANON_KEY=PASTE_LOCAL_ANON_KEY_HERE
 AUTH_REQUIRED=true
 ```
 
-Start the Python server with `uvicorn app.main:app --reload`. Open local Supabase Studio at `http://127.0.0.1:55323`, create a test user under **Authentication → Users**, then open `http://127.0.0.1:8000/app` and request a sign-in code for that user. The code appears in the local [Mailpit inbox](http://127.0.0.1:55324). Enter it to sign in, complete the household setup, and verify edits in the website and MCP client. The login form deliberately does not create accounts; the test user must exist first. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
+Start the Python server with `uvicorn app.main:app --reload`. Open `http://127.0.0.1:8000/app` and request a sign-in code. The code appears in the local [Mailpit inbox](http://127.0.0.1:55324). Enter it to create an account and sign in, complete the household setup, and verify edits in the website and MCP client. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
+
+To test sharing locally, sign up and verify two accounts using their email codes in Mailpit. Give the second account its own household and save a recipe there. Sign in as the first user, open **Settings → Household members**, and enter the second account's email. Then sign in as the second user and select **Join household**. The shared household becomes active, while the second account's own household and recipe remain available from the top-bar switcher. Creating a household invitation sends no email and needs no server secret key.
 
 If `supabase start` reports that Docker is unavailable, start the container runtime first. For a quick UI-only check without Supabase, leaving the Supabase values empty in `.env` still enables in-memory demo data; demo edits last only until the server restarts.
 
@@ -96,10 +99,10 @@ Choose Streamable HTTP in the Inspector and use `http://127.0.0.1:8000/mcp`.
    repository. Enable **Deploy to production** if merges to `main` should apply
    new migrations automatically.
 
-3. In Authentication, set the Site URL to the Vercel production URL and add `/login` as an allowed redirect.
+3. In Authentication, enable email sign-up, set the Site URL to the Vercel production URL, and add `/login` as an allowed redirect. Set the email OTP length to eight digits and include `{{ .Token }}` in the Magic Link email template; the sign-in form expects that code. The checked-in local template configures this for local Supabase, while hosted projects need the same settings in the Supabase dashboard.
 4. In Authentication > OAuth Server, enable OAuth 2.1, set the authorization path to `/oauth/consent`, and enable dynamic client registration.
 5. Use an asymmetric JWT signing key (ES256 or RS256) so OAuth clients can validate tokens through JWKS.
-6. Copy the project URL and anon key to `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Vercel. Do not expose a service-role key.
+6. Copy the project URL and anon key to `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Vercel.
 7. Set `AUTH_REQUIRED=true` only after the consent screen and redirect URLs work.
 
 The MCP resource advertises only `openid`, `email`, and `offline_access`.
@@ -108,6 +111,10 @@ It does not request profile or phone access. Codex loopback callbacks such as
 used unchanged while the corresponding Codex configure command is still running.
 
 The first authenticated request creates an unconfigured household through `bootstrap_my_household`. It does not assume a household size, stores, cooking limit, or leftovers preference. The plugin opens the MCP-served onboarding form and marks onboarding complete only after the user submits it. Every subsequent database operation uses the caller's access token, so RLS remains the authority for ownership.
+
+The owner can create a pending invitation only for an existing account with a verified email. No invitation email is sent. The invitee sees the invitation inside Meal Prep and must explicitly accept it. An account with a pending invitation and no household is sent to `/invite` before household bootstrap. Acceptance checks the signed-in account's verified email, adds membership, preserves all existing households and their data, and selects the joined household. The website switcher and MCP `list_households`, `switch_household`, and `create_household` tools manage multiple memberships. The saved active household is shared across website and MCP sessions; database row level security scopes data to that selection. Invitation and member changes run through checked database functions. Invitation records expire after seven days. Sharing itself needs no SMTP or server secret key. Because sign-up and sign-in currently use emailed one-time codes, those codes still need email delivery; Supabase's hosted default email service only sends to project team addresses, so external production accounts need [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp) or a different sign-in method.
+
+Removing a collaborator immediately removes their household membership and revokes recipe sharing links they created for that household. Other household data stays in place.
 
 ### Repair an existing project's migration history without a CLI
 

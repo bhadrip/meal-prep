@@ -48,7 +48,7 @@ async function setup() {
     submit.disabled = true;
     const { error } = await client.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false },
+      options: { shouldCreateUser: true },
     });
     submit.disabled = false;
     if (error) {

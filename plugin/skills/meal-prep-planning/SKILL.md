@@ -11,6 +11,12 @@ food preferences, or create a shopping list.
 
 ## Required sequence
 
+An account can belong to several households. If the user names a household or
+the target is unclear, call `list_households` and select the intended one with
+`switch_household` before reading or changing food data. The active choice is
+shared with the website. `create_household` makes a new household owned by the
+account and selects it.
+
 1. Call `get_planning_context` before drafting or revising a weekly plan,
    passing the requested `week_start` when known. It returns household
    preferences, the relevant weekly schedule, recent feedback, and active
