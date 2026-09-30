@@ -19,6 +19,7 @@
       h1 { margin:0; font-family:var(--font-display); font-size:2.65rem; font-weight:780; letter-spacing:-.06em; line-height:1; }
       p { color:#737583; line-height:1.55; }
       form { display:grid; gap:10px; margin-top:28px; }
+      form[hidden] { display:none; }
       label { color:#55596d; font-size:.76rem; font-weight:700; }
       input,button { min-height:48px; border-radius:9px; font:inherit; }
       input { border:1px solid #c9c8cc; padding:0 14px; background:white; color:#25283b; }
@@ -28,18 +29,25 @@
       #message { min-height:24px; margin-bottom:0; font-size:.78rem; }
     </style>
     <script src="/static/vendor/supabase.js" defer></script>
-    <script src="/static/login.js?v=3" defer></script>
+    <script src="/static/login.js?v=5" defer></script>
   </head>
   <body>
     <main>
       <a class="back" href="/"><img src="/static/meal-prep-icon.svg" alt="" />Meal Prep</a>
       <p class="eyebrow">Your household, organized</p>
       <h1>Sign in or sign up</h1>
-      <p>Enter your email. We’ll send a secure link to sign in or create your account.</p>
+      <p>Enter your email. We’ll send an eight-digit code to sign in or create your account.</p>
       <form id="login-form">
         <label for="email">Email</label>
         <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@example.com" />
-        <button type="submit">Send magic link</button>
+        <button type="submit">Send code</button>
+      </form>
+      <form id="code-form" hidden>
+        <p>Enter the code sent to <strong id="code-email"></strong>.</p>
+        <label for="code">Eight-digit code</label>
+        <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{8}" maxlength="8" required placeholder="12345678" />
+        <button type="submit">Verify code</button>
+        <button id="change-email" type="button">Use another email</button>
       </form>
       <p id="message" role="status"></p>
     </main>

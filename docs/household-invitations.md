@@ -18,4 +18,4 @@
 
 ## Implementation
 
-The API uses the caller's Supabase access token. Database functions check the owner role for invitation and removal actions, and row level security gates all shared tables by household membership. The application server has no Supabase secret key for sharing. Sign-up and sign-in still use Supabase Auth magic links, which require email delivery independently of household sharing.
+The API uses the caller's Supabase access token. Database functions check the owner role for invitation and removal actions, and row level security gates all shared tables by household membership. The application server has no Supabase secret key for sharing. Sign-up and sign-in use Supabase Auth email codes, which require email delivery independently of household sharing.

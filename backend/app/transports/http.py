@@ -210,6 +210,11 @@ async def save_shopping_list(
     return await services.shopping.save(shopping_list)
 
 
+@router.post("/api/shopping-list/items")
+async def add_shopping_item(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.shopping.add_item(payload.get("item", {}), payload.get("listId"))
+
+
 @router.patch("/api/shopping-list/items/{item_id}")
 async def mark_item_purchased(
     item_id: str,

@@ -22,6 +22,11 @@ additional_redirect_urls = ["http://127.0.0.1:8000/login", "http://localhost:800
 [auth.email]
 enable_signup = true
 enable_confirmations = false
+otp_length = 8
+
+[auth.email.template.magic_link]
+subject = "Your Meal Prep sign-in code"
+content_path = "./supabase/templates/magic_link.html"
 
 [auth.oauth_server]
 enabled = true

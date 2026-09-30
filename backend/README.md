@@ -69,9 +69,9 @@ SUPABASE_ANON_KEY=PASTE_LOCAL_ANON_KEY_HERE
 AUTH_REQUIRED=true
 ```
 
-Start the Python server with `uvicorn app.main:app --reload`. Open `http://127.0.0.1:8000/` and request a magic link. The link appears in the local [Mailpit inbox](http://127.0.0.1:55324). Follow it to create an account and sign in, complete the household setup, and verify edits in the website and MCP client. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
+Start the Python server with `uvicorn app.main:app --reload`. Open `http://127.0.0.1:8000/` and request a sign-in code. The code appears in the local [Mailpit inbox](http://127.0.0.1:55324). Enter it to create an account and sign in, complete the household setup, and verify edits in the website and MCP client. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
 
-To test sharing locally, sign up and verify two accounts using their magic links in Mailpit. Sign in as the first user, open **Settings → Household members**, and enter the second account's email. Then sign in as the second user and select **Join household** from its pending invitation in the app. The second account should see the first account's household from both the website and MCP. Creating a household invitation sends no email and needs no server secret key.
+To test sharing locally, sign up and verify two accounts using their email codes in Mailpit. Sign in as the first user, open **Settings → Household members**, and enter the second account's email. Then sign in as the second user and select **Join household** from its pending invitation in the app. The second account should see the first account's household from both the website and MCP. Creating a household invitation sends no email and needs no server secret key.
 
 If `supabase start` reports that Docker is unavailable, start the container runtime first. For a quick UI-only check without Supabase, leaving the Supabase values empty in `.env` still enables in-memory demo data; demo edits last only until the server restarts.
 
@@ -99,7 +99,7 @@ Choose Streamable HTTP in the Inspector and use `http://127.0.0.1:8000/mcp`.
    repository. Enable **Deploy to production** if merges to `main` should apply
    new migrations automatically.
 
-3. In Authentication, enable email sign-up, set the Site URL to the Vercel production URL, and add `/login` as an allowed redirect.
+3. In Authentication, enable email sign-up, set the Site URL to the Vercel production URL, and add `/login` as an allowed redirect. Set the email OTP length to eight digits and include `{{ .Token }}` in the Magic Link email template; the sign-in form expects that code. The checked-in local template configures this for local Supabase, while hosted projects need the same settings in the Supabase dashboard.
 4. In Authentication > OAuth Server, enable OAuth 2.1, set the authorization path to `/oauth/consent`, and enable dynamic client registration.
 5. Use an asymmetric JWT signing key (ES256 or RS256) so OAuth clients can validate tokens through JWKS.
 6. Copy the project URL and anon key to `SUPABASE_URL` and `SUPABASE_ANON_KEY` in Vercel.
@@ -112,7 +112,7 @@ used unchanged while the corresponding Codex configure command is still running.
 
 The first authenticated request creates an unconfigured household through `bootstrap_my_household`. It does not assume a household size, stores, cooking limit, or leftovers preference. The plugin opens the MCP-served onboarding form and marks onboarding complete only after the user submits it. Every subsequent database operation uses the caller's access token, so RLS remains the authority for ownership.
 
-The owner can create a pending invitation only for an existing account with a verified email. No invitation email is sent. The invitee sees the invitation inside Meal Prep and must explicitly accept it. An account with a pending invitation is sent to `/invite` before household bootstrap. Acceptance checks the signed-in account's verified email and joins the existing household. If the account already has an untouched, empty bootstrap household, acceptance removes that empty household first. A configured household or one with food data blocks acceptance until a separate switching or migration flow exists. Invitation and member changes run through checked database functions. Invitation records expire after seven days. Sharing itself needs no SMTP or server secret key. Because sign-up and sign-in currently use magic links, those links still need email delivery; Supabase's hosted default email service only sends to project team addresses, so external production accounts need [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp) or a different sign-in method.
+The owner can create a pending invitation only for an existing account with a verified email. No invitation email is sent. The invitee sees the invitation inside Meal Prep and must explicitly accept it. An account with a pending invitation is sent to `/invite` before household bootstrap. Acceptance checks the signed-in account's verified email and joins the existing household. If the account already has an untouched, empty bootstrap household, acceptance removes that empty household first. A configured household or one with food data blocks acceptance until a separate switching or migration flow exists. Invitation and member changes run through checked database functions. Invitation records expire after seven days. Sharing itself needs no SMTP or server secret key. Because sign-up and sign-in currently use emailed one-time codes, those codes still need email delivery; Supabase's hosted default email service only sends to project team addresses, so external production accounts need [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp) or a different sign-in method.
 
 Removing a collaborator immediately removes their household membership and revokes recipe sharing links they created for that household. Other household data stays in place.
 
@@ -171,7 +171,7 @@ Data tools:
 - `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`
 - `get_household_memory`, `save_household_memory`, `review_household_memory`
 - `save_meal_plan`, `get_meal_plan`
-- `save_shopping_list`, `get_shopping_list`, `mark_item_purchased`
+- `save_shopping_list`, `add_shopping_item`, `get_shopping_list`, `mark_item_purchased`
 
 Presentation tools:
 

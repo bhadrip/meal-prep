@@ -233,8 +233,8 @@ function renderShopping() {
   let html = `<div class="toolbar"><div><p class="muted tiny">${esc(list?.name || 'Your household grocery list')}</p><p class="muted tiny">Checking an item records progress; it does not place an order.</p></div>${action('Add item', 'add-shopping', '', 'primary')}</div>`;
   if (sectionStatus('shoppingList') === 'unavailable') return html + empty('Shopping list unavailable', 'Try refreshing this page.');
   if (!items.length) return html + empty('No grocery items yet', 'Add an item to start a list.');
-  const stores = [...new Set(items.map((item) => item.store || 'Other'))];
-  html += `<div class="store-groups">${stores.map((store) => `<article class="card"><div class="card-head"><h3>${esc(store)}</h3><span class="pill">${items.filter((item) => (item.store || 'Other') === store).length} items</span></div>${items.filter((item) => (item.store || 'Other') === store).map((item) => `<div class="check-row ${item.purchased ? 'done' : ''}"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" ${item.purchased ? 'checked' : ''} /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}</small></span><div style="display:flex;gap:4px">${action('Edit', 'edit-shopping', item.id)}${action('Remove', 'remove-shopping', item.id)}</div></div>`).join('')}</article>`).join('')}</div>`;
+  const stores = [...new Set(items.map((item) => item.store || 'No store selected'))];
+  html += `<div class="store-groups">${stores.map((store) => `<article class="card"><div class="card-head"><h3>${esc(store)}</h3><span class="pill">${items.filter((item) => (item.store || 'No store selected') === store).length} items</span></div>${items.filter((item) => (item.store || 'No store selected') === store).map((item) => `<div class="check-row ${item.purchased ? 'done' : ''}"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" ${item.purchased ? 'checked' : ''} /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}</small>${item.store ? `<span class="pill store-tag" aria-label="Generally buy at ${esc(item.store)}">Usually: ${esc(item.store)}</span>` : ''}</span><div style="display:flex;gap:4px">${action('Edit', 'edit-shopping', item.id)}${action('Remove', 'remove-shopping', item.id)}</div></div>`).join('')}</article>`).join('')}</div>`;
   return html;
 }
 
@@ -330,7 +330,7 @@ function field(name, title, value = '', options = {}) {
   }
   const input = options.type === 'textarea'
     ? `<textarea name="${esc(name)}" ${options.required ? 'required' : ''} placeholder="${esc(options.placeholder || '')}">${esc(value)}</textarea>`
-    : `<input name="${esc(name)}" type="${esc(options.type || 'text')}" value="${esc(value)}" ${options.required ? 'required' : ''} ${options.min !== undefined ? `min="${options.min}"` : ''} ${options.max !== undefined ? `max="${options.max}"` : ''} placeholder="${esc(options.placeholder || '')}" />`;
+    : `<input name="${esc(name)}" type="${esc(options.type || 'text')}" value="${esc(value)}" ${options.required ? 'required' : ''} ${options.min !== undefined ? `min="${options.min}"` : ''} ${options.max !== undefined ? `max="${options.max}"` : ''} ${options.step !== undefined ? `step="${options.step}"` : ''} placeholder="${esc(options.placeholder || '')}" />`;
   return `<label class="field ${options.wide ? 'wide' : ''}">${esc(title)}${input}</label>`;
 }
 
@@ -409,7 +409,7 @@ function openEditor(kind, item = null) {
     markup = field('date', 'Date', date, { type: 'date', required: true }) + field('slot', 'Meal slot', item?.slot || 'dinner', { choices: SLOTS }) + field('meal', 'Meal or task', item?.meal || item?.title, { required: true, wide: true }) + field('servings', 'Servings', item?.servings, { type: 'number', min: 1 }) + field('recipeId', 'Saved recipe', item?.recipeId || '', { choices: [{ value: '', label: 'No linked recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true });
   } else if (kind === 'shopping') {
     title = item ? 'Edit grocery item' : 'Add grocery item';
-    markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0 }) + field('unit', 'Unit', item?.unit) + field('store', 'Store', item?.store || arr(household().storePriority)[0]?.store || '', { required: true }) + field('listName', 'List name', section('shoppingList')?.name || 'Weekly groceries', { wide: true });
+    markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0.001, step: 'any' }) + field('unit', 'Unit', item?.unit) + field('store', 'Where do you generally buy this? (optional)', item?.store || '', { placeholder: 'Costco, Trader Joe’s…', wide: true }) + (item ? field('listName', 'List name', section('shoppingList')?.name || 'Weekly groceries', { wide: true }) : '');
   } else if (kind === 'schedule') {
     title = 'Weekly rhythm';
     markup = field('weekStart', 'Week of', state.weekStart, { type: 'date', required: true, wide: true }) + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('');
@@ -447,9 +447,14 @@ async function submitEditor(data) {
     await save('/api/meal-plan', 'PUT', { id: state.plan?.id, weekStart: state.weekStart, status: state.plan?.status || 'draft', entries });
   } else if (kind === 'shopping') {
     const list = section('shoppingList');
-    const items = arr(list?.items).filter((entry) => entry.id !== item?.id);
-    items.push({ ...item, id: item?.id || crypto.randomUUID(), name: value('name'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, store: value('store'), purchased: item?.purchased || false });
-    await save('/api/shopping-list', 'PUT', { id: list?.id, name: value('listName') || 'Weekly groceries', status: list?.status || 'draft', mealPlanId: list?.mealPlanId, items });
+    const updated = { ...item, name: value('name'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, store: value('store') || null, purchased: item?.purchased || false };
+    if (item) {
+      const items = arr(list?.items).filter((entry) => entry.id !== item.id);
+      items.push(updated);
+      await save('/api/shopping-list', 'PUT', { id: list?.id, name: value('listName') || 'Weekly groceries', status: list?.status || 'draft', mealPlanId: list?.mealPlanId, items });
+    } else {
+      await save('/api/shopping-list/items', 'POST', { item: updated, listId: list?.id || null });
+    }
   } else if (kind === 'schedule') {
     await save('/api/schedule', 'PUT', { weekStart: value('weekStart'), days: DAYS.map((day) => ({ day, mode: value(day) })), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
   } else if (kind === 'feedback') {

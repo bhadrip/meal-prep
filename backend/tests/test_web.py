@@ -66,6 +66,27 @@ def test_local_website_edits_share_application_data_across_requests():
     demo_repository.cache_clear()
 
 
+def test_website_adds_shopping_items_with_optional_store():
+    demo_repository.cache_clear()
+    client = TestClient(app)
+    current = client.get("/api/shopping-list").json()["shoppingList"]
+
+    tagged = client.post("/api/shopping-list/items", json={"listId": current["id"], "item": {"name": "Olive oil", "store": "Trader Joe's"}})
+    assert tagged.status_code == 200
+    assert len(tagged.json()["items"]) == len(current["items"]) + 1
+    assert tagged.json()["items"][-1]["store"] == "Trader Joe's"
+
+    untagged = client.post("/api/shopping-list/items", json={"listId": current["id"], "item": {"name": "Salt"}})
+    assert untagged.status_code == 200
+    assert untagged.json()["items"][-1]["store"] is None
+    assert client.get("/api/shopping-list").json()["shoppingList"]["items"][-2:] == untagged.json()["items"][-2:]
+
+    script = client.get("/static/app.js").text
+    assert "Where do you generally buy this? (optional)" in script
+    assert "Usually: ${esc(item.store)}" in script
+    demo_repository.cache_clear()
+
+
 def test_web_api_requires_and_checks_supabase_session(monkeypatch):
     settings = Settings(
         supabase_url="https://example.supabase.co",

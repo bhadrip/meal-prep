@@ -1,4 +1,8 @@
 const form = document.querySelector('#login-form');
+const codeForm = document.querySelector('#code-form');
+const codeInput = document.querySelector('#code');
+const codeEmail = document.querySelector('#code-email');
+const changeEmail = document.querySelector('#change-email');
 const message = document.querySelector('#message');
 
 function continuationPath() {
@@ -20,37 +24,69 @@ async function setup() {
   const client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
   message.textContent = 'Checking your session…';
   const next = continuationPath();
+  let pendingEmail = null;
+  let completing = false;
+
+  function completeSignIn(session) {
+    if (!session?.access_token || completing) return;
+    completing = true;
+    sessionStorage.setItem('meal-prep-access-token', session.access_token);
+    location.replace(next || '/');
+  }
+
   const { data: { session } } = await client.auth.getSession();
   message.textContent = '';
-  if (session?.access_token) {
-    sessionStorage.setItem('meal-prep-access-token', session.access_token);
-    if (next) {
-      message.textContent = 'Signed in. Returning to authorization…';
-      location.replace(next);
-      return;
-    }
-    location.replace('/');
-    return;
-  }
+  if (session?.access_token) return completeSignIn(session);
   client.auth.onAuthStateChange((_event, nextSession) => {
-    if (!nextSession?.access_token) return;
-    sessionStorage.setItem('meal-prep-access-token', nextSession.access_token);
-    location.replace(next || '/');
+    completeSignIn(nextSession);
   });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     message.textContent = 'Sending…';
-    const email = new FormData(form).get('email');
-    const redirectUrl = new URL(config.redirectUrl, location.origin);
-    if (next) redirectUrl.searchParams.set('next', next);
+    const email = String(new FormData(form).get('email')).trim();
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
     const { error } = await client.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo: redirectUrl.toString(),
-        shouldCreateUser: true,
-      },
+      options: { shouldCreateUser: true },
     });
-    message.textContent = error ? error.message : 'Check your email for the sign-in link.';
+    submit.disabled = false;
+    if (error) {
+      message.textContent = error.message;
+      return;
+    }
+    pendingEmail = email;
+    codeEmail.textContent = email;
+    form.hidden = true;
+    codeForm.hidden = false;
+    codeInput.focus();
+    message.textContent = 'Check your email for the eight-digit code.';
+  });
+  codeForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const token = String(new FormData(codeForm).get('code')).trim();
+    const submit = codeForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    message.textContent = 'Verifying…';
+    const { data, error } = await client.auth.verifyOtp({
+      email: pendingEmail,
+      token,
+      type: 'email',
+    });
+    submit.disabled = false;
+    if (error) {
+      message.textContent = error.message;
+      return;
+    }
+    completeSignIn(data.session);
+  });
+  changeEmail.addEventListener('click', () => {
+    pendingEmail = null;
+    codeForm.reset();
+    codeForm.hidden = true;
+    form.hidden = false;
+    message.textContent = '';
+    form.querySelector('#email').focus();
   });
 }
 
