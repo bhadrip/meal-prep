@@ -15,7 +15,7 @@ app/
 
 ## What is included
 
-- Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes and recipe sharing, pantry, shopping, feedback, reviews, memory, and dashboard settings
+- Getting-started landing page at `/` and manual app at `/app`, with household setup, weekly plan and rhythm, recipes and recipe sharing, pantry, shopping, feedback, reviews, memory, and dashboard settings
 - Authenticated JSON API under `/api` for the website and future mobile clients
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
@@ -48,7 +48,7 @@ pip install -e '.[dev]'
 ./scripts/dev-local.sh
 ```
 
-Open `http://127.0.0.1:8000/` for the website and `http://127.0.0.1:8000/api/health` to verify `persistence: supabase` and `auth_required: true`. Connect an MCP inspector or client to `http://127.0.0.1:8000/mcp`. The script reads the local anon key from `supabase status`; it does not store it in the repository. Stop the Python server with Ctrl-C and, when finished, stop the local containers with `supabase stop` from `backend/`.
+Open `http://127.0.0.1:8000/` for the landing page, `http://127.0.0.1:8000/app` for the app, and `http://127.0.0.1:8000/api/health` to verify `persistence: supabase` and `auth_required: true`. Connect an MCP inspector or client to `http://127.0.0.1:8000/mcp`. The script reads the local anon key from `supabase status`; it does not store it in the repository. Stop the Python server with Ctrl-C and, when finished, stop the local containers with `supabase stop` from `backend/`.
 
 ### Test the shared login with local Supabase and Mailpit
 
@@ -68,7 +68,7 @@ SUPABASE_ANON_KEY=PASTE_LOCAL_ANON_KEY_HERE
 AUTH_REQUIRED=true
 ```
 
-Start the Python server with `uvicorn app.main:app --reload`. Open local Supabase Studio at `http://127.0.0.1:55323`, create a test user under **Authentication → Users**, then open `http://127.0.0.1:8000/` and request a magic link for that user. The link appears in the local [Mailpit inbox](http://127.0.0.1:55324). Follow it to sign in, complete the household setup, and verify edits in the website and MCP client. The login form deliberately does not create accounts; the test user must exist first. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
+Start the Python server with `uvicorn app.main:app --reload`. Open local Supabase Studio at `http://127.0.0.1:55323`, create a test user under **Authentication → Users**, then open `http://127.0.0.1:8000/app` and request a sign-in code for that user. The code appears in the local [Mailpit inbox](http://127.0.0.1:55324). Enter it to sign in, complete the household setup, and verify edits in the website and MCP client. The login form deliberately does not create accounts; the test user must exist first. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
 
 If `supabase start` reports that Docker is unavailable, start the container runtime first. For a quick UI-only check without Supabase, leaving the Supabase values empty in `.env` still enables in-memory demo data; demo edits last only until the server restarts.
 
@@ -143,7 +143,7 @@ AUTH_REQUIRED=true
 Deploy, then verify:
 
 - `GET /api/health` reports `persistence: supabase`.
-- `/` opens the website and redirects unsigned users to `/login`.
+- `/` provides the MCP URL and links to `/app`; `/app` redirects unsigned users to `/login`.
 - Website edits appear through `/api/app/snapshot` and the MCP tools for the same account.
 - `/login` can create a valid session.
 - `/oauth/consent` displays an OAuth client request.
