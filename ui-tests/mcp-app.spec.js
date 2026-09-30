@@ -74,12 +74,19 @@ test('MCP dashboard, plan, feedback, and shopping views', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.calls.at(-1))).toEqual({
     name: 'mark_item_purchased', arguments: { item_id: 'item-1', purchased: true },
   });
+  await frame.getByRole('checkbox').uncheck();
+  await expect(frame.locator('label.done')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.calls.at(-1))).toEqual({
+    name: 'mark_item_purchased', arguments: { item_id: 'item-1', purchased: false },
+  });
 });
 
 test('MCP onboarding and recipe library actions', async ({ page }) => {
   const frame = await host(page);
   await show(page, { kind: 'onboarding', household: {} });
   await expect(frame.getByRole('heading', { name: 'Feeding a family takes planning.' })).toBeVisible();
+  await frame.getByRole('button', { name: 'Save household setup' }).click();
+  await expect(frame.locator('[name="householdSize"]')).toBeFocused();
   await frame.locator('[name="householdSize"]').fill('3');
   await frame.locator('[name="dietaryRestrictions"]').fill('none');
   await frame.locator('[name="stores"]').fill('Costco, Safeway');
@@ -97,8 +104,28 @@ test('MCP onboarding and recipe library actions', async ({ page }) => {
   await expect(frame.getByRole('heading', { name: 'Ingredients' })).toBeVisible();
   await frame.getByRole('button', { name: 'Create share link' }).click();
   await expect(frame.getByRole('textbox', { name: 'Share link' })).toHaveValue('https://example.test/s/share-test');
+  await frame.getByRole('button', { name: 'Copy link' }).click();
+  await expect(frame.locator('[data-copy-recipe-share]')).toHaveText(/Copied|Selected for copying/);
   await frame.getByRole('button', { name: 'Revoke' }).click();
   await expect(frame.locator('#recipe-share-result')).toHaveText('Share link revoked.');
   await frame.getByRole('button', { name: '← All recipes' }).click();
   await expect(frame.getByRole('heading', { name: 'Your recipes' })).toBeVisible();
+});
+
+test('MCP views explain empty and unavailable data', async ({ page }) => {
+  const frame = await host(page);
+  await show(page, { kind: 'meal_plan', plan: null });
+  await expect(frame.locator('#root')).toContainText('No meal plan has been saved yet.');
+  await show(page, { kind: 'shopping_list', shoppingList: null });
+  await expect(frame.locator('#root')).toContainText('No shopping list has been saved yet.');
+  await show(page, { kind: 'feedback', sections: { feedback: { status: 'unavailable', value: null } } });
+  await expect(frame.locator('#root')).toContainText('Feedback unavailable');
+  await show(page, { kind: 'recipe_library', recipes: [] });
+  await expect(frame.locator('#root')).toContainText('No saved recipes yet');
+  await show(page, { kind: 'household_snapshot', household: {
+    householdName: 'Test kitchen', planningPreferences: {
+      dashboard: { hiddenCards: ['food-rules', 'planning-defaults', 'stores', 'schedule', 'meal-plan', 'shopping-list', 'pantry', 'recipes', 'feedback', 'memories'] },
+    },
+  }, sections: {} });
+  await expect(frame.locator('#root')).toContainText('All cards are hidden');
 });

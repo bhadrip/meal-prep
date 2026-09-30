@@ -1,6 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -45,11 +46,20 @@ def test_local_website_edits_share_application_data_across_requests():
     recipe_id = recipe.json()["id"]
     recipes = client.get("/api/recipes?query=Local").json()["items"]
     assert any(item["id"] == recipe_id for item in recipes)
+    updated_recipe = client.put("/api/recipes", json={
+        "id": recipe_id, "title": "Local lentil bowls", "description": "Updated in the browser",
+        "servings": 3,
+    })
+    assert updated_recipe.status_code == 200
+    assert client.get(f"/api/recipes/{recipe_id}").json()["description"] == "Updated in the browser"
 
     pantry = client.put("/api/pantry", json={"name": "Lentils", "quantity": 1})
     assert pantry.status_code == 200
+    assert client.put("/api/pantry", json={
+        "id": pantry.json()["id"], "name": "Lentils", "quantity": 2,
+    }).status_code == 200
     snapshot = client.get("/api/app/snapshot").json()
-    assert any(item["name"] == "Lentils" for item in snapshot["sections"]["pantry"]["value"])
+    assert any(item["name"] == "Lentils" and item["quantity"] == 2 for item in snapshot["sections"]["pantry"]["value"])
     assert "retro" not in snapshot["sections"]
 
     invalid = client.put("/api/meal-plan", json={"weekStart": "2026-09-28", "entries": [{"meal": "Soup"}]})
@@ -147,4 +157,98 @@ def test_local_website_can_share_copy_and_revoke_a_recipe():
 
     assert client.delete(f"/api/recipe-shares/{share['id']}").json()["revoked"]
     assert client.get(f"/s/{share['token']}").status_code == 404
+    demo_repository.cache_clear()
+
+
+def test_web_household_dashboard_and_weekly_schedule_lifecycle():
+    demo_repository.cache_clear()
+    client = TestClient(app)
+    assert client.get("/api/household").status_code == 200
+
+    updated = client.patch("/api/household", json={
+        "householdSize": 3,
+        "dietaryRestrictions": [],
+        "storePriority": [{"store": "Safeway", "priority": 1}],
+        "planningPreferences": {"weeknightMaxMinutes": 25, "leftoversForLunch": False},
+        "completeOnboarding": True,
+    })
+    assert updated.status_code == 200
+    assert client.get("/api/household").json()["householdSize"] == 3
+
+    layout = client.patch("/api/dashboard-layout", json={
+        "cardOrder": ["shopping-list"], "hiddenCards": ["pantry"],
+    })
+    assert layout.status_code == 200
+    assert client.get("/api/dashboard-layout").json()["cardOrder"][0] == "shopping-list"
+    assert client.get("/api/dashboard-layout").json()["hiddenCards"] == ["pantry"]
+    assert client.patch("/api/dashboard-layout", json={"resetToDefault": True}).json()["hiddenCards"] == []
+
+    week = "2030-02-04"
+    days = [{"day": day, "mode": "quick"} for day in (
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+    )]
+    saved = client.put("/api/schedule", json={"weekStart": week, "days": days})
+    assert saved.status_code == 200
+    assert client.get(f"/api/schedule?week_start={week}").json()["schedule"]["days"] == days
+    assert client.get(f"/api/planning-context?week_start={week}").json()["schedule"]["days"] == days
+    demo_repository.cache_clear()
+
+
+def test_web_shopping_list_create_progress_edit_and_remove():
+    demo_repository.cache_clear()
+    client = TestClient(app)
+    current = client.get("/api/shopping-list").json()["shoppingList"]
+    item_id = str(uuid4())
+    items = [*current["items"], {
+        "id": item_id, "name": "UI contract apples", "quantity": 4,
+        "unit": "each", "store": "Safeway", "purchased": False,
+    }]
+    saved = client.put("/api/shopping-list", json={**current, "items": items})
+    assert saved.status_code == 200
+    assert any(item["id"] == item_id for item in client.get("/api/shopping-list").json()["shoppingList"]["items"])
+
+    purchased = client.patch(f"/api/shopping-list/items/{item_id}", json={"purchased": True})
+    assert purchased.status_code == 200
+    assert purchased.json()["purchased"] is True
+    updated_items = [{**item, "quantity": 5} if item["id"] == item_id else item for item in items]
+    assert client.put("/api/shopping-list", json={**current, "items": updated_items}).status_code == 200
+    assert next(item for item in client.get("/api/shopping-list").json()["shoppingList"]["items"] if item["id"] == item_id)["quantity"] == 5
+    assert client.put("/api/shopping-list", json={**current, "items": current["items"]}).status_code == 200
+    assert all(item["id"] != item_id for item in client.get("/api/shopping-list").json()["shoppingList"]["items"])
+    demo_repository.cache_clear()
+
+
+def test_web_feedback_and_memory_lifecycle():
+    demo_repository.cache_clear()
+    client = TestClient(app)
+    week = "2030-02-04"
+    saved = client.post("/api/feedback", json={
+        "weekStart": week, "feedbackType": "worked_well", "note": "UI contract quick dinner",
+        "tags": ["easy cleanup"],
+    })
+    assert saved.status_code == 200
+    feedback_id = saved.json()["id"]
+    assert any(item["id"] == feedback_id for item in client.get(f"/api/feedback?week_start={week}").json()["items"])
+    assert any(item["id"] == feedback_id for item in client.get(f"/api/what-worked?week_start={week}").json()["items"])
+
+    recipe_id = "11111111-1111-1111-1111-111111111111"
+    recipe_feedback = client.post("/api/feedback", json={
+        "recipeId": recipe_id, "weekStart": week, "feedbackType": "worked_well",
+        "note": "The paneer was popular",
+    })
+    assert recipe_feedback.status_code == 200
+    assert any(item["id"] == recipe_feedback.json()["id"] for item in client.get(f"/api/recipes/{recipe_id}").json()["feedback"])
+    lessons = client.get(f"/api/recipes/{recipe_id}/lessons")
+    assert lessons.status_code == 200
+    assert any(item["id"] == recipe_feedback.json()["id"] for item in lessons.json()["workedWell"])
+
+    memory = client.post("/api/memories", json={"content": "Keep Thursdays simple", "scope": "this_week"})
+    assert memory.status_code == 200
+    memory_id = memory.json()["id"]
+    assert any(item["id"] == memory_id for item in client.get("/api/memories?status=suggested&scope=this_week").json()["items"])
+    assert client.patch(f"/api/memories/{memory_id}", json={"action": "confirm"}).json()["status"] == "confirmed"
+    assert client.patch(f"/api/memories/{memory_id}", json={"action": "update", "content": "Keep Friday simple"}).json()["content"] == "Keep Friday simple"
+    assert client.patch(f"/api/memories/{memory_id}", json={"action": "forget"}).json()["active"] is False
+    assert all(item["id"] != memory_id for item in client.get("/api/memories").json()["items"])
+    assert any(item["id"] == memory_id for item in client.get("/api/memories?include_inactive=true").json()["items"])
     demo_repository.cache_clear()

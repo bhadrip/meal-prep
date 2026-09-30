@@ -81,7 +81,7 @@ npx -y @modelcontextprotocol/inspector
 
 Choose Streamable HTTP in the Inspector and use `http://127.0.0.1:8000/mcp`.
 
-The browser suite runs the website in in-memory demo mode. It covers navigation, household settings, weekly planning, recipes and sharing, pantry, shopping, reviews, and sign-in UI with a mocked auth provider. It also exercises the embedded MCP App views with a simulated chat host. From the repository root:
+The browser suite runs the website in in-memory demo mode. It covers navigation, household settings, weekly planning, recipes and sharing, pantry, shopping, reviews, and sign-in UI with a mocked auth provider. It also exercises the embedded MCP App views with a simulated chat host. See [`docs/test-coverage.md`](../docs/test-coverage.md) for the UI and backend path inventory. From the repository root:
 
 ```bash
 python3 -m venv backend/.venv
@@ -91,7 +91,16 @@ pnpm exec playwright install chromium
 pnpm test:ui
 ```
 
-The `UI tests` GitHub Action runs the backend tests and Chromium suite on pull requests and pushes to `main`. It uses no production credentials or Supabase service. Real Supabase sign-in and behavior inside a live MCP host require a separate integration environment.
+The `UI tests` GitHub Action runs the backend tests and Chromium suite on pull requests and pushes to `main`. The browser job uses demo data and simulated auth and chat hosts. Real Supabase sign-in through the browser and behavior inside a live MCP host require a separate integration environment.
+
+The same workflow also starts a disposable local Supabase stack and checks an authenticated plan and weekly rhythm roundtrip against the actual migrations. To run that check locally after `supabase start`:
+
+```bash
+supabase migration up --local --workdir backend
+backend/.venv/bin/python backend/scripts/test-local-supabase.py
+```
+
+`backend/scripts/dev-local.sh` applies pending local migrations at startup. The authenticated integration test creates and removes its own local test account and household. It does not connect to the production Supabase project.
 
 ## Supabase setup
 

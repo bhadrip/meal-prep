@@ -9,6 +9,7 @@ if [[ ! -x .venv/bin/uvicorn ]]; then
 fi
 
 supabase start >/dev/null
+supabase migration up --local >/dev/null
 supabase_env="$(supabase status -o env)"
 supabase_url="$(printf '%s\n' "$supabase_env" | sed -n 's/^API_URL="\([^"]*\)"$/\1/p')"
 supabase_anon_key="$(printf '%s\n' "$supabase_env" | sed -n 's/^ANON_KEY="\([^"]*\)"$/\1/p')"

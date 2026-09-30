@@ -47,3 +47,29 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  supabase-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.118.0
+      - name: Install backend
+        run: |
+          python -m venv backend/.venv
+          backend/.venv/bin/python -m pip install -e 'backend[dev]'
+      - name: Start local Supabase and apply migrations
+        run: |
+          supabase start --workdir backend
+          supabase migration up --local --workdir backend
+      - name: Test authenticated plan and weekly rhythm roundtrip
+        run: backend/.venv/bin/python backend/scripts/test-local-supabase.py

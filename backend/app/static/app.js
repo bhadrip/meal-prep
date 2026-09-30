@@ -174,7 +174,7 @@ function renderPlan() {
     const date = dateForDay(state.weekStart, index);
     const rhythm = arr(schedule?.days).find((entry) => entry.day === day);
     const entries = arr(plan?.entries).filter((entry) => entry.date === date || (!entry.date && entry.day === day));
-    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(date)} · ${esc(rhythm?.mode || 'Flexible')}</span>${entries.length ? entries.map((entry) => `<div class="meal"><small>${esc(label(entry.slot || 'dinner'))}</small><strong>${esc(entry.meal || entry.title)}</strong><div style="margin-top:7px">${action('Edit', 'edit-meal', entry.id || `${day}:${entry.slot}`)} ${action('Remove', 'remove-meal', entry.id || `${day}:${entry.slot}`)}</div></div>`).join('') : '<p class="muted tiny">Nothing planned</p>'}</div>`;
+    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(date)} · ${esc(rhythm?.mode || 'Flexible')}</span>${entries.length ? entries.map((entry) => `<div class="meal"><small>${esc(label(entry.slot || 'dinner'))}</small><strong>${esc(entry.meal || entry.title)}</strong><div style="margin-top:7px">${action('Edit', 'edit-meal', entry.id || `${day}:${entry.slot}`)} ${action('Remove', 'remove-meal', entry.id || `${day}:${entry.slot}`)}</div></div>`).join('') : '<p class="muted tiny">Nothing planned</p>'}<button class="button ghost small day-add" data-action="add-meal" data-id="${esc(date)}" aria-label="Add meal to ${day}">+ Add meal</button></div>`;
   }).join('')}</div>`;
   html += `<div class="section-head"><div><h2>Plan details</h2><p>Manual changes save to the same household plan used in MCP.</p></div></div>`;
   html += `<div class="card-grid">${card('Status', '▦', `<p class="metric">${esc(label(plan?.status || 'Draft'))}</p><p class="muted tiny">${plan ? `Week of ${esc(plan.weekStart)}` : 'No plan saved for this week'}</p>`)}${card('Meals and prep', '◇', `<p class="metric">${arr(plan?.entries).length}</p><p class="muted tiny">Entries in this week</p>`)}${card('Weekly rhythm', '◷', `<p class="metric">${arr(schedule?.days).length}/7</p><p class="muted tiny">Days with saved context</p>`)}</div>`;
@@ -371,7 +371,7 @@ document.addEventListener('click', (event) => {
   fields.querySelectorAll('[data-choice-control].open').forEach((control) => closeChoice(control));
 });
 
-function openEditor(kind, item = null) {
+function openEditor(kind, item = null, selectedDate = null) {
   state.editor = { kind, item };
   errorBox.hidden = true;
   let title, markup;
@@ -383,7 +383,7 @@ function openEditor(kind, item = null) {
     markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0 }) + field('unit', 'Unit', item?.unit) + field('storageLocation', 'Storage location', pick(item, 'storage_location', 'storageLocation') || 'pantry', { choices: ['pantry', 'fridge', 'freezer', 'other'] }) + field('quantityConfidence', 'Quantity confidence', pick(item, 'quantity_confidence', 'quantityConfidence') || 'estimated', { choices: ['exact', 'estimated', 'unknown'] }) + field('useByDate', 'Use by date (only if known)', pick(item, 'use_by_date', 'useByDate'), { type: 'date' });
   } else if (kind === 'meal') {
     title = item ? 'Edit planned meal' : 'Add meal or prep task';
-    const date = item?.date || state.weekStart;
+    const date = item?.date || selectedDate || state.weekStart;
     markup = field('date', 'Date', date, { type: 'date', required: true }) + field('slot', 'Meal slot', item?.slot || 'dinner', { choices: SLOTS }) + field('meal', 'Meal or task', item?.meal || item?.title, { required: true, wide: true }) + field('servings', 'Servings', item?.servings, { type: 'number', min: 1 }) + field('recipeId', 'Saved recipe', item?.recipeId || '', { choices: [{ value: '', label: 'No linked recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true });
   } else if (kind === 'shopping') {
     title = item ? 'Edit grocery item' : 'Add grocery item';
@@ -421,7 +421,7 @@ async function submitEditor(data) {
     const existing = arr(state.plan?.entries);
     const key = item?.id || `${item?.day}:${item?.slot}`;
     const entries = item ? existing.filter((entry) => (entry.id || `${entry.day}:${entry.slot}`) !== key) : [...existing];
-    entries.push({ date: value('date'), day: DAYS[(new Date(`${value('date')}T12:00:00`).getDay() + 6) % 7], slot: value('slot'), meal: value('meal'), servings: numberOrNull(value('servings')), recipeId: value('recipeId') || null, notes: value('notes') });
+    entries.push({ id: item?.id || crypto.randomUUID(), date: value('date'), day: DAYS[(new Date(`${value('date')}T12:00:00`).getDay() + 6) % 7], slot: value('slot'), meal: value('meal'), servings: numberOrNull(value('servings')), recipeId: value('recipeId') || null, notes: value('notes') });
     await save('/api/meal-plan', 'PUT', { id: state.plan?.id, weekStart: state.weekStart, status: state.plan?.status || 'draft', entries });
   } else if (kind === 'shopping') {
     const list = section('shoppingList');
@@ -433,6 +433,7 @@ async function submitEditor(data) {
   } else if (kind === 'feedback') {
     if (!value('recipeId') && !value('weekStart')) throw new Error('Choose a recipe or a week.');
     await save('/api/feedback', 'POST', { recipeId: value('recipeId') || null, weekStart: value('weekStart') || null, feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: comma('tags'), rating: numberOrNull(value('rating')), variantName: value('variantName'), adaptations: lines('adaptations') });
+    if (state.recipe?.id) state.recipe = await api(`/api/recipes/${encodeURIComponent(state.recipe.id)}`);
   } else if (kind === 'memory') {
     if (item) await save(`/api/memories/${encodeURIComponent(item.id)}`, 'PATCH', { action: value('action'), content: value('content') });
     else await save('/api/memories', 'POST', { content: value('content'), scope: value('scope'), status: 'suggested' });
@@ -467,7 +468,7 @@ async function handleAction(actionName, id) {
   if (actionName === 'copy-share') {
     if (!state.shareUrl) return;
     try { await navigator.clipboard.writeText(state.shareUrl); showToast('Link copied.'); }
-    catch { const input = document.querySelector('#share-url'); input?.focus(); input?.select(); }
+    catch { const input = document.querySelector('#share-url'); input?.focus(); input?.select(); showToast('Link selected. Copy it with your keyboard.'); }
     return;
   }
   if (actionName === 'revoke-share') {
@@ -486,7 +487,7 @@ async function handleAction(actionName, id) {
   }
   if (actionName === 'add-pantry') return openEditor('pantry');
   if (actionName === 'edit-pantry') return openEditor('pantry', pantry.find((item) => item.id === id));
-  if (actionName === 'add-meal') return openEditor('meal');
+  if (actionName === 'add-meal') return openEditor('meal', null, id || state.weekStart);
   if (actionName === 'edit-meal' || actionName === 'remove-meal') {
     const item = plan.find((entry) => (entry.id || `${entry.day}:${entry.slot}`) === id);
     if (!item) return;

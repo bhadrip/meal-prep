@@ -367,6 +367,12 @@ class SupabaseRepository:
 class DemoRepository:
     """Deterministic local state used when Supabase is not configured."""
 
+    def __init__(self) -> None:
+        initial_plan = deepcopy(self._meal_plan)
+        for entry in initial_plan["entries"]:
+            entry["id"] = entry.get("id") or str(uuid4())
+        self._meal_plans = {initial_plan["weekStart"]: initial_plan}
+
     _context = {
         "householdId": "00000000-0000-0000-0000-000000000010",
         "householdName": "The Parkers",
@@ -548,13 +554,16 @@ class DemoRepository:
         return deepcopy(row)
 
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
-        self._meal_plan = {"id": plan.get("id") or str(uuid4()), **deepcopy(plan)}
-        return deepcopy(self._meal_plan)
+        saved = {**deepcopy(plan), "id": plan.get("id") or str(uuid4())}
+        for entry in saved["entries"]:
+            entry["id"] = entry.get("id") or str(uuid4())
+        self._meal_plans[saved["weekStart"]] = saved
+        return deepcopy(saved)
 
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None:
-        if week_start and self._meal_plan.get("weekStart") != week_start:
-            return None
-        return deepcopy(self._meal_plan)
+        if week_start:
+            return deepcopy(self._meal_plans.get(week_start))
+        return deepcopy(self._meal_plans[max(self._meal_plans)]) if self._meal_plans else None
 
     async def save_shopping_list(self, shopping_list: dict[str, Any]) -> dict[str, Any]:
         self._shopping_list = {"id": shopping_list.get("id") or str(uuid4()), **deepcopy(shopping_list)}

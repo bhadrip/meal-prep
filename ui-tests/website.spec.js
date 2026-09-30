@@ -40,8 +40,10 @@ test('navigation, sidebar, refresh, account, and mobile navigation', async ({ pa
   await page.getByRole('button', { name: 'Account settings' }).click();
   await expect(page.locator('#view-title')).toHaveText('Settings');
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('.mobile-nav [data-view="shopping"]').click();
-  await expect(page.locator('#view-title')).toHaveText('Shopping');
+  for (const [view, title] of Object.entries({ overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping' })) {
+    await page.locator(`.mobile-nav [data-view="${view}"]`).click();
+    await expect(page.locator('#view-title')).toHaveText(title);
+  }
 });
 
 test('overview shortcuts and editor validation and cancel', async ({ page }) => {
@@ -89,6 +91,9 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
   await page.locator('.sidebar [data-view="settings"]').click();
   await page.getByRole('button', { name: 'Move Food rules down' }).click();
   await expect(page.locator('#dashboard-form .card-order-row').first()).toContainText('Planning defaults');
+  await page.getByRole('button', { name: 'Move Food rules up' }).click();
+  await expect(page.locator('#dashboard-form .card-order-row').first()).toContainText('Food rules');
+  await page.getByRole('button', { name: 'Move Food rules down' }).click();
   await page.locator('#dashboard-form [name="visibleCard"][value="pantry"]').uncheck();
   await page.getByRole('button', { name: 'Save visible cards' }).click();
   await expect(page.locator('#dashboard-form [name="visibleCard"][value="pantry"]')).not.toBeChecked();
@@ -101,6 +106,7 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
 test('weekly rhythm and planned meal can be added, edited, and removed', async ({ page }) => {
   await open(page, 'plan');
   const week = await page.locator('#week-picker').inputValue();
+  const originalMondayMeals = await content(page).locator('.day-card').first().locator('.meal strong').allTextContents();
   await content(page).getByRole('button', { name: 'Edit weekly rhythm' }).click();
   await choose(page, 'Monday', 'busy');
   await saveEditor(page);
@@ -122,9 +128,62 @@ test('weekly rhythm and planned meal can be added, edited, and removed', async (
   page.once('dialog', (dialog) => dialog.accept());
   await updated.getByRole('button', { name: 'Remove' }).click();
   await expect(updated).toHaveCount(0);
+  for (const originalMeal of originalMondayMeals) {
+    await expect(content(page).locator('.day-card').first()).toContainText(originalMeal);
+  }
   await page.locator('#week-picker').fill('2027-01-04');
   await expect(page.locator('#week-picker')).toHaveValue('2027-01-04');
   await expect(content(page).locator('.day-card')).toHaveCount(7);
+});
+
+test('an empty week can be planned from its day card without losing the previous week', async ({ page }) => {
+  await open(page, 'plan');
+  const firstWeek = await page.locator('#week-picker').inputValue();
+  const firstWeekMeal = await content(page).locator('.meal strong').first().textContent();
+  const nextMonday = new Date(`${firstWeek}T12:00:00`);
+  nextMonday.setDate(nextMonday.getDate() + 7);
+  const nextWeek = `${nextMonday.getFullYear()}-${String(nextMonday.getMonth() + 1).padStart(2, '0')}-${String(nextMonday.getDate()).padStart(2, '0')}`;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('#week-picker').fill(nextWeek);
+  await expect(content(page)).toContainText('This week is open');
+  const mondayCard = content(page).locator('.day-card').filter({ has: page.locator('b', { hasText: 'Monday' }) });
+  await expect(mondayCard.getByRole('button', { name: 'Add meal to Monday' })).toBeVisible({ timeout: 1500 });
+  await mondayCard.getByRole('button', { name: 'Add meal to Monday' }).click();
+  await expect(editor(page).locator('[name="date"]')).toHaveValue(nextWeek);
+  const meal = unique('Next week dinner');
+  await editor(page).locator('[name="meal"]').fill(meal);
+  await saveEditor(page);
+  await expect(content(page).locator('.day-card').first()).toContainText(meal);
+  await page.locator('#week-picker').fill(firstWeek);
+  await expect(content(page)).toContainText(firstWeekMeal);
+  await page.locator('#week-picker').fill(nextWeek);
+  await expect(content(page)).toContainText(meal);
+});
+
+test('day form supports prep, linked recipes, and guards the selected week', async ({ page }) => {
+  await open(page, 'plan');
+  const week = await page.locator('#week-picker').inputValue();
+  const thursday = new Date(`${week}T12:00:00`);
+  thursday.setDate(thursday.getDate() + 3);
+  const selectedDate = `${thursday.getFullYear()}-${String(thursday.getMonth() + 1).padStart(2, '0')}-${String(thursday.getDate()).padStart(2, '0')}`;
+  await page.setViewportSize({ width: 320, height: 720 });
+  await content(page).getByRole('button', { name: 'Add meal to Thursday' }).click();
+  await expect(editor(page).locator('[name="date"]')).toHaveValue(selectedDate);
+  await choose(page, 'slot', 'prep');
+  await choose(page, 'recipeId', '11111111-1111-1111-1111-111111111111');
+  const meal = unique('Prep rice');
+  await editor(page).locator('[name="meal"]').fill(meal);
+  await saveEditor(page);
+  const row = content(page).locator('.meal').filter({ hasText: meal });
+  await expect(row).toContainText('Prep');
+  await row.getByRole('button', { name: 'Edit' }).click();
+  const outside = new Date(`${week}T12:00:00`);
+  outside.setDate(outside.getDate() + 7);
+  await editor(page).locator('[name="date"]').fill(`${outside.getFullYear()}-${String(outside.getMonth() + 1).padStart(2, '0')}-${String(outside.getDate()).padStart(2, '0')}`);
+  await editor(page).locator('#dialog-save').click();
+  await expect(editor(page).locator('#dialog-error')).toContainText('selected week');
+  await editor(page).getByRole('button', { name: 'Cancel' }).click();
+  await expect(row).toBeVisible();
 });
 
 test('recipe create, search, edit, share, copy, public save, revoke, and archive', async ({ page }) => {
@@ -171,6 +230,18 @@ test('recipe create, search, edit, share, copy, public save, revoke, and archive
   await expect(content(page).locator(`[data-action="open-recipe"][data-id="${originalId}"]`)).toHaveCount(0);
 });
 
+test('recipe feedback appears in the open detail without leaving the page', async ({ page }) => {
+  await open(page, 'recipes');
+  await content(page).locator('[data-action="open-recipe"][data-id="11111111-1111-1111-1111-111111111111"]').click();
+  const note = unique('Fresh recipe feedback');
+  await content(page).getByRole('button', { name: 'Add feedback' }).click();
+  await editor(page).locator('[name="note"]').fill(note);
+  await saveEditor(page);
+  await expect(content(page)).toContainText(note);
+  await content(page).getByRole('button', { name: '← All recipes' }).click();
+  await expect(page.locator('#recipe-search')).toBeVisible();
+});
+
 test('pantry item can be added and edited', async ({ page }) => {
   await open(page, 'pantry');
   const name = unique('Playwright oats');
@@ -199,7 +270,9 @@ test('shopping item can be added, purchased, edited, and removed', async ({ page
   await editor(page).locator('[name="quantity"]').fill('4');
   await editor(page).locator('[name="unit"]').fill('each');
   await editor(page).locator('[name="store"]').fill('Safeway');
+  await editor(page).locator('[name="listName"]').fill('Browser groceries');
   await saveEditor(page);
+  await expect(content(page)).toContainText('Browser groceries');
   let row = content(page).locator('.check-row').filter({ hasText: name });
   await expect(row).toContainText('4 each');
   await row.getByRole('checkbox').check();
@@ -266,7 +339,7 @@ test('sign-in code, email change, error, and sign-out UI with a mocked auth prov
     body: `window.supabase = { createClient: () => ({ auth: {
       getSession: async () => ({ data: { session: JSON.parse(sessionStorage.getItem('mock-session') || 'null') }, error: null }),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-      signInWithOtp: async () => ({ error: null }),
+      signInWithOtp: async ({ email }) => email.startsWith('bad') ? { error: { message: 'Email is not approved' } } : { error: null },
       verifyOtp: async ({ email, token }) => {
         if (token !== '12345678') return { data: {}, error: { message: 'Invalid code' } };
         const session = { access_token: 'fake-token', user: { email } };
@@ -277,6 +350,9 @@ test('sign-in code, email change, error, and sign-out UI with a mocked auth prov
     } }) };`,
   }));
   await page.goto('/login?next=%2F');
+  await page.locator('#email').fill('bad@example.com');
+  await page.getByRole('button', { name: 'Send code' }).click();
+  await expect(page.locator('#message')).toHaveText('Email is not approved');
   await page.locator('#email').fill('first@example.com');
   await page.getByRole('button', { name: 'Send code' }).click();
   await expect(page.locator('#code-email')).toHaveText('first@example.com');
