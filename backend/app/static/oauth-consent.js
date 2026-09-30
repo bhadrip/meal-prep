@@ -19,27 +19,36 @@ async function setup() {
   const clientName = data.client?.name || data.client_name || 'an AI assistant';
   summary.textContent = `${clientName} is requesting access to your Meal Prep account.`;
   const requested = String(data.scope || '').split(/\s+/).filter(Boolean);
-  scopes.innerHTML = requested.map((scope) => `<li>${scope}</li>`).join('') || '<li>Use your account identity and household data</li>';
+  scopes.replaceChildren(...(requested.length ? requested : ['Use your account identity and household data']).map((scope) => {
+    const item = document.createElement('li');
+    item.textContent = scope;
+    return item;
+  }));
   actions.hidden = false;
   actions.addEventListener('click', async (event) => {
     const decision = event.target.dataset.decision;
     if (!decision) return;
     actions.hidden = true;
     message.textContent = decision === 'approve' ? 'Approving…' : 'Denying…';
-    const result = decision === 'approve'
-      ? await client.auth.oauth.approveAuthorization(authorizationId)
-      : await client.auth.oauth.denyAuthorization(authorizationId);
-    if (result.error) throw result.error;
-    const redirectUrl = new URL(result.data.redirect_url);
-    const isLoopback = redirectUrl.protocol === 'http:'
-      && ['127.0.0.1', 'localhost', '[::1]'].includes(redirectUrl.hostname);
-    if (redirectUrl.protocol !== 'https:' && !isLoopback) {
-      throw new Error('The OAuth client returned an unsupported callback URL.');
+    try {
+      const result = decision === 'approve'
+        ? await client.auth.oauth.approveAuthorization(authorizationId)
+        : await client.auth.oauth.denyAuthorization(authorizationId);
+      if (result.error) throw result.error;
+      const redirectUrl = new URL(result.data.redirect_url);
+      const isLoopback = redirectUrl.protocol === 'http:'
+        && ['127.0.0.1', 'localhost', '[::1]'].includes(redirectUrl.hostname);
+      if (redirectUrl.protocol !== 'https:' && !isLoopback) {
+        throw new Error('The OAuth client returned an unsupported callback URL.');
+      }
+      message.textContent = decision === 'approve'
+        ? 'Access allowed. Returning to Codex…'
+        : 'Access denied. Returning to Codex…';
+      location.replace(redirectUrl.toString());
+    } catch (error) {
+      message.textContent = error.message || 'Could not complete authorization.';
+      actions.hidden = false;
     }
-    message.textContent = decision === 'approve'
-      ? 'Access allowed. Returning to Codex…'
-      : 'Access denied. Returning to Codex…';
-    location.replace(redirectUrl.toString());
   });
 }
 

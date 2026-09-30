@@ -598,7 +598,7 @@
           const input = root.querySelector('.recipe-share-url');
           if (input) {
             try { await navigator.clipboard.writeText(input.value); event.target.textContent = 'Copied'; }
-            catch { input.select(); }
+            catch { input.select(); event.target.textContent = 'Selected for copying'; }
           }
           return;
         }

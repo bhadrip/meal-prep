@@ -174,7 +174,7 @@ async def revoke_recipe_share(share_id: str, services: WebServices) -> dict:
 
 @router.get("/api/recipes/{recipe_id}/lessons")
 async def get_recipe_lessons(recipe_id: str, services: WebServices, limit: int = 50) -> dict:
-    return await services.feedback.recipe_lessons(recipe_id, limit)
+    return await services.feedback.recipe_feedback_summary(recipe_id, limit)
 
 
 @router.get("/api/pantry")

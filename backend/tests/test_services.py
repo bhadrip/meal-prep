@@ -69,6 +69,21 @@ async def test_planning_service_requires_an_explicit_slot_for_every_entry():
 
 
 @pytest.mark.asyncio
+async def test_demo_plan_keeps_each_week_and_returns_the_latest_week():
+    repository = DemoRepository()
+    first_week = await repository.get_meal_plan()
+    next_week = "2030-02-04"
+    saved = await PlanningService(repository).save_meal_plan({
+        "weekStart": next_week,
+        "entries": [{"date": next_week, "slot": "dinner", "meal": "Lentil bowls"}],
+    })
+
+    assert (await repository.get_meal_plan(first_week["weekStart"]))["id"] == first_week["id"]
+    assert (await repository.get_meal_plan(next_week))["id"] == saved["id"]
+    assert (await repository.get_meal_plan())["weekStart"] == next_week
+
+
+@pytest.mark.asyncio
 async def test_shopping_item_store_is_optional_and_does_not_replace_list():
     service = ShoppingService(DemoRepository())
     original = await service.get()
