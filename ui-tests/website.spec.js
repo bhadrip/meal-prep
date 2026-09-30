@@ -291,10 +291,18 @@ test('shopping item can be added, purchased, edited, and removed', async ({ page
   await expect(content(page).locator('.check-row').filter({ hasText: name })).toHaveCount(0);
 });
 
-test('feedback and household memory lifecycle', async ({ page }) => {
+test('weekly and meal reviews plus household memory lifecycle', async ({ page }) => {
   await open(page, 'reviews');
+  const weekNote = unique('Playwright week review');
+  await content(page).getByRole('button', { name: 'Review this week' }).click();
+  await choose(page, 'feedbackType', 'worked_well');
+  await editor(page).locator('[name="note"]').fill(weekNote);
+  await editor(page).locator('[name="nextTime"]').fill('Keep the prep time');
+  await saveEditor(page);
+  await expect(content(page)).toContainText(weekNote);
+  await expect(content(page)).toContainText('Keep the prep time');
   const note = unique('Playwright meal note');
-  await content(page).getByRole('button', { name: 'Add meal feedback' }).click();
+  await content(page).getByRole('button', { name: 'Review a meal' }).click();
   await choose(page, 'feedbackType', 'change_next_time');
   await editor(page).locator('[name="note"]').fill(note);
   await editor(page).locator('[name="nextTime"]').fill('Use less salt');
