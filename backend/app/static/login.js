@@ -60,7 +60,7 @@ async function setup() {
     form.hidden = true;
     codeForm.hidden = false;
     codeInput.focus();
-    message.textContent = 'Check your email for the six-digit code.';
+    message.textContent = 'Check your email for the eight-digit code.';
   });
   codeForm.addEventListener('submit', async (event) => {
     event.preventDefault();
