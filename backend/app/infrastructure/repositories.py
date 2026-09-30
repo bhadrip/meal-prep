@@ -239,6 +239,9 @@ class SupabaseRepository:
         value = await self.rpc("get_shopping_list", {"requested_list_id": list_id})
         return value if isinstance(value, dict) else None
 
+    async def add_shopping_item(self, item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]:
+        return await self.rpc("add_shopping_item", {"item": item, "requested_list_id": list_id})
+
     async def mark_item_purchased(
         self, item_id: str, purchased: bool, purchased_quantity: float | None = None
     ) -> dict[str, Any]:
@@ -561,6 +564,12 @@ class DemoRepository:
         return deepcopy(self._shopping_list)
 
     async def get_shopping_list(self, list_id: str | None = None) -> dict[str, Any] | None:
+        return deepcopy(self._shopping_list)
+
+    async def add_shopping_item(self, item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]:
+        if list_id and list_id != self._shopping_list["id"]:
+            raise RepositoryError("Shopping list was not found")
+        self._shopping_list["items"].append({"id": str(uuid4()), **deepcopy(item), "purchased": False})
         return deepcopy(self._shopping_list)
 
     async def mark_item_purchased(

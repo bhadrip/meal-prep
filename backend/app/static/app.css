@@ -132,7 +132,8 @@ h1, h2, h3 { color: var(--ink); }
 .check-row { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--line); }
 .check-row:last-child { border-bottom: 0; }
 .check-row input { width: 19px; height: 19px; accent-color: var(--primary); }
-.check-row.done .row-copy { opacity: .5; text-decoration: line-through; }
+.check-row.done .row-copy strong, .check-row.done .row-copy small { opacity: .5; text-decoration: line-through; }
+.store-tag { margin-top: 6px; min-height: 22px; padding-inline: 7px; }
 .store-groups { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
 .review-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; align-items: start; }
 .feedback { padding: 15px 0; border-bottom: 1px solid var(--line); }

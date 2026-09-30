@@ -8,6 +8,7 @@ from app.application.services import (
     HouseholdService,
     PlanningService,
     RecipePantryService,
+    ShoppingService,
 )
 from app.infrastructure.repositories import DemoRepository
 
@@ -65,6 +66,23 @@ async def test_planning_service_requires_an_explicit_slot_for_every_entry():
     plan["entries"][0]["slot"] = "dinner"
     saved = await service.save_meal_plan(plan)
     assert saved["entries"][0]["slot"] == "dinner"
+
+
+@pytest.mark.asyncio
+async def test_shopping_item_store_is_optional_and_does_not_replace_list():
+    service = ShoppingService(DemoRepository())
+    original = await service.get()
+    tagged = await service.add_item({"name": "  Milk  ", "store": "  Trader Joe's  ", "quantity": 1})
+    assert len(tagged["items"]) == len(original["items"]) + 1
+    assert tagged["items"][-1]["name"] == "Milk"
+    assert tagged["items"][-1]["store"] == "Trader Joe's"
+
+    untagged = await service.add_item({"name": "Bread", "store": "   "}, tagged["id"])
+    assert untagged["items"][-1]["store"] is None
+    assert untagged["items"][-2]["store"] == "Trader Joe's"
+
+    with pytest.raises(ApplicationError, match="item.name"):
+        await service.add_item({"name": " "})
 
 
 @pytest.mark.asyncio
