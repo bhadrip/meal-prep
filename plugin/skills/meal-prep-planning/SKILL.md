@@ -126,6 +126,18 @@ remain connected to the meal, recipe, variant, and week it describes.
 
 ## Changes and confirmation
 
+- When a user attaches a fridge or pantry photo and asks to update the pantry,
+  identify only visible items, then call `save_pantry_photo` with the attached
+  file and `observed_items`. This saves a compact, private evidence copy and
+  links any applied pantry items to it. Use `apply_to_pantry: false` when the
+  user asks to see the list before saving changes; later use
+  `apply_pantry_evidence` with any corrections. Never label a count exact from
+  visual inspection or infer an expiry date from appearance.
+- Use `render_pantry_evidence` when the user wants to review past photo uploads.
+  If ChatGPT does not supply a file parameter for an attachment, explain that
+  the image cannot be archived through this tool and ask them to attach or
+  select the file for Meal Prep rather than claiming evidence was saved.
+
 - Explicit preference changes may be saved with
   `update_household_preferences`. Never turn a one-time situation or inferred
   behavior into a durable preference without asking.

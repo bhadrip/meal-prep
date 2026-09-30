@@ -8,6 +8,7 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
+from pydantic import BaseModel, ConfigDict
 
 from ..auth import SupabaseTokenVerifier
 from ..config import MCP_AUTH_SCOPES, get_settings
@@ -22,6 +23,16 @@ HOUSEHOLD_UI_URI = "ui://meal-prep/household-dashboard-v4.html"
 ONBOARDING_UI_URI = "ui://meal-prep/onboarding-v2.html"
 RECIPE_LIBRARY_UI_URI = "ui://meal-prep/recipe-library-v1.html"
 FEEDBACK_UI_URI = "ui://meal-prep/feedback-v2.html"
+PANTRY_EVIDENCE_UI_URI = "ui://meal-prep/pantry-evidence-v1.html"
+
+
+class ChatGPTPhotoFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    download_url: str
+    file_id: str
+    mime_type: str = ""
+    file_name: str = ""
 
 auth_settings = None
 token_verifier = None
@@ -69,7 +80,12 @@ mcp = FastMCP(
         "copy with copy_shared_recipe. "
         "When the user asks for a weekly check-in, what worked, or meal feedback, use render_feedback "
         "so feedback appears separately from confirmed household preferences. "
-        "Never place or imply an order; external commerce requires a separate confirmation flow."
+        "Never place or imply an order; external commerce requires a separate confirmation flow. "
+        "When the user attaches a fridge or pantry photo and asks to update the pantry, "
+        "call save_pantry_photo with the file parameter and visible observed_items. "
+        "Use apply_to_pantry=false if they want a list before deciding what to save. "
+        "Do not mark visual quantities exact or invent expiry dates. "
+        "Use render_pantry_evidence when they want to review saved pantry photos."
     ),
     stateless_http=True,
     json_response=True,
@@ -219,6 +235,33 @@ async def get_pantry() -> dict[str, Any]:
 async def update_pantry_item(item: dict[str, Any]) -> dict[str, Any]:
     """Create or update one pantry item. Never invent an exact expiry date."""
     return await services_for_request().food.update_pantry_item(item)
+
+
+@mcp.tool(annotations=APPEND, meta={"openai/fileParams": ["file"]}, structured_output=True)
+async def save_pantry_photo(
+    file: ChatGPTPhotoFile,
+    observed_items: list[dict[str, Any]],
+    storage_location: str = "fridge",
+    note: str = "",
+    apply_to_pantry: bool = True,
+) -> dict[str, Any]:
+    """Store a compact copy of an attached ChatGPT photo and observed items; optionally apply them to the pantry."""
+    return await services_for_request().food.save_pantry_photo(
+        file.model_dump(exclude_none=True), observed_items, storage_location, note, apply_to_pantry
+    )
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_pantry_evidence(limit: int = 30) -> dict[str, Any]:
+    """List saved pantry photos, observations, applied item IDs, and temporary private image links."""
+    photos = await services_for_request().food.get_pantry_photos(limit)
+    return {"photos": photos, "count": len(photos)}
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def apply_pantry_evidence(evidence_id: str, observed_items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Apply a previously captured pantry photo after review, with optional corrected items."""
+    return await services_for_request().food.apply_pantry_photo(evidence_id, observed_items)
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
@@ -380,6 +423,17 @@ async def render_feedback() -> dict[str, Any]:
 
 @mcp.tool(
     annotations=READ_ONLY,
+    meta={"ui": {"resourceUri": PANTRY_EVIDENCE_UI_URI}},
+    structured_output=True,
+)
+async def render_pantry_evidence(limit: int = 30) -> dict[str, Any]:
+    """Render saved pantry photo evidence as reviewable image cards."""
+    photos = await services_for_request().food.get_pantry_photos(limit)
+    return {"kind": "pantry_evidence", "photos": photos, "count": len(photos)}
+
+
+@mcp.tool(
+    annotations=READ_ONLY,
     meta={"ui": {"resourceUri": ONBOARDING_UI_URI}},
     structured_output=True,
 )
@@ -480,6 +534,18 @@ def recipe_library_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def feedback_resource() -> str:
+    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    PANTRY_EVIDENCE_UI_URI,
+    name="pantry-evidence-ui",
+    title="Pantry photo evidence",
+    description="Review compact saved pantry photos and the items observed in each.",
+    mime_type="text/html;profile=mcp-app",
+    meta={"ui": {"prefersBorder": True, "csp": {"resourceDomains": [settings.supabase_url.rstrip('/')] if settings.supabase_url else []}}},
+)
+def pantry_evidence_resource() -> str:
     return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
 
 

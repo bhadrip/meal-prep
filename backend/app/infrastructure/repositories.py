@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 from secrets import token_hex
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 import httpx
@@ -228,11 +229,131 @@ class SupabaseRepository:
             "quantity_confidence": item.get("quantityConfidence", "estimated"),
             "use_by_date": item.get("useByDate"),
             "freshness_basis": item.get("freshnessBasis"),
+            "provenance": item.get("provenance", {}),
         }
         rows = await self.request(
             "POST", "pantry_items", params={"on_conflict": "id"}, json=row
         )
         return rows[0]
+
+    async def save_pantry_photo(
+        self, *, image: bytes, width: int, height: int,
+        file_id: str, note: str, observations: list[dict[str, Any]],
+        apply_to_pantry: bool,
+    ) -> dict[str, Any]:
+        household_id = await self.household_id()
+        evidence_id = str(uuid4())
+        object_path = f"{household_id}/{evidence_id}.webp"
+        storage_url = f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/pantry-evidence/{object_path}"
+        try:
+            async with httpx.AsyncClient(timeout=25) as client:
+                response = await client.post(
+                    storage_url,
+                    content=image,
+                    headers={
+                        "apikey": self.settings.supabase_anon_key,
+                        "Authorization": f"Bearer {self.access_token}",
+                        "Content-Type": "image/webp",
+                        "cache-control": "3600",
+                        "x-upsert": "false",
+                    },
+                )
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise _repository_error("pantry-evidence upload", exc) from exc
+        try:
+            rows = await self.request("POST", "pantry_photo_evidence", json={
+                "id": evidence_id,
+                "household_id": household_id,
+                "object_path": object_path,
+                "source_file_id": file_id[:200],
+                "note": note[:1000],
+                "observations": observations,
+                "image_bytes": len(image),
+                "image_width": width,
+                "image_height": height,
+                "status": "captured",
+            })
+        except RepositoryError:
+            await self._remove_photo_object(object_path)
+            raise
+        evidence = rows[0]
+        if apply_to_pantry:
+            applied = []
+            for observation in observations:
+                item = {**observation, "provenance": {
+                    "sourceType": "pantry_photo",
+                    "evidenceId": evidence_id,
+                }}
+                saved = await self.update_pantry_item(item)
+                applied.append(saved["id"])
+            rows = await self.request("PATCH", "pantry_photo_evidence", params={"id": f"eq.{evidence_id}"}, json={
+                "applied_item_ids": applied,
+                "status": "applied",
+            })
+            evidence = rows[0]
+        return evidence
+
+    async def _remove_photo_object(self, object_path: str) -> None:
+        url = f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/pantry-evidence/{object_path}"
+        try:
+            async with httpx.AsyncClient(timeout=12) as client:
+                await client.delete(url, headers={
+                    "apikey": self.settings.supabase_anon_key,
+                    "Authorization": f"Bearer {self.access_token}",
+                })
+        except httpx.HTTPError:
+            pass
+
+    async def get_pantry_photos(self, limit: int = 30) -> list[dict[str, Any]]:
+        household_id = await self.household_id()
+        rows = await self.request("GET", "pantry_photo_evidence", params={
+            "select": "id,created_at,note,observations,image_bytes,image_width,image_height,status,applied_item_ids,object_path",
+            "household_id": f"eq.{household_id}",
+            "order": "created_at.desc",
+            "limit": str(min(max(limit, 1), 100)),
+        }) or []
+        for row in rows:
+            path = quote(row.pop("object_path"), safe="/")
+            url = f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/sign/pantry-evidence/{path}"
+            try:
+                async with httpx.AsyncClient(timeout=12) as client:
+                    response = await client.post(url, json={"expiresIn": 3600}, headers=self.headers)
+                    response.raise_for_status()
+                    signed = response.json().get("signedURL") or response.json().get("signedUrl")
+                row["image_url"] = f"{self.settings.supabase_url.rstrip('/')}/storage/v1{signed}" if signed and signed.startswith("/") else signed
+            except (httpx.HTTPError, ValueError):
+                row["image_url"] = None
+        return rows
+
+    async def apply_pantry_photo(
+        self, evidence_id: str, observations: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        try:
+            UUID(evidence_id)
+        except ValueError as exc:
+            raise RepositoryError("Invalid pantry photo evidence ID") from exc
+        household_id = await self.household_id()
+        rows = await self.request("GET", "pantry_photo_evidence", params={
+            "select": "*", "id": f"eq.{evidence_id}",
+            "household_id": f"eq.{household_id}", "limit": "1",
+        })
+        if not rows:
+            raise RepositoryError("Pantry photo evidence was not found")
+        evidence = rows[0]
+        if evidence["status"] == "applied":
+            raise RepositoryError("This pantry photo has already been applied")
+        chosen = observations if observations is not None else evidence["observations"]
+        applied = []
+        for observation in chosen:
+            saved = await self.update_pantry_item({**observation, "provenance": {
+                "sourceType": "pantry_photo", "evidenceId": evidence_id,
+            }})
+            applied.append(saved["id"])
+        updated = await self.request("PATCH", "pantry_photo_evidence", params={"id": f"eq.{evidence_id}"}, json={
+            "observations": chosen, "applied_item_ids": applied, "status": "applied",
+        })
+        return updated[0]
 
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
         return await self.rpc("save_meal_plan", {"plan": plan})
@@ -429,6 +550,7 @@ class DemoRepository:
             "use_by_date": date.today().isoformat(),
         }
     ]
+    _pantry_photos: list[dict[str, Any]] = []
     _meal_plan = {
         "id": "33333333-3333-3333-3333-333333333333",
         "weekStart": (date.today() - timedelta(days=date.today().weekday())).isoformat(),
@@ -574,6 +696,50 @@ class DemoRepository:
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]:
         row = {"id": item.get("id") or str(uuid4()), **deepcopy(item)}
         self._pantry = [value for value in self._pantry if value["id"] != row["id"]] + [row]
+        return deepcopy(row)
+
+    async def save_pantry_photo(
+        self, *, image: bytes, width: int, height: int,
+        file_id: str, note: str, observations: list[dict[str, Any]],
+        apply_to_pantry: bool,
+    ) -> dict[str, Any]:
+        evidence_id = str(uuid4())
+        applied = []
+        if apply_to_pantry:
+            for observation in observations:
+                saved = await self.update_pantry_item({**observation, "provenance": {
+                    "sourceType": "pantry_photo", "evidenceId": evidence_id,
+                }})
+                applied.append(saved["id"])
+        row = {
+            "id": evidence_id, "created_at": datetime.now(UTC).isoformat(),
+            "note": note, "observations": deepcopy(observations),
+            "image_bytes": len(image), "image_width": width, "image_height": height,
+            "status": "applied" if apply_to_pantry else "captured",
+            "applied_item_ids": applied, "image_url": None,
+        }
+        self._pantry_photos.append(row)
+        return deepcopy(row)
+
+    async def get_pantry_photos(self, limit: int = 30) -> list[dict[str, Any]]:
+        return deepcopy(self._pantry_photos[-limit:][::-1])
+
+    async def apply_pantry_photo(
+        self, evidence_id: str, observations: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        row = next((photo for photo in self._pantry_photos if photo["id"] == evidence_id), None)
+        if not row:
+            raise RepositoryError("Pantry photo evidence was not found")
+        if row["status"] == "applied":
+            raise RepositoryError("This pantry photo has already been applied")
+        chosen = observations if observations is not None else row["observations"]
+        applied = []
+        for observation in chosen:
+            saved = await self.update_pantry_item({**observation, "provenance": {
+                "sourceType": "pantry_photo", "evidenceId": evidence_id,
+            }})
+            applied.append(saved["id"])
+        row.update({"observations": deepcopy(chosen), "applied_item_ids": applied, "status": "applied"})
         return deepcopy(row)
 
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]:

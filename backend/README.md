@@ -25,6 +25,7 @@ app/
 - Remembered weekly rhythms, meal and week feedback linked across recipes, variants, occurrences, weeks, and reusable tags, plus user-confirmed household preferences
 - Supabase Auth bearer-token validation and OAuth 2.1 discovery through the MCP SDK
 - Supabase schema, transactional functions, and RLS policies
+- Private Supabase Storage bucket for compressed pantry photo evidence and a review gallery
 - Vercel serverless entrypoint and deployment configuration
 
 The website has no model integration. Users edit their data directly there. The service never calls a model to make domain writes. ChatGPT can create a plan through MCP, while Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
@@ -120,6 +121,20 @@ backend/.venv/bin/python backend/scripts/test-local-supabase.py
    repository. Enable **Deploy to production** if merges to `main` should apply
    new migrations automatically.
 
+   Migration `202609300003` creates the private `pantry-evidence` Storage bucket,
+   an RLS-protected evidence table, and household-scoped object policies. It
+   stores one WebP copy per ChatGPT photo (maximum 1600 px on the longest side,
+   without EXIF metadata). The original is not copied into Supabase. Review
+   links are signed for one hour. If a photo was saved for review first, call
+   `apply_pantry_evidence` after correcting the observed items.
+
+   Supabase Free currently includes [1 GB of file storage](https://supabase.com/docs/guides/platform/billing-on-supabase)
+   and [5 GB of egress](https://supabase.com/docs/guides/platform/manage-your-usage/egress).
+   Free does not include hosted image transformations, so the backend makes a
+   small WebP before upload. At an average 200 KB per photo, 1 GB holds roughly
+   5,000 photos; actual capacity depends on image detail and other files in the
+   project. There is no automatic deletion or retention limit.
+
 3. In Authentication, enable email sign-up, set the Site URL to the Vercel production URL, and add `/login` as an allowed redirect. Set the email OTP length to eight digits and include `{{ .Token }}` in the Magic Link email template; the sign-in form expects that code. The checked-in local template configures this for local Supabase, while hosted projects need the same settings in the Supabase dashboard.
 4. In Authentication > OAuth Server, enable OAuth 2.1, set the authorization path to `/oauth/consent`, and enable dynamic client registration.
 5. Use an asymmetric JWT signing key (ES256 or RS256) so OAuth clients can validate tokens through JWKS.
@@ -188,6 +203,7 @@ Data tools:
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
 - `create_recipe_share`, `list_recipe_shares`, `revoke_recipe_share`, `copy_shared_recipe`
 - `get_pantry`, `update_pantry_item`
+- `save_pantry_photo`, `get_pantry_evidence`, `apply_pantry_evidence`
 - `get_weekly_schedule`, `save_weekly_schedule`
 - `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`
 - `get_household_memory`, `save_household_memory`, `review_household_memory`
@@ -197,6 +213,7 @@ Data tools:
 Presentation tools:
 
 - `render_household_snapshot`
+- `render_pantry_evidence`
 - `render_recipe_library`
 - `render_feedback`
 - `render_onboarding`

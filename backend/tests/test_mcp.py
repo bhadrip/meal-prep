@@ -77,6 +77,10 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "get_household_memory",
         "save_household_memory",
         "review_household_memory",
+        "save_pantry_photo",
+        "get_pantry_evidence",
+        "apply_pantry_evidence",
+        "render_pantry_evidence",
     }.issubset(names)
     assert {"get_latest_retro", "get_weekly_retro", "save_weekly_retro"}.isdisjoint(names)
     add_tool = next(tool for tool in tools if tool["name"] == "add_shopping_item")
@@ -94,7 +98,14 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "render_onboarding": "ui://meal-prep/onboarding-v2.html",
         "render_meal_plan": "ui://meal-prep/meal-plan-v2.html",
         "render_shopping_list": "ui://meal-prep/shopping-list-v2.html",
+        "render_pantry_evidence": "ui://meal-prep/pantry-evidence-v1.html",
     }
+    photo_tool = next(tool for tool in tools if tool["name"] == "save_pantry_photo")
+    assert photo_tool["_meta"]["openai/fileParams"] == ["file"]
+    file_schema = photo_tool["inputSchema"]["$defs"]["ChatGPTPhotoFile"]
+    assert set(file_schema["properties"]) == {"download_url", "file_id", "mime_type", "file_name"}
+    assert set(file_schema["required"]) == {"download_url", "file_id"}
+    assert file_schema["additionalProperties"] is False
     preferences_tool = next(tool for tool in tools if tool["name"] == "update_household_preferences")
     assert "complete_onboarding" in preferences_tool["inputSchema"]["properties"]
 

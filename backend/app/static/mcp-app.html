@@ -149,6 +149,12 @@
       .feedback-row strong { font-size:.74rem; }
       .feedback-row p { margin-top:5px; color:var(--muted); font-size:.7rem; line-height:1.4; }
       .feedback-row small { color:var(--muted); font-size:.62rem; text-transform:capitalize; }
+      .evidence-list { display:grid; gap:12px; }
+      .evidence-card { display:grid; grid-template-columns:minmax(120px, 220px) 1fr; gap:12px; padding:12px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+      .evidence-card img { width:100%; max-height:230px; object-fit:contain; border-radius:9px; background:Canvas; }
+      .evidence-card h2 { font-size:.86rem; }
+      .evidence-card p,.evidence-card li { margin-top:6px; color:var(--muted); font-size:.72rem; line-height:1.4; }
+      .evidence-card ul { margin:8px 0 0; padding-left:18px; }
       .next-time { display:block; margin-top:6px; color:var(--accent)!important; font-weight:700; }
       button:disabled { cursor:not-allowed; opacity:.52; }
       .dashboard-intro { color:var(--muted); font-size:.73rem; line-height:1.4; }
@@ -173,6 +179,7 @@
         .recipe-grid,.recipe-columns { grid-template-columns:1fr; }
         .dashboard-grid { grid-template-columns:1fr; }
         .dashboard-card.wide { grid-column:auto; }
+        .evidence-card { grid-template-columns:1fr; }
       }
       .onboarding { max-width:760px; margin:0 auto; }
       .onboarding-hero { padding:18px; border-radius:18px; background:var(--soft); }
@@ -549,6 +556,15 @@
         return `<section class="success" role="status"><h1>Your household setup is saved.</h1><p>Meal Prep can now coordinate the food week around these preferences. You can change them at any time.</p></section>`;
       }
 
+      function renderPantryEvidence(photos) {
+        if (!photos.length) return '<div class="callout"><strong>No pantry photos saved yet</strong><p>Photos used for pantry updates will appear here.</p></div>';
+        return `<section class="evidence-list"><header><div><h1>Pantry photos</h1><p>Compact copies with the items recorded from each image.</p></div><span class="count-badge">${photos.length} photos</span></header>${photos.map((photo) => {
+          const imageUrl = safeHttpUrl(photo.image_url);
+          const observations = asArray(photo.observations);
+          return `<article class="evidence-card">${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Saved pantry photo" loading="lazy">` : '<div class="card-empty">Photo link unavailable</div>'}<div><h2>${escapeHtml(new Date(photo.created_at).toLocaleString())}</h2><p>${escapeHtml(photo.status === 'applied' ? 'Added to pantry' : 'Saved for review')} · ${escapeHtml(Math.round((photo.image_bytes || 0) / 1024))} KB</p>${photo.note ? `<p>${escapeHtml(photo.note)}</p>` : ''}<ul>${observations.map((item) => `<li>${escapeHtml(item.name)}${item.quantity ? ` — ${escapeHtml(item.quantity)} ${escapeHtml(item.unit || '')}` : ''}</li>`).join('') || '<li>No items recorded.</li>'}</ul></div></article>`;
+        }).join('')}</section>`;
+      }
+
       function applyResult(result) {
         const data = result?.structuredContent || result;
         if (!data) return;
@@ -559,6 +575,7 @@
           householdSnapshot = { sections: data.sections || {} };
           root.innerHTML = renderFeedback();
         }
+        else if (data.kind === 'pantry_evidence') root.innerHTML = renderPantryEvidence(asArray(data.photos));
         else if (data.kind === 'shopping_list') {
           shoppingList = data.shoppingList;
           root.innerHTML = renderShopping(shoppingList);
