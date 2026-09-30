@@ -47,7 +47,7 @@ async function setup() {
       email,
       options: {
         emailRedirectTo: redirectUrl.toString(),
-        shouldCreateUser: false,
+        shouldCreateUser: true,
       },
     });
     message.textContent = error ? error.message : 'Check your email for the sign-in link.';

@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     app_base_url: str = "http://localhost:8000"
     supabase_url: str = ""
     supabase_anon_key: str = ""
-    supabase_secret_key: str = ""
     auth_required: bool = False
     demo_user_id: str = "00000000-0000-0000-0000-000000000001"
     demo_household_id: str = "00000000-0000-0000-0000-000000000010"

@@ -1,18 +1,17 @@
-"""Household membership API and Supabase Auth invitation delivery."""
+"""Household membership API for signed-in accounts."""
 
 from __future__ import annotations
 
 from typing import Annotated, Any
 from uuid import UUID
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from .application.errors import RepositoryError
 from .auth import SupabaseTokenVerifier
-from .config import Settings, get_settings
+from .config import get_settings
 from .infrastructure.repositories import SupabaseRepository
 
 
@@ -44,7 +43,7 @@ def _expected_error(exc: RepositoryError) -> HTTPException:
         code = 403
     elif message.startswith(("This invitation", "Pending invitation", "Collaborator", "This person", "This account")):
         code = 409
-    elif message.startswith("Enter a valid email"):
+    elif message.startswith(("Enter a valid email", "Ask this person to sign up")):
         code = 422
     else:
         raise exc
@@ -58,43 +57,6 @@ async def _rpc(repository: SupabaseRepository, name: str, payload: dict[str, Any
         raise _expected_error(exc) from exc
 
 
-async def deliver_invitation(email: str, settings: Settings) -> None:
-    """Invite a new Auth user, or email an existing user a magic sign-in link."""
-    if not settings.supabase_secret_key:
-        raise HTTPException(status_code=503, detail="Invitation email is not configured")
-    auth_url = f"{settings.supabase_url.rstrip('/')}/auth/v1"
-    redirect_url = f"{settings.app_base_url.rstrip('/')}/invite"
-    admin_headers = {
-        "apikey": settings.supabase_secret_key,
-        "Authorization": f"Bearer {settings.supabase_secret_key}",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=12) as client:
-            response = await client.post(
-                f"{auth_url}/invite",
-                params={"redirect_to": redirect_url},
-                headers=admin_headers,
-                json={"email": email},
-            )
-            if response.is_success:
-                return
-            error_text = response.text.lower()
-            if response.status_code not in (400, 422) or not any(
-                word in error_text for word in ("already", "registered", "exists")
-            ):
-                raise HTTPException(status_code=502, detail="Could not send the invitation email")
-            response = await client.post(
-                f"{auth_url}/otp",
-                params={"redirect_to": redirect_url},
-                headers={"apikey": settings.supabase_anon_key, "Authorization": f"Bearer {settings.supabase_anon_key}"},
-                json={"email": email, "create_user": False},
-            )
-            if not response.is_success:
-                raise HTTPException(status_code=502, detail="Could not send the invitation email")
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Could not send the invitation email") from exc
-
-
 @router.get("/api/household/access")
 async def household_access(repository: Repository) -> dict:
     return await _rpc(repository, "household_access")
@@ -102,17 +64,7 @@ async def household_access(repository: Repository) -> dict:
 
 @router.post("/api/household/invitations")
 async def create_invitation(payload: InviteRequest, repository: Repository) -> dict:
-    settings = get_settings()
-    if not settings.supabase_secret_key:
-        raise HTTPException(status_code=503, detail="Invitation email is not configured")
-    invitation = await _rpc(repository, "create_household_invitation", {"invitee_email": payload.email})
-    try:
-        await deliver_invitation(invitation["email"], settings)
-    except HTTPException:
-        if not invitation.get("reused"):
-            await _rpc(repository, "revoke_household_invitation", {"invitation_id": invitation["id"]})
-        raise
-    return invitation
+    return await _rpc(repository, "create_household_invitation", {"invitee_email": payload.email})
 
 
 @router.delete("/api/household/invitations/{invitation_id}")

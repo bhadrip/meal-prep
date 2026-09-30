@@ -1,30 +1,21 @@
-# Household invitations
+# Household sharing
 
-## Goal
+## User flow
 
-Let someone who manages a household invite another adult, such as a spouse, to use the same Meal Prep data from their own account. The invitee must choose to join; receiving an email alone does not grant access.
+1. Both adults sign up for their own Meal Prep accounts and verify their email addresses.
+2. The household owner opens **Settings → Household members** and enters the other person's account email. Meal Prep creates a pending invitation for that verified account. It sends no invitation email.
+3. The invitee signs in, sees the pending invitation in Meal Prep, reviews the household name, and selects **Join household**.
+4. Both accounts then see and edit the same plan, recipes, pantry, shopping list, feedback, and household preferences on the website and through MCP. The owner can revoke a pending invitation or remove a member later.
 
-## Recommended user flow
+## Access rules
 
-1. In **Settings → Household members**, the owner sees current members and pending invitations. They enter an email address and select **Invite**. The first version offers one collaborator role: **Adult**, with access to the shared plan, recipes, pantry, shopping list, feedback, and household preferences.
-2. Supabase Auth emails a sign-in or account invitation link that leads to Meal Prep's invitation page. The page names the household. The owner can see pending invitations, resend one by entering the same email, or revoke it.
-3. The invitee opens the link, signs in or creates an account with the **same email address**, and sees the household name and what will be shared. They explicitly select **Join household**.
-4. Acceptance adds the invitee as a member of the existing household. Their next website or MCP request uses that household, so both people see and edit the same data. The owner sees them in the member list.
-5. The owner can remove a collaborator later. Removal takes effect on the next authenticated request, revokes recipe sharing links they created for the household, and does not delete household food data.
-
-## Product rules for the first version
-
-- Only an owner can invite, revoke invitations, or remove members. An adult can edit shared food data and preferences, but cannot manage membership.
-- An invitation is tied to one email address, expires after seven days, and can be accepted once. The app checks the signed-in account's verified email before joining.
-- Acceptance is atomic: it consumes the invitation and adds the member together. Revoked, expired, already used, or wrong-email links explain what happened without granting access.
-- Keep one active household per account in this version. If an invitee already belongs to a different configured household, show a clear conflict and do not silently switch, merge, or discard data. A brand-new empty household created automatically before acceptance may be replaced after verifying it has no user content.
-- Avoid changing `householdSize` automatically. It describes the number of people to plan food for, not the number of app accounts.
-- Record who invited, accepted, revoked, or removed someone for support and accountability. Do not display another person's private sign-in details beyond the email needed to manage the invitation.
-
-## Current architecture this builds on
-
-The database already has `household_members` and an `adult` role, with row-level access based on membership. The application currently creates a personal household on first use, chooses the earliest membership as the active household, and the login page only signs in pre-existing accounts. The invitation flow therefore needs account provisioning, an acceptance path before automatic household creation, and a clear rule for existing households. These are part of this feature, not just a new settings form.
+- Only an owner can invite, revoke invitations, or remove members. A collaborator has the `adult` role and can edit shared food data and preferences.
+- An invitation is bound to a verified account email, expires after seven days, and can be accepted once. A database function checks the signed-in account's verified email before granting membership.
+- Acceptance consumes the invitation and adds the member in one transaction. Revoked, expired, used, and wrong-account invitations cannot grant access.
+- Each account has one active household. If the invitee already has an untouched empty household created by bootstrap, acceptance replaces it. A configured household or one with food data blocks acceptance, so no data is silently merged or discarded.
+- Household size describes the number of people to plan food for and does not change automatically when an account joins.
+- Removing a member revokes their membership immediately and revokes recipe sharing links they created for that household. Shared food data stays in the household.
 
 ## Implementation
 
-The first release uses email delivery and one shared `adult` role. Owner-only database functions create, revoke, and remove access. The invitee must authenticate with the matching verified email, then accept. The invitation record lasts seven days; Supabase Auth email links may expire sooner and can be resent. Production needs a server-only Supabase secret key, an allowed `/invite` redirect, and custom SMTP for normal external email delivery.
+The API uses the caller's Supabase access token. Database functions check the owner role for invitation and removal actions, and row level security gates all shared tables by household membership. The application server has no Supabase secret key for sharing. Sign-up and sign-in still use Supabase Auth magic links, which require email delivery independently of household sharing.

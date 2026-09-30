@@ -35,7 +35,7 @@ const CARD_NAMES = {
   pantry: 'Pantry', recipes: 'Recipes', retro: 'Weekly review', feedback: 'Meal feedback', memories: 'Household memory',
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' };
-const state = { view: 'overview', snapshot: null, access: null, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
+const state = { view: 'overview', snapshot: null, access: null, pendingInvites: [], plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
 const esc = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const arr = (value) => Array.isArray(value) ? value : [];
 const pick = (value, ...keys) => keys.map((key) => value?.[key]).find((item) => item !== undefined && item !== null);
@@ -90,6 +90,14 @@ async function save(path, method, value) {
 }
 
 async function refresh(message) {
+  if (state.client) {
+    const pending = await api('/api/invitations/mine');
+    state.pendingInvites = arr(pending.invitations);
+    if (!pending.hasHousehold && state.pendingInvites.length) {
+      location.replace('/invite');
+      return;
+    }
+  }
   const snapshot = await api('/api/app/snapshot');
   state.snapshot = snapshot;
   if (state.client) state.access = await api('/api/household/access');
@@ -138,6 +146,7 @@ function renderOverview() {
   const incomplete = h.onboardingComplete === false;
   const displayName = h.householdName && h.householdName !== 'My household' ? h.householdName : 'Your household';
   let html = `<section class="hero"><div class="hero-copy"><p class="eyebrow">${esc(incomplete ? 'Getting started' : displayName)}</p><h2>${incomplete ? 'Set up your kitchen.' : 'Your food week, in one place.'}</h2><p>${incomplete ? 'Add your household’s food rules and weekly preferences to get started.' : 'Review your plan, recipes, pantry, and shopping list from one workspace.'}</p><div style="margin-top:22px">${action(incomplete ? 'Set up household' : 'Open weekly plan', incomplete ? 'settings' : 'plan', '', 'secondary')}</div></div><div class="hero-stat"><strong>${esc(arr(plan?.entries).length)}</strong><span>meals and prep tasks in the latest plan</span></div></section>`;
+  if (state.pendingInvites.length) html = `<div class="callout"><b>Household invitation waiting</b><p>You have an invitation to join ${esc(state.pendingInvites[0].householdName)}.</p>${action('Review invitation', 'review-invite')}</div>` + html;
   html += `<div class="section-head"><div><h2>At a glance</h2><p>The latest saved information from your household.</p></div></div>`;
   html += `<div class="card-grid">`;
   html += card('Weekly plan', '▦', `<div class="metric">${arr(plan?.entries).length}</div><p class="muted tiny">planned meals and prep tasks</p>`, `<div style="margin-top:20px">${action('View plan', 'plan')}</div>`);
@@ -252,8 +261,9 @@ function renderSettings() {
   const memberRows = members.map((member) => row(member.email, label(member.role), owner && member.role !== 'owner' ? action('Remove', 'remove-member', member.userId, 'danger') : '')).join('');
   const inviteRows = invitations.filter((invite) => invite.status === 'pending').map((invite) => row(invite.email, `Invited · expires ${new Date(invite.expiresAt).toLocaleDateString()}`, owner ? action('Revoke', 'revoke-invite', invite.id, 'danger') : '')).join('');
   const accessCard = state.client ? `<article class="card"><div class="card-head"><h3>Household members</h3><span class="card-icon">♙</span></div>
+    ${state.pendingInvites.length ? `<p class="muted tiny">You have an invitation to join ${esc(state.pendingInvites[0].householdName)}.</p><div style="margin:12px 0 20px">${action('Review invitation', 'review-invite')}</div>` : ''}
     <div class="stack">${memberRows || '<p class="muted tiny">No members yet.</p>'}</div>
-    ${owner ? `<form id="invite-form" class="invite-form"><label for="invite-email">Invite an adult by email</label><input id="invite-email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required /><button class="button primary" type="submit">Send invitation</button></form>` : ''}
+    ${owner ? `<form id="invite-form" class="invite-form"><label for="invite-email">Share with an existing account</label><input id="invite-email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required /><button class="button primary" type="submit">Create invitation</button></form>` : ''}
     ${inviteRows ? `<p class="muted tiny" style="margin:20px 0 10px">Pending invitations</p><div class="stack">${inviteRows}</div>` : ''}
   </article>` : '';
   return `<div class="settings-grid"><div class="stack">
@@ -456,6 +466,7 @@ async function handleAction(actionName, id) {
   const pantry = arr(section('pantry'));
   const shopping = arr(section('shoppingList')?.items);
   const plan = arr(state.plan?.entries);
+  if (actionName === 'review-invite') { location.assign('/invite'); return; }
   if (actionName === 'revoke-invite') {
     if (!confirm('Revoke this invitation?')) return;
     await api(`/api/household/invitations/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -618,7 +629,7 @@ content.addEventListener('submit', async (event) => {
     const data = new FormData(event.target);
     if (event.target.id === 'invite-form') {
       await save('/api/household/invitations', 'POST', { email: String(data.get('email') || '').trim() });
-      await refresh('Invitation email sent.');
+      await refresh('Invitation created. Ask them to open Meal Prep.');
       return;
     }
     if (event.target.id === 'settings-form') {
@@ -661,17 +672,12 @@ async function start() {
     const email = data.session.user?.email || 'Account';
     document.querySelector('#account-label').textContent = email;
     document.querySelector('#account-avatar').textContent = email.slice(0, 2).toUpperCase();
-    const pending = await api('/api/invitations/mine');
-    if (!pending.hasHousehold && arr(pending.invitations).length) {
-      location.replace('/invite');
-      return;
-    }
   } else {
     document.querySelector('#mode-badge').hidden = false;
     document.querySelector('#account-label').textContent = 'Local demo';
   }
   await refresh();
-  if (household().onboardingComplete === false) view('settings');
+  if (household().onboardingComplete === false && !state.pendingInvites.length) view('settings');
 }
 
 start().catch((error) => {

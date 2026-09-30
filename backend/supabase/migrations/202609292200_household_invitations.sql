@@ -68,6 +68,10 @@ begin
     where m.household_id = target_id and lower(u.email) = normalized_email) then
     raise exception 'This person is already a household member';
   end if;
+  if not exists (select 1 from auth.users u where lower(u.email) = normalized_email
+    and u.email_confirmed_at is not null) then
+    raise exception 'Ask this person to sign up and verify their email before inviting them';
+  end if;
   select id into invitation_id from public.household_invitations
   where household_id = target_id and email = normalized_email
     and revoked_at is null and accepted_at is null and expires_at > now()
