@@ -252,9 +252,9 @@ function renderReviews() {
   const feedback = arr(section('feedback'));
   const memories = arr(section('memories'));
   const feedbackUnavailable = sectionStatus('feedback') === 'unavailable';
-  let html = `<div class="toolbar"><p class="muted tiny">Review what worked and what to change next time.</p>${feedbackUnavailable ? '' : action('Add meal feedback', 'add-feedback', '', 'primary')}</div>`;
+  let html = `<div class="toolbar review-toolbar"><p class="muted tiny">Capture what went well, what was difficult, and lessons for next time.</p>${feedbackUnavailable ? '' : `<div class="review-actions">${action('Review this week', 'review-week', '', 'primary')}${action('Review a meal', 'add-feedback')}</div>`}</div>`;
   html += `<div class="review-grid"><div class="stack">`;
-  html += card('Meal feedback', '♡', feedbackUnavailable ? '<p class="muted tiny">Cooking notes are temporarily unavailable.</p>' : feedback.length ? feedback.map((item) => `<div class="feedback"><div class="feedback-head"><strong>${esc(item.occurrence?.title || item.meal_title || 'Weekly note')}</strong><span class="pill">${esc(label(item.feedback_type || item.feedbackType || 'feedback'))}</span></div><p>${esc(item.note)}</p>${item.next_time ? `<p class="next">Next time: ${esc(item.next_time)}</p>` : ''}</div>`).join('') : '<p class="muted tiny">No meal feedback saved yet.</p>');
+  html += card('Meal and week reviews', '♡', feedbackUnavailable ? '<p class="muted tiny">Reviews are temporarily unavailable.</p>' : feedback.length ? feedback.map((item) => `<div class="feedback"><div class="feedback-head"><strong>${esc(item.occurrence?.title || item.meal_title || (item.week_start ? `Week of ${item.week_start}` : 'Weekly review'))}</strong><span class="pill">${esc(label(item.feedback_type || item.feedbackType || 'review'))}</span></div><p>${esc(item.note)}</p>${item.next_time ? `<p class="next">Lesson for next time: ${esc(item.next_time)}</p>` : ''}</div>`).join('') : '<p class="muted tiny">No reviews saved yet. Start with something that worked this week.</p>');
   html += `</div><div class="stack">`;
   html += card('Household memory', '✦', memories.length ? `<div class="stack">${memories.map((item) => `<div class="row"><div class="row-copy"><strong>${esc(item.content)}</strong><small>${esc(label(item.status))} · ${esc(label(item.scope || 'persistent'))}</small></div><div style="display:flex;gap:4px">${item.status === 'suggested' ? action('Confirm', 'confirm-memory', item.id) : ''}${action('Edit', 'edit-memory', item.id)}</div></div>`).join('')}</div>` : '<p class="muted tiny">No saved memories.</p>', `<div style="margin-top:16px">${action('Add memory', 'add-memory')}</div>`);
   html += `<div class="callout"><b>How memory works</b>Meal feedback is evidence from one experience. A household memory becomes a planning default only after you confirm it.</div></div></div>`;
@@ -430,9 +430,12 @@ function openEditor(kind, item = null) {
   } else if (kind === 'schedule') {
     title = 'Weekly rhythm';
     markup = field('weekStart', 'Week of', state.weekStart, { type: 'date', required: true, wide: true }) + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('');
+  } else if (kind === 'weekly-review') {
+    title = 'Review this week';
+    markup = field('weekStart', 'Week of', state.weekStart || monday(), { type: 'date', required: true }) + field('feedbackType', 'How did it go?', 'worked_well', { choices: [{ value: 'worked_well', label: 'Worked well' }, { value: 'problem', label: 'Did not work' }, { value: 'change_next_time', label: 'Change next time' }] }) + field('note', 'What happened?', '', { type: 'textarea', required: true, wide: true, placeholder: 'For example, prepping vegetables on Sunday saved time.' }) + field('nextTime', 'Lesson learned or change for next time (optional)', '', { type: 'textarea', wide: true });
   } else if (kind === 'feedback') {
     title = 'Add meal feedback';
-    markup = field('recipeId', 'Saved recipe', item?.id || '', { choices: [{ value: '', label: 'Week only' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('weekStart', 'Week of', state.weekStart, { type: 'date' }) + field('feedbackType', 'Feedback type', 'worked_well', { choices: ['worked_well', 'change_next_time', 'problem', 'preference'] }) + field('rating', 'Rating (1–5, optional)', '', { type: 'number', min: 1, max: 5 }) + field('note', 'What happened', '', { type: 'textarea', required: true, wide: true }) + field('nextTime', 'Change for next time', '', { type: 'textarea', wide: true }) + field('tags', 'Reusable tags, separated by commas', '', { wide: true }) + field('variantName', 'Preparation variant (optional)', '', { wide: true }) + field('adaptations', 'What changed — one per line', '', { type: 'textarea', wide: true });
+    markup = field('recipeId', 'Saved recipe', item?.id || '', { choices: [{ value: '', label: 'No saved recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('weekStart', 'Week of', state.weekStart || monday(), { type: 'date' }) + field('feedbackType', 'How did it go?', 'worked_well', { choices: [{ value: 'worked_well', label: 'Worked well' }, { value: 'problem', label: 'Did not work' }, { value: 'change_next_time', label: 'Change next time' }, { value: 'preference_signal', label: 'Preference signal' }] }) + field('rating', 'Rating (1–5, optional)', '', { type: 'number', min: 1, max: 5 }) + field('note', 'What happened?', '', { type: 'textarea', required: true, wide: true }) + field('nextTime', 'Lesson learned or change for next time (optional)', '', { type: 'textarea', wide: true }) + field('tags', 'Reusable tags, separated by commas', '', { wide: true }) + field('variantName', 'Preparation variant (optional)', '', { wide: true }) + field('adaptations', 'What changed — one per line', '', { type: 'textarea', wide: true });
   } else if (kind === 'memory') {
     title = item ? 'Review memory' : 'Add household memory';
     markup = field('content', 'What should be remembered?', item?.content, { type: 'textarea', required: true, wide: true }) + field('scope', 'Scope', item?.scope || 'persistent', { choices: ['persistent', 'this_week'] }) + (item ? field('action', 'Action', 'update', { choices: ['update', 'forget'] }) : '<p class="muted tiny">New memories are saved as suggestions until confirmed.</p>');
@@ -474,6 +477,8 @@ async function submitEditor(data) {
     }
   } else if (kind === 'schedule') {
     await save('/api/schedule', 'PUT', { weekStart: value('weekStart'), days: DAYS.map((day) => ({ day, mode: value(day) })), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
+  } else if (kind === 'weekly-review') {
+    await save('/api/feedback', 'POST', { weekStart: monday(`${value('weekStart')}T12:00:00`), feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: ['weekly-check-in'] });
   } else if (kind === 'feedback') {
     if (!value('recipeId') && !value('weekStart')) throw new Error('Choose a recipe or a week.');
     await save('/api/feedback', 'POST', { recipeId: value('recipeId') || null, weekStart: value('weekStart') || null, feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: comma('tags'), rating: numberOrNull(value('rating')), variantName: value('variantName'), adaptations: lines('adaptations') });
@@ -568,6 +573,7 @@ async function handleAction(actionName, id) {
     return refresh('Grocery item removed.');
   }
   if (actionName === 'edit-schedule') return openEditor('schedule');
+  if (actionName === 'review-week') return openEditor('weekly-review');
   if (actionName === 'add-feedback') return openEditor('feedback', recipes.find((item) => item.id === id));
   if (actionName === 'add-memory') return openEditor('memory');
   if (actionName === 'edit-memory') return openEditor('memory', arr(section('memories')).find((item) => item.id === id));

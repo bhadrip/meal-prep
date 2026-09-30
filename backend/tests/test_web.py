@@ -42,6 +42,31 @@ def test_retired_weekly_review_api_is_not_exposed():
     assert client.put("/api/retros", json={"note": "Old format"}).status_code == 404
 
 
+def test_weekly_reviews_are_visible_and_saved_as_feedback():
+    demo_repository.cache_clear()
+    client = TestClient(app)
+    html = client.get("/app").text
+    mobile_nav = html.split('<nav class="mobile-nav"', 1)[1].split("</nav>", 1)[0]
+    assert 'data-view="reviews"' in mobile_nav
+    script = client.get("/static/app.js").text
+    assert "Review this week" in script
+    assert "Lesson learned or change for next time" in script
+
+    saved = client.post("/api/feedback", json={
+        "weekStart": "2026-09-28",
+        "feedbackType": "worked_well",
+        "note": "Sunday prep made lunches easy.",
+        "nextTime": "Prep extra vegetables.",
+        "tags": ["weekly-check-in"],
+    })
+    assert saved.status_code == 200
+    assert saved.json()["feedback_type"] == "worked_well"
+    assert saved.json()["next_time"] == "Prep extra vegetables."
+    reviews = client.get("/api/feedback?week_start=2026-09-28").json()["items"]
+    assert any(item["id"] == saved.json()["id"] for item in reviews)
+    demo_repository.cache_clear()
+
+
 def test_local_website_edits_share_application_data_across_requests():
     demo_repository.cache_clear()
     client = TestClient(app)
