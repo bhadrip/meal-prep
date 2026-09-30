@@ -51,6 +51,9 @@ h1, h2, h3 { color: var(--ink); }
 .eyebrow { margin-bottom: 7px; color: var(--copper); font-family: var(--font-label); font-size: .62rem; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; }
 .topbar h1 { font-family: var(--font-display); font-size: 1.85rem; font-weight: 780; letter-spacing: -.055em; line-height: 1; }
 .top-actions { display: flex; align-items: center; gap: 9px; }
+.household-picker { display: grid; gap: 2px; color: var(--muted); font-size: .6rem; font-weight: 700; }
+.household-picker[hidden] { display: none; }
+.household-picker select { max-width: 220px; min-height: 42px; padding: 0 28px 0 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); font: inherit; font-size: .76rem; font-weight: 700; }
 .icon-button { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--primary); font-size: 1.15rem; }
 .icon-button:hover { border-color: #a7aec5; }
 .account-button { display: flex; align-items: center; gap: 9px; min-height: 42px; padding: 5px 12px 5px 5px; border: 1px solid var(--line); border-radius: 13px; background: var(--paper); color: var(--ink); font-size: .78rem; font-weight: 700; }
@@ -211,6 +214,7 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
   .topbar { min-height: 76px; padding: 15px 18px; }
   .topbar h1 { font-size: 1.55rem; }
   .account-button { padding-right: 5px; }
+  .household-picker select { max-width: 135px; }
   #account-label, .mode-badge { display: none; }
   .content { padding: 22px 16px 100px; }
   .hero { min-height: auto; padding: 30px 24px; border-radius: 21px; }

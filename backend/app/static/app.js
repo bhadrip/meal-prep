@@ -6,6 +6,8 @@ const errorBox = document.querySelector('#dialog-error');
 const toastBox = document.querySelector('#toast');
 const shell = document.querySelector('.shell');
 const sidebarToggle = document.querySelector('#sidebar-toggle');
+const householdPicker = document.querySelector('#household-picker');
+const householdSelect = document.querySelector('#household-select');
 
 function setSidebarCollapsed(collapsed) {
   shell.classList.toggle('sidebar-collapsed', collapsed);
@@ -35,7 +37,7 @@ const CARD_NAMES = {
   pantry: 'Pantry', recipes: 'Recipes', feedback: 'Meal feedback', memories: 'Household memory',
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' };
-const state = { view: 'overview', snapshot: null, access: null, pendingInvites: [], plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
+const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
 const esc = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const arr = (value) => Array.isArray(value) ? value : [];
 const pick = (value, ...keys) => keys.map((key) => value?.[key]).find((item) => item !== undefined && item !== null);
@@ -108,7 +110,15 @@ async function refresh(message) {
   }
   const snapshot = await api('/api/app/snapshot');
   state.snapshot = snapshot;
-  if (state.client) state.access = await api('/api/household/access');
+  if (state.client) {
+    const [access, memberships] = await Promise.all([api('/api/household/access'), api('/api/households')]);
+    state.access = access;
+    state.households = arr(memberships.households);
+    state.activeHouseholdId = memberships.activeHouseholdId;
+    householdPicker.hidden = false;
+    householdSelect.innerHTML = state.households.map((item) => `<option value="${esc(item.id)}">${esc(item.name)} · ${esc(label(item.role))}</option>`).join('');
+    householdSelect.value = state.activeHouseholdId || '';
+  }
   state.plan = section('mealPlan');
   state.schedule = section('schedule');
   if (!state.weekStart) state.weekStart = state.plan?.weekStart || state.schedule?.week_start || monday();
@@ -275,6 +285,12 @@ function renderSettings() {
     ${owner ? `<form id="invite-form" class="invite-form"><label for="invite-email">Share with an existing account</label><input id="invite-email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required /><button class="button primary" type="submit">Create invitation</button></form>` : ''}
     ${inviteRows ? `<p class="muted tiny" style="margin:20px 0 10px">Pending invitations</p><div class="stack">${inviteRows}</div>` : ''}
   </article>` : '';
+  const householdsCard = state.client ? `<article class="card"><div class="card-head"><h3>Your households</h3><span class="card-icon">⌂</span></div>
+    <p class="muted tiny">Choose a household above to switch what you see here and in MCP.</p>
+    <div class="stack" style="margin:16px 0">${state.households.map((item) => row(item.name, `${label(item.role)}${item.id === state.activeHouseholdId ? ' · Active' : ''}`)).join('')}</div>
+    <form id="create-household-form" class="invite-form"><label for="new-household-name">Create another household</label><input id="new-household-name" name="name" maxlength="120" required placeholder="Household name" /><button class="button primary" type="submit">Create household</button></form>
+    ${state.access?.role && state.access.role !== 'owner' ? `<div style="margin-top:16px">${action('Leave this household', 'leave-household', '', 'danger')}</div>` : ''}
+  </article>` : '';
   return `<div class="settings-grid"><div class="stack">
     <article class="card"><div class="card-head"><h3>Household preferences</h3><span class="card-icon">⚙</span></div>
       <form id="settings-form" class="form-grid">
@@ -292,6 +308,7 @@ function renderSettings() {
       <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save visible cards</button></form>
     </article>
   </div><div class="stack">
+    ${householdsCard}
     ${accessCard}
     <article class="card"><div class="card-head"><h3>Your session</h3><span class="card-icon">○</span></div><p class="muted tiny" style="margin-bottom:15px">${esc(state.session?.user?.email || 'Local demo mode')}</p>${state.client ? action('Sign out', 'sign-out', '', 'danger') : '<p class="muted tiny">Demo data resets when the local server restarts.</p>'}</article>
   </div></div>`;
@@ -475,6 +492,13 @@ async function handleAction(actionName, id) {
   const shopping = arr(section('shoppingList')?.items);
   const plan = arr(state.plan?.entries);
   if (actionName === 'review-invite') { location.assign('/invite'); return; }
+  if (actionName === 'leave-household') {
+    if (!confirm('Leave this household? You will lose access to its shared data.')) return;
+    await api('/api/households/leave', { method: 'POST' });
+    state.weekStart = null;
+    state.recipe = null;
+    return refresh('You left the household.');
+  }
   if (actionName === 'revoke-invite') {
     if (!confirm('Revoke this invitation?')) return;
     await api(`/api/household/invitations/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -624,12 +648,19 @@ content.addEventListener('input', (event) => {
 });
 
 content.addEventListener('submit', async (event) => {
-  if (!['settings-form', 'dashboard-form', 'invite-form'].includes(event.target.id)) return;
+  if (!['settings-form', 'dashboard-form', 'invite-form', 'create-household-form'].includes(event.target.id)) return;
   event.preventDefault();
   const submit = event.target.querySelector('[type="submit"]');
   submit.disabled = true;
   try {
     const data = new FormData(event.target);
+    if (event.target.id === 'create-household-form') {
+      await save('/api/households', 'POST', { name: String(data.get('name') || '').trim() });
+      state.weekStart = null;
+      state.recipe = null;
+      await refresh('Household created and selected.');
+      return;
+    }
     if (event.target.id === 'invite-form') {
       await save('/api/household/invitations', 'POST', { email: String(data.get('email') || '').trim() });
       await refresh('Invitation created. Ask them to open Meal Prep.');
@@ -663,6 +694,21 @@ form.addEventListener('submit', async (event) => {
 
 document.querySelector('#refresh-button').addEventListener('click', () => refresh('Up to date.').catch((error) => showToast(error.message)));
 document.querySelector('#account-button').addEventListener('click', () => view('settings'));
+householdSelect.addEventListener('change', async () => {
+  householdSelect.disabled = true;
+  try {
+    await api(`/api/households/${encodeURIComponent(householdSelect.value)}/activate`, { method: 'POST' });
+    state.weekStart = null;
+    state.recipe = null;
+    state.recipeResults = null;
+    state.shareUrl = null;
+    state.shareId = null;
+    await refresh('Household switched.');
+  } catch (error) {
+    householdSelect.value = state.activeHouseholdId || '';
+    showToast(error.message);
+  } finally { householdSelect.disabled = false; }
+});
 
 async function start() {
   state.config = await fetch('/api/auth/config').then((response) => response.json());

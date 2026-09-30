@@ -106,6 +106,15 @@ class SupabaseRepository:
             raise RepositoryError("No household is available for this user")
         return value
 
+    async def list_households(self) -> dict[str, Any]:
+        return await self.rpc("list_my_households")
+
+    async def switch_household(self, household_id: str) -> dict[str, Any]:
+        return await self.rpc("set_active_household", {"requested_household_id": household_id})
+
+    async def create_household(self, name: str) -> dict[str, Any]:
+        return await self.rpc("create_my_household", {"requested_name": name})
+
     async def update_household_preferences(self, patch: dict[str, Any]) -> dict[str, Any]:
         allowed = {
             "household_size": "householdSize",
@@ -460,6 +469,17 @@ class DemoRepository:
 
     async def get_household_context(self, **_: Any) -> dict[str, Any]:
         return deepcopy(self._context)
+
+    async def list_households(self) -> dict[str, Any]:
+        return {"activeHouseholdId": self._context["householdId"], "households": [{"id": self._context["householdId"], "name": self._context["householdName"], "role": "owner"}]}
+
+    async def switch_household(self, household_id: str) -> dict[str, Any]:
+        if household_id != self._context["householdId"]:
+            raise RepositoryError("Household is not available in demo mode")
+        return await self.list_households()
+
+    async def create_household(self, name: str) -> dict[str, Any]:
+        raise RepositoryError("Creating households requires Supabase")
 
     async def update_household_preferences(self, patch: dict[str, Any]) -> dict[str, Any]:
         self._context.update(deepcopy(patch))

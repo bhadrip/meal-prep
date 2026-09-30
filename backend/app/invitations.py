@@ -23,6 +23,10 @@ class InviteRequest(BaseModel):
     email: str
 
 
+class HouseholdRequest(BaseModel):
+    name: str
+
+
 async def invitation_repository(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> SupabaseRepository:
@@ -41,10 +45,12 @@ def _expected_error(exc: RepositoryError) -> HTTPException:
     message = str(exc)
     if message.startswith(("Only a household owner", "Sign in with")):
         code = 403
-    elif message.startswith(("This invitation", "Pending invitation", "Collaborator", "This person", "This account")):
+    elif message.startswith(("This invitation", "Pending invitation", "Collaborator", "This person", "This account", "An owner cannot leave")):
         code = 409
-    elif message.startswith(("Enter a valid email", "Ask this person to sign up")):
+    elif message.startswith(("Enter a valid email", "Enter a household name", "Ask this person to sign up")):
         code = 422
+    elif message.startswith("Household is not available"):
+        code = 404
     else:
         raise exc
     return HTTPException(status_code=code, detail=message)
@@ -60,6 +66,26 @@ async def _rpc(repository: SupabaseRepository, name: str, payload: dict[str, Any
 @router.get("/api/household/access")
 async def household_access(repository: Repository) -> dict:
     return await _rpc(repository, "household_access")
+
+
+@router.get("/api/households")
+async def list_households(repository: Repository) -> dict:
+    return await _rpc(repository, "list_my_households")
+
+
+@router.post("/api/households")
+async def create_household(payload: HouseholdRequest, repository: Repository) -> dict:
+    return await _rpc(repository, "create_my_household", {"requested_name": payload.name})
+
+
+@router.post("/api/households/{household_id}/activate")
+async def activate_household(household_id: UUID, repository: Repository) -> dict:
+    return await _rpc(repository, "set_active_household", {"requested_household_id": str(household_id)})
+
+
+@router.post("/api/households/leave")
+async def leave_household(repository: Repository) -> dict:
+    return await _rpc(repository, "leave_active_household")
 
 
 @router.post("/api/household/invitations")

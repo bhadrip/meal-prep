@@ -35,7 +35,7 @@ async function load() {
     message.textContent = 'No active invitation was found for this account. Ask the household owner to create a new one if it expired or was revoked.';
     return;
   }
-  message.textContent = pending.hasHousehold ? 'An untouched personal household can be replaced when you join. Any household with saved data will be preserved.' : '';
+  message.textContent = pending.hasHousehold ? 'Joining adds this household to your account. Your existing households and data stay in place.' : '';
   invitations.innerHTML = pending.invitations.map((invite) => `<section class="invite-row"><strong>${escapeHtml(invite.householdName)}</strong><small>Invitation expires ${escapeHtml(new Date(invite.expiresAt).toLocaleDateString())}</small><button class="button primary" type="button" data-id="${escapeHtml(invite.id)}">Join household</button></section>`).join('');
   invitations.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-id]');
@@ -43,7 +43,7 @@ async function load() {
     button.disabled = true;
     try {
       await api(`/api/invitations/${encodeURIComponent(button.dataset.id)}/accept`, 'POST');
-      message.textContent = 'You joined the household. Opening Meal Prep…';
+      message.textContent = 'You joined the household. It is now active; opening Meal Prep…';
       location.replace('/');
     } catch (joinError) {
       message.textContent = joinError.message;
