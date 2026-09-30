@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Plan meals, prep, pantry, and shopping with Meal Prep through an MCP enabled assistant or the app." />
+    <title>Meal Prep · Your food week, together</title>
+    <link rel="icon" type="image/svg+xml" href="/static/meal-prep-icon.svg" />
+    <link rel="stylesheet" href="/static/typography.css?v=1" />
+    <style>
+      :root { font-family:var(--font-body); color:#25283b; background:#f4f1eb; }
+      * { box-sizing:border-box; }
+      body { margin:0; }
+      a { color:inherit; }
+      .wrap { width:min(1060px, calc(100% - 40px)); margin-inline:auto; }
+      .topbar { display:flex; align-items:center; justify-content:space-between; gap:20px; padding-block:24px; }
+      .brand { display:flex; align-items:center; gap:10px; font-family:var(--font-display); font-size:1.18rem; font-weight:800; text-decoration:none; letter-spacing:-.04em; }
+      .mark { display:block; width:38px; height:38px; }
+      .topbar nav { display:flex; gap:20px; align-items:center; font-size:.9rem; }
+      .topbar nav a { text-decoration:none; }
+      .topbar nav a:hover, .text-link:hover { text-decoration:underline; }
+      main { padding-bottom:64px; }
+      .hero { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(290px,.9fr); gap:56px; align-items:center; padding-block:70px 78px; }
+      .eyebrow { margin:0 0 18px; color:#a35c46; font-family:var(--font-label); font-size:.73rem; letter-spacing:.1em; text-transform:uppercase; }
+      h1, h2, h3, p { margin-top:0; }
+      h1 { max-width:650px; margin-bottom:22px; font-family:var(--font-display); font-size:clamp(3.25rem, 6vw, 5.5rem); line-height:1.02; letter-spacing:-.065em; }
+      .lead { max-width:540px; margin-bottom:28px; color:#5f6170; font-size:1.15rem; line-height:1.55; }
+      .actions { display:flex; flex-wrap:wrap; gap:10px; }
+      .button { display:inline-flex; align-items:center; justify-content:center; min-height:48px; padding:0 20px; border-radius:10px; background:#29324c; color:white; font-weight:750; text-decoration:none; }
+      .button:hover { background:#3d486b; }
+      .button.secondary { border:1px solid #c9c6c0; background:#fffcf7; color:#29324c; }
+      .button.secondary:hover { background:#e9eaf2; }
+      .hero-note { margin:12px 0 0; color:#737583; font-size:.82rem; }
+      .preview { padding:22px; border:1px solid #dfdcd5; border-radius:18px; background:#fffcf7; box-shadow:0 22px 65px rgba(39,37,46,.1); transform:rotate(1deg); }
+      .preview-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:16px; border-bottom:1px solid #dfdcd5; }
+      .preview-head strong { font-size:.95rem; }
+      .preview-head span { color:#737583; font-size:.72rem; }
+      .preview-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:15px; }
+      .preview-card { min-height:106px; padding:15px; border-radius:12px; background:#e9eaf2; }
+      .preview-card:nth-child(2) { background:#f5e7df; }
+      .preview-card:nth-child(3) { grid-column:1 / -1; min-height:88px; background:#eee7dc; }
+      .preview-card small { display:block; margin-bottom:12px; color:#666a7c; font-family:var(--font-label); font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; }
+      .preview-card strong { display:block; font-size:.91rem; line-height:1.3; }
+      .section { padding-block:34px; border-top:1px solid #dfdcd5; }
+      h2 { margin-bottom:14px; font-family:var(--font-display); font-size:clamp(1.8rem,3vw,2.3rem); letter-spacing:-.04em; }
+      .section-intro { max-width:660px; color:#737583; line-height:1.55; }
+      .paths { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:24px; }
+      .path { padding:25px; border:1px solid #dfdcd5; border-radius:14px; background:#fffcf7; }
+      .path-number { display:grid; place-items:center; width:32px; height:32px; margin-bottom:20px; border-radius:9px; background:#e9eaf2; color:#29324c; font-size:.85rem; font-weight:800; }
+      h3 { margin-bottom:9px; font-size:1.12rem; }
+      .path p { margin-bottom:13px; color:#676977; line-height:1.5; }
+      .example { margin:0; padding:12px 14px; border-radius:10px; background:#f4f1eb; color:#29324c; font-size:.88rem; line-height:1.45; }
+      .endpoint { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:23px 0 10px; padding:15px 16px; border:1px solid #cfccd0; border-radius:12px; background:#fffcf7; }
+      .endpoint code { padding:0; background:none; font-size:.98rem; font-weight:700; }
+      .copy { flex:0 0 auto; min-height:36px; padding:0 12px; border:1px solid #c9c6c0; border-radius:8px; background:#e9eaf2; color:#29324c; font:inherit; font-size:.8rem; font-weight:750; cursor:pointer; }
+      .copy:hover { background:#dfe2ee; }
+      .endpoint-note { color:#737583; font-size:.85rem; line-height:1.5; }
+      .steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px; margin:24px 0 18px; padding:0; list-style:none; counter-reset:setup; }
+      .steps li { position:relative; padding-left:38px; color:#676977; line-height:1.5; counter-increment:setup; }
+      .steps li::before { content:counter(setup); position:absolute; top:0; left:0; display:grid; place-items:center; width:26px; height:26px; border-radius:50%; background:#29324c; color:white; font-size:.78rem; font-weight:800; }
+      .steps li > strong { display:block; margin-bottom:4px; color:#25283b; }
+      code { padding:2px 5px; border-radius:5px; background:#e9eaf2; color:#29324c; overflow-wrap:anywhere; font-size:.85em; }
+      .access { margin-top:22px; padding:17px 20px; border-radius:12px; background:#e9eaf2; color:#555a75; line-height:1.5; }
+      .access strong { color:#25283b; }
+      .text-link { color:#29324c; font-weight:750; text-underline-offset:3px; }
+      footer { display:flex; flex-wrap:wrap; justify-content:space-between; gap:15px; padding-block:25px 38px; border-top:1px solid #dfdcd5; color:#737583; font-size:.82rem; }
+      footer a { color:#29324c; }
+      @media (max-width:900px) { .steps { grid-template-columns:1fr; gap:18px; } }
+      @media (max-width:760px) {
+        .hero { grid-template-columns:1fr; gap:34px; padding-block:45px 55px; }
+        .preview { max-width:520px; transform:none; }
+      }
+      @media (max-width:560px) {
+        .wrap { width:min(100% - 32px,1060px); }
+        .topbar nav { gap:12px; font-size:.82rem; }
+        .paths { grid-template-columns:1fr; }
+        .endpoint { align-items:stretch; flex-direction:column; }
+        h1 { font-size:3.15rem; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar wrap">
+      <a class="brand" href="/"><img class="mark" src="/static/meal-prep-icon.svg" alt="" /> Meal Prep</a>
+      <nav aria-label="Main navigation"><a href="#how-it-works">How it works</a><a href="/app">Open the app</a></nav>
+    </header>
+    <main class="wrap">
+      <section class="hero" aria-labelledby="hero-title">
+        <div>
+          <p class="eyebrow">A calmer way to plan food</p>
+          <h1 id="hero-title">Your food week, all together.</h1>
+          <p class="lead">Plan meals, use what is in your pantry, and keep shopping organized. Connect the MCP server to your chat assistant or work directly in the app.</p>
+          <div class="actions"><a class="button" href="#get-started">Get the MCP server <span aria-hidden="true">&nbsp;→</span></a><a class="button secondary" href="/app">Open the app</a></div>
+          <p class="hero-note">Both use your household’s saved information.</p>
+        </div>
+        <div class="preview" aria-label="Preview of Meal Prep views">
+          <div class="preview-head"><strong>This week at a glance</strong><span>Meal Prep</span></div>
+          <div class="preview-grid">
+            <div class="preview-card"><small>Plan</small><strong>Meals that fit your week</strong></div>
+            <div class="preview-card"><small>Pantry</small><strong>Use what you have</strong></div>
+            <div class="preview-card"><small>Shopping</small><strong>A list grouped by store</strong></div>
+          </div>
+        </div>
+      </section>
+      <section class="section" id="how-it-works" aria-labelledby="how-title">
+        <h2 id="how-title">Choose how you want to work.</h2>
+        <p class="section-intro">Use a compatible chat assistant to plan with you, or open the app to manage the details yourself.</p>
+        <div class="paths">
+          <article class="path">
+            <span class="path-number" aria-hidden="true">1</span>
+            <h3>Talk to your assistant</h3>
+            <p>Add the MCP server in ChatGPT, Claude, or another assistant that supports remote MCP. After you sign in, it can discover Meal Prep’s tools and help save plans or shopping items.</p>
+            <p class="example">“Plan easy dinners this week and add what we need to the shopping list.”</p>
+          </article>
+          <article class="path">
+            <span class="path-number" aria-hidden="true">2</span>
+            <h3>Use the app</h3>
+            <p>Open your dashboard to review and edit recipes, pantry items, plans, shopping lists, and household preferences.</p>
+            <p class="example"><a class="text-link" href="/app">Open Meal Prep →</a></p>
+          </article>
+        </div>
+      </section>
+      <section class="section" id="get-started" aria-labelledby="start-title">
+        <h2 id="start-title">Connect the MCP server</h2>
+        <p class="section-intro">Add this remote MCP URL in your assistant’s connector settings:</p>
+        <div class="endpoint"><code id="mcp-url">https://meal-prep-swart.vercel.app/mcp</code><button class="copy" id="copy-mcp" type="button" aria-label="Copy MCP server URL">Copy URL</button></div>
+        <p class="endpoint-note">ChatGPT: enable Developer mode, then add a connection in <a class="text-link" href="https://chatgpt.com/plugins">ChatGPT Plugins</a>. Claude: add a custom connector under Customize → Connectors. Other clients may use a different setup screen.</p>
+        <ol class="steps">
+          <li><strong>Add the URL</strong>Create a remote MCP connection named Meal Prep.</li>
+          <li><strong>Sign in</strong>Use your approved Meal Prep email when your assistant prompts you.</li>
+          <li><strong>Start planning</strong>Enable the connection in a chat and ask for a plan, recipe, or shopping list.</li>
+        </ol>
+        <div class="access"><strong>Access is currently private.</strong> Ask <a class="text-link" href="https://github.com/bhadrip">BhadriP</a> to approve your email address before signing in.</div>
+      </section>
+    </main>
+    <footer class="wrap"><span>Meal Prep</span><span>Claude has not yet been tested with Meal Prep. Visual views depend on client support; the full app is at <a href="/app">/app</a>.</span></footer>
+    <script>
+      document.querySelector('#copy-mcp').addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        try {
+          await navigator.clipboard.writeText(document.querySelector('#mcp-url').textContent);
+          button.textContent = 'Copied';
+          button.setAttribute('aria-label', 'MCP server URL copied');
+        } catch {
+          button.textContent = 'Select the URL to copy';
+          button.setAttribute('aria-label', 'Select the MCP server URL to copy');
+        }
+      });
+    </script>
+  </body>
+</html>

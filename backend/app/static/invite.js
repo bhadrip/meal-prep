@@ -44,7 +44,7 @@ async function load() {
     try {
       await api(`/api/invitations/${encodeURIComponent(button.dataset.id)}/accept`, 'POST');
       message.textContent = 'You joined the household. It is now active; opening Meal Prep…';
-      location.replace('/');
+      location.replace('/app');
     } catch (joinError) {
       message.textContent = joinError.message;
       button.disabled = false;

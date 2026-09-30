@@ -15,8 +15,8 @@ app/
 
 ## What is included
 
-- Manual website at `/` and `/app`, with household setup, weekly plan and rhythm, recipes and recipe sharing, pantry, shopping, feedback, reviews, memory, and dashboard settings
-- Owner-managed household invitations and shared adult access from website Settings
+- Getting-started landing page at `/` and manual app at `/app`, with household setup, weekly plan and rhythm, recipes and recipe sharing, pantry, shopping, feedback, reviews, memory, and dashboard settings
+- Owner-managed invitations, multiple household memberships, and an active-household switcher
 - Authenticated JSON API under `/api` for the website and future mobile clients
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
@@ -49,7 +49,7 @@ pip install -e '.[dev]'
 ./scripts/dev-local.sh
 ```
 
-Open `http://127.0.0.1:8000/` for the website and `http://127.0.0.1:8000/api/health` to verify `persistence: supabase` and `auth_required: true`. Connect an MCP inspector or client to `http://127.0.0.1:8000/mcp`. The script reads the local anon key from `supabase status`; it does not store it in the repository. Stop the Python server with Ctrl-C and, when finished, stop the local containers with `supabase stop` from `backend/`.
+Open `http://127.0.0.1:8000/` for the landing page, `http://127.0.0.1:8000/app` for the app, and `http://127.0.0.1:8000/api/health` to verify `persistence: supabase` and `auth_required: true`. Connect an MCP inspector or client to `http://127.0.0.1:8000/mcp`. The script reads the local anon key from `supabase status`; it does not store it in the repository. Stop the Python server with Ctrl-C and, when finished, stop the local containers with `supabase stop` from `backend/`.
 
 ### Test the shared login with local Supabase and Mailpit
 
@@ -69,7 +69,7 @@ SUPABASE_ANON_KEY=PASTE_LOCAL_ANON_KEY_HERE
 AUTH_REQUIRED=true
 ```
 
-Start the Python server with `uvicorn app.main:app --reload`. Open `http://127.0.0.1:8000/` and request a sign-in code. The code appears in the local [Mailpit inbox](http://127.0.0.1:55324). Enter it to create an account and sign in, complete the household setup, and verify edits in the website and MCP client. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
+Start the Python server with `uvicorn app.main:app --reload`. Open `http://127.0.0.1:8000/app` and request a sign-in code. The code appears in the local [Mailpit inbox](http://127.0.0.1:55324). Enter it to create an account and sign in, complete the household setup, and verify edits in the website and MCP client. Local mail is captured, not delivered externally. Meal Prep uses ports `55321`–`55324` so it can run beside other local Supabase projects. See [Supabase’s email testing guide](https://supabase.com/docs/guides/local-development/cli/testing-and-linting).
 
 To test sharing locally, sign up and verify two accounts using their email codes in Mailpit. Give the second account its own household and save a recipe there. Sign in as the first user, open **Settings → Household members**, and enter the second account's email. Then sign in as the second user and select **Join household**. The shared household becomes active, while the second account's own household and recipe remain available from the top-bar switcher. Creating a household invitation sends no email and needs no server secret key.
 
@@ -150,7 +150,7 @@ AUTH_REQUIRED=true
 Deploy, then verify:
 
 - `GET /api/health` reports `persistence: supabase`.
-- `/` opens the website and redirects unsigned users to `/login`.
+- `/` provides the MCP URL and links to `/app`; `/app` redirects unsigned users to `/login`.
 - Website edits appear through `/api/app/snapshot` and the MCP tools for the same account.
 - `/login` can create a valid session.
 - `/oauth/consent` displays an OAuth client request.

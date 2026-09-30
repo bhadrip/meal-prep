@@ -72,14 +72,14 @@ async function api(path, options = {}) {
   if (state.client) {
     const { data, error } = await state.client.auth.getSession();
     if (error || !data.session?.access_token) {
-      location.assign('/login?next=%2F');
+      location.assign('/login?next=%2Fapp');
       throw new Error('Sign in to continue.');
     }
     headers.Authorization = `Bearer ${data.session.access_token}`;
   }
   const response = await fetch(path, { ...options, headers });
   if (response.status === 401) {
-    location.assign('/login?next=%2F');
+    location.assign('/login?next=%2Fapp');
     throw new Error('Your session has expired.');
   }
   const data = await response.json().catch(() => ({}));
@@ -588,7 +588,7 @@ async function handleAction(actionName, id) {
   }
   if (actionName === 'sign-out' && state.client) {
     await state.client.auth.signOut();
-    location.assign('/login?next=%2F');
+    location.assign('/login?next=%2Fapp');
   }
 }
 
@@ -716,7 +716,7 @@ async function start() {
     if (!window.supabase?.createClient) throw new Error('Sign in is unavailable. Check your connection and reload.');
     state.client = window.supabase.createClient(state.config.supabaseUrl, state.config.supabaseAnonKey);
     const { data, error } = await state.client.auth.getSession();
-    if (error || !data.session) { location.replace('/login?next=%2F'); return; }
+    if (error || !data.session) { location.replace('/login?next=%2Fapp'); return; }
     state.session = data.session;
     const email = data.session.user?.email || 'Account';
     document.querySelector('#account-label').textContent = email;

@@ -29,7 +29,7 @@ def rpc(client: TestClient, method: str, params: dict, request_id: int = 1) -> d
 
 
 def test_http_surface_serves_website_and_mcp(client: TestClient):
-    root = client.get("/")
+    root = client.get("/app")
     assert root.status_code == 200
     assert "Meal Prep" in root.text
     assert client.get("/static/app.js").status_code == 200

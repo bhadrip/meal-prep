@@ -14,7 +14,13 @@ from app.transports import http
 
 def test_website_uses_plugin_logo_and_self_hosted_type():
     client = TestClient(app)
-    html = client.get("/").text
+    landing = client.get("/")
+    assert landing.status_code == 200
+    assert "Connect the MCP server" in landing.text
+    assert 'href="/app"' in landing.text
+    assert "https://meal-prep-swart.vercel.app/mcp" in landing.text
+    assert 'id="copy-mcp"' in landing.text
+    html = client.get("/app").text
     assert '/static/meal-prep-icon.svg' in html
     assert '/static/typography.css' in html
     assert 'id="sidebar-toggle"' in html
@@ -23,6 +29,8 @@ def test_website_uses_plugin_logo_and_self_hosted_type():
     assert 'value="cancel" formnovalidate>Cancel</button>' in html
     assert client.get("/static/typography.css").status_code == 200
     assert 'background: #252a40' in client.get("/static/app.css").text
+    assert "/login?next=%2Fapp" in client.get("/static/app.js").text
+    assert "location.replace(next || '/app')" in client.get("/static/login.js").text
 
     plugin_logo = Path(__file__).resolve().parents[2] / "plugin/assets/meal-prep-icon.svg"
     assert client.get("/static/meal-prep-icon.svg").text == plugin_logo.read_text()
@@ -37,7 +45,7 @@ def test_retired_weekly_review_api_is_not_exposed():
 def test_local_website_edits_share_application_data_across_requests():
     demo_repository.cache_clear()
     client = TestClient(app)
-    assert client.get("/").status_code == 200
+    assert client.get("/app").status_code == 200
     assert client.get("/api/health").json()["website"] == "/"
 
     recipe = client.put("/api/recipes", json={"title": "Local lentil bowls", "servings": 2})

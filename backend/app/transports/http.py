@@ -49,7 +49,7 @@ WebServices = Annotated[MealPrepServices, Depends(web_services)]
 
 @router.get("/", include_in_schema=False)
 async def website_home() -> FileResponse:
-    return FileResponse(STATIC_DIR / "app.html")
+    return FileResponse(STATIC_DIR / "landing.html")
 
 
 @router.get("/app", include_in_schema=False)
