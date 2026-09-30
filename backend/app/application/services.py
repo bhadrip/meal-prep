@@ -8,6 +8,7 @@ import re
 from typing import Any, Awaitable, Callable, Protocol
 
 from .errors import ApplicationError, RepositoryError, StorageNotInstalledError
+from .pantry_photos import compact_photo, download_chatgpt_photo, normalize_observations
 
 
 DASHBOARD_CARD_IDS = (
@@ -50,6 +51,9 @@ class MealPrepRepository(Protocol):
     async def copy_shared_recipe(self, token: str) -> str: ...
     async def get_pantry(self) -> list[dict[str, Any]]: ...
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]: ...
+    async def save_pantry_photo(self, *, image: bytes, width: int, height: int, file_id: str, note: str, observations: list[dict[str, Any]], apply_to_pantry: bool) -> dict[str, Any]: ...
+    async def get_pantry_photos(self, limit: int = 30) -> list[dict[str, Any]]: ...
+    async def apply_pantry_photo(self, evidence_id: str, observations: list[dict[str, Any]] | None = None) -> dict[str, Any]: ...
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]: ...
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None: ...
     async def save_shopping_list(self, shopping_list: dict[str, Any]) -> dict[str, Any]: ...
@@ -282,6 +286,29 @@ class RecipePantryService:
         if not str(item.get("name", "")).strip():
             raise ApplicationError("item.name is required")
         return await self.repository.update_pantry_item(item)
+
+    async def save_pantry_photo(
+        self, file: dict[str, str], observed_items: list[dict[str, Any]],
+        storage_location: str = "fridge", note: str = "", apply_to_pantry: bool = True,
+    ) -> dict[str, Any]:
+        if not isinstance(storage_location, str) or not 1 <= len(storage_location.strip()) <= 80:
+            raise ApplicationError("storage_location is required")
+        if not isinstance(note, str) or len(note) > 1000:
+            raise ApplicationError("note must be at most 1000 characters")
+        observations = normalize_observations(observed_items, storage_location.strip())
+        image, width, height = compact_photo(await download_chatgpt_photo(file))
+        return await self.repository.save_pantry_photo(
+            image=image, width=width, height=height, file_id=file["file_id"],
+            note=note, observations=observations, apply_to_pantry=apply_to_pantry,
+        )
+
+    async def get_pantry_photos(self, limit: int = 30) -> list[dict[str, Any]]:
+        return await self.repository.get_pantry_photos(limit)
+
+    async def apply_pantry_photo(self, evidence_id: str, observed_items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        if observed_items is not None:
+            observed_items = normalize_observations(observed_items, "fridge")
+        return await self.repository.apply_pantry_photo(evidence_id, observed_items)
 
 
 class PlanningService:
