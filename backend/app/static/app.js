@@ -6,6 +6,8 @@ const errorBox = document.querySelector('#dialog-error');
 const toastBox = document.querySelector('#toast');
 const shell = document.querySelector('.shell');
 const sidebarToggle = document.querySelector('#sidebar-toggle');
+const householdPicker = document.querySelector('#household-picker');
+const householdSelect = document.querySelector('#household-select');
 
 function setSidebarCollapsed(collapsed) {
   shell.classList.toggle('sidebar-collapsed', collapsed);
@@ -35,7 +37,7 @@ const CARD_NAMES = {
   pantry: 'Pantry', recipes: 'Recipes', feedback: 'Meal feedback', memories: 'Household memory',
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' };
-const state = { view: 'overview', snapshot: null, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
+const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
 const esc = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const arr = (value) => Array.isArray(value) ? value : [];
 const pick = (value, ...keys) => keys.map((key) => value?.[key]).find((item) => item !== undefined && item !== null);
@@ -70,14 +72,14 @@ async function api(path, options = {}) {
   if (state.client) {
     const { data, error } = await state.client.auth.getSession();
     if (error || !data.session?.access_token) {
-      location.assign('/login?next=%2F');
+      location.assign('/login?next=%2Fapp');
       throw new Error('Sign in to continue.');
     }
     headers.Authorization = `Bearer ${data.session.access_token}`;
   }
   const response = await fetch(path, { ...options, headers });
   if (response.status === 401) {
-    location.assign('/login?next=%2F');
+    location.assign('/login?next=%2Fapp');
     throw new Error('Your session has expired.');
   }
   const data = await response.json().catch(() => ({}));
@@ -98,8 +100,25 @@ async function loadRecipe(id) {
 }
 
 async function refresh(message) {
+  if (state.client) {
+    const pending = await api('/api/invitations/mine');
+    state.pendingInvites = arr(pending.invitations);
+    if (!pending.hasHousehold && state.pendingInvites.length) {
+      location.replace('/invite');
+      return;
+    }
+  }
   const snapshot = await api('/api/app/snapshot');
   state.snapshot = snapshot;
+  if (state.client) {
+    const [access, memberships] = await Promise.all([api('/api/household/access'), api('/api/households')]);
+    state.access = access;
+    state.households = arr(memberships.households);
+    state.activeHouseholdId = memberships.activeHouseholdId;
+    householdPicker.hidden = false;
+    householdSelect.innerHTML = state.households.map((item) => `<option value="${esc(item.id)}">${esc(item.name)} · ${esc(label(item.role))}</option>`).join('');
+    householdSelect.value = state.activeHouseholdId || '';
+  }
   state.plan = section('mealPlan');
   state.schedule = section('schedule');
   if (!state.weekStart) state.weekStart = state.plan?.weekStart || state.schedule?.week_start || monday();
@@ -145,6 +164,7 @@ function renderOverview() {
   const incomplete = h.onboardingComplete === false;
   const displayName = h.householdName && h.householdName !== 'My household' ? h.householdName : 'Your household';
   let html = `<section class="hero"><div class="hero-copy"><p class="eyebrow">${esc(incomplete ? 'Getting started' : displayName)}</p><h2>${incomplete ? 'Set up your kitchen.' : 'Your food week, in one place.'}</h2><p>${incomplete ? 'Add your household’s food rules and weekly preferences to get started.' : 'Review your plan, recipes, pantry, and shopping list from one workspace.'}</p><div style="margin-top:22px">${action(incomplete ? 'Set up household' : 'Open weekly plan', incomplete ? 'settings' : 'plan', '', 'secondary')}</div></div><div class="hero-stat"><strong>${esc(arr(plan?.entries).length)}</strong><span>meals and prep tasks in the latest plan</span></div></section>`;
+  if (state.pendingInvites.length) html = `<div class="callout"><b>Household invitation waiting</b><p>You have an invitation to join ${esc(state.pendingInvites[0].householdName)}.</p>${action('Review invitation', 'review-invite')}</div>` + html;
   html += `<div class="section-head"><div><h2>At a glance</h2><p>The latest saved information from your household.</p></div></div>`;
   html += `<div class="card-grid">`;
   html += card('Weekly plan', '▦', `<div class="metric">${arr(plan?.entries).length}</div><p class="muted tiny">planned meals and prep tasks</p>`, `<div style="margin-top:20px">${action('View plan', 'plan')}</div>`);
@@ -223,8 +243,8 @@ function renderShopping() {
   let html = `<div class="toolbar"><div><p class="muted tiny">${esc(list?.name || 'Your household grocery list')}</p><p class="muted tiny">Checking an item records progress; it does not place an order.</p></div>${action('Add item', 'add-shopping', '', 'primary')}</div>`;
   if (sectionStatus('shoppingList') === 'unavailable') return html + empty('Shopping list unavailable', 'Try refreshing this page.');
   if (!items.length) return html + empty('No grocery items yet', 'Add an item to start a list.');
-  const stores = [...new Set(items.map((item) => item.store || 'Other'))];
-  html += `<div class="store-groups">${stores.map((store) => `<article class="card"><div class="card-head"><h3>${esc(store)}</h3><span class="pill">${items.filter((item) => (item.store || 'Other') === store).length} items</span></div>${items.filter((item) => (item.store || 'Other') === store).map((item) => `<div class="check-row ${item.purchased ? 'done' : ''}"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" ${item.purchased ? 'checked' : ''} /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}</small></span><div style="display:flex;gap:4px">${action('Edit', 'edit-shopping', item.id)}${action('Remove', 'remove-shopping', item.id)}</div></div>`).join('')}</article>`).join('')}</div>`;
+  const stores = [...new Set(items.map((item) => item.store || 'No store selected'))];
+  html += `<div class="store-groups">${stores.map((store) => `<article class="card"><div class="card-head"><h3>${esc(store)}</h3><span class="pill">${items.filter((item) => (item.store || 'No store selected') === store).length} items</span></div>${items.filter((item) => (item.store || 'No store selected') === store).map((item) => `<div class="check-row ${item.purchased ? 'done' : ''}"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" ${item.purchased ? 'checked' : ''} /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}</small>${item.store ? `<span class="pill store-tag" aria-label="Generally buy at ${esc(item.store)}">Usually: ${esc(item.store)}</span>` : ''}</span><div style="display:flex;gap:4px">${action('Edit', 'edit-shopping', item.id)}${action('Remove', 'remove-shopping', item.id)}</div></div>`).join('')}</article>`).join('')}</div>`;
   return html;
 }
 
@@ -254,6 +274,23 @@ function renderSettings() {
   const stores = arr(h.storePriority).sort((a, b) => a.priority - b.priority).map((item) => item.store).join(', ');
   const focusChoices = FOCUS.map((area) => `<label class="planning-choice"><input type="checkbox" name="focusAreas" value="${area}" ${focus.includes(area) ? 'checked' : ''} /><span>${esc(label(area))}</span></label>`).join('');
   const cardRows = order.map((id, index) => `<div class="card-order-row"><label class="toggle-field"><span>${esc(CARD_NAMES[id])}</span><input type="checkbox" name="visibleCard" value="${id}" ${hidden.includes(id) ? '' : 'checked'} /></label><div class="card-order-buttons"><button class="icon-button" type="button" data-action="card-up" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} up" ${index === 0 ? 'disabled' : ''}>↑</button><button class="icon-button" type="button" data-action="card-down" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} down" ${index === order.length - 1 ? 'disabled' : ''}>↓</button></div></div>`).join('');
+  const members = arr(state.access?.members);
+  const invitations = arr(state.access?.invitations);
+  const owner = state.access?.role === 'owner';
+  const memberRows = members.map((member) => row(member.email, label(member.role), owner && member.role !== 'owner' ? action('Remove', 'remove-member', member.userId, 'danger') : '')).join('');
+  const inviteRows = invitations.filter((invite) => invite.status === 'pending').map((invite) => row(invite.email, `Invited · expires ${new Date(invite.expiresAt).toLocaleDateString()}`, owner ? action('Revoke', 'revoke-invite', invite.id, 'danger') : '')).join('');
+  const accessCard = state.client ? `<article class="card"><div class="card-head"><h3>Household members</h3><span class="card-icon">♙</span></div>
+    ${state.pendingInvites.length ? `<p class="muted tiny">You have an invitation to join ${esc(state.pendingInvites[0].householdName)}.</p><div style="margin:12px 0 20px">${action('Review invitation', 'review-invite')}</div>` : ''}
+    <div class="stack">${memberRows || '<p class="muted tiny">No members yet.</p>'}</div>
+    ${owner ? `<form id="invite-form" class="invite-form"><label for="invite-email">Share with an existing account</label><input id="invite-email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required /><button class="button primary" type="submit">Create invitation</button></form>` : ''}
+    ${inviteRows ? `<p class="muted tiny" style="margin:20px 0 10px">Pending invitations</p><div class="stack">${inviteRows}</div>` : ''}
+  </article>` : '';
+  const householdsCard = state.client ? `<article class="card"><div class="card-head"><h3>Your households</h3><span class="card-icon">⌂</span></div>
+    <p class="muted tiny">Choose a household above to switch what you see here and in MCP.</p>
+    <div class="stack" style="margin:16px 0">${state.households.map((item) => row(item.name, `${label(item.role)}${item.id === state.activeHouseholdId ? ' · Active' : ''}`)).join('')}</div>
+    <form id="create-household-form" class="invite-form"><label for="new-household-name">Create another household</label><input id="new-household-name" name="name" maxlength="120" required placeholder="Household name" /><button class="button primary" type="submit">Create household</button></form>
+    ${state.access?.role && state.access.role !== 'owner' ? `<div style="margin-top:16px">${action('Leave this household', 'leave-household', '', 'danger')}</div>` : ''}
+  </article>` : '';
   return `<div class="settings-grid"><div class="stack">
     <article class="card"><div class="card-head"><h3>Household preferences</h3><span class="card-icon">⚙</span></div>
       <form id="settings-form" class="form-grid">
@@ -271,6 +308,8 @@ function renderSettings() {
       <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save visible cards</button></form>
     </article>
   </div><div class="stack">
+    ${householdsCard}
+    ${accessCard}
     <article class="card"><div class="card-head"><h3>Your session</h3><span class="card-icon">○</span></div><p class="muted tiny" style="margin-bottom:15px">${esc(state.session?.user?.email || 'Local demo mode')}</p>${state.client ? action('Sign out', 'sign-out', '', 'danger') : '<p class="muted tiny">Demo data resets when the local server restarts.</p>'}</article>
   </div></div>`;
 }
@@ -308,7 +347,7 @@ function field(name, title, value = '', options = {}) {
   }
   const input = options.type === 'textarea'
     ? `<textarea name="${esc(name)}" ${options.required ? 'required' : ''} placeholder="${esc(options.placeholder || '')}">${esc(value)}</textarea>`
-    : `<input name="${esc(name)}" type="${esc(options.type || 'text')}" value="${esc(value)}" ${options.required ? 'required' : ''} ${options.min !== undefined ? `min="${options.min}"` : ''} ${options.max !== undefined ? `max="${options.max}"` : ''} placeholder="${esc(options.placeholder || '')}" />`;
+    : `<input name="${esc(name)}" type="${esc(options.type || 'text')}" value="${esc(value)}" ${options.required ? 'required' : ''} ${options.min !== undefined ? `min="${options.min}"` : ''} ${options.max !== undefined ? `max="${options.max}"` : ''} ${options.step !== undefined ? `step="${options.step}"` : ''} placeholder="${esc(options.placeholder || '')}" />`;
   return `<label class="field ${options.wide ? 'wide' : ''}">${esc(title)}${input}</label>`;
 }
 
@@ -387,7 +426,7 @@ function openEditor(kind, item = null, selectedDate = null) {
     markup = field('date', 'Date', date, { type: 'date', required: true }) + field('slot', 'Meal slot', item?.slot || 'dinner', { choices: SLOTS }) + field('meal', 'Meal or task', item?.meal || item?.title, { required: true, wide: true }) + field('servings', 'Servings', item?.servings, { type: 'number', min: 1 }) + field('recipeId', 'Saved recipe', item?.recipeId || '', { choices: [{ value: '', label: 'No linked recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true });
   } else if (kind === 'shopping') {
     title = item ? 'Edit grocery item' : 'Add grocery item';
-    markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0 }) + field('unit', 'Unit', item?.unit) + field('store', 'Store', item?.store || arr(household().storePriority)[0]?.store || '', { required: true }) + field('listName', 'List name', section('shoppingList')?.name || 'Weekly groceries', { wide: true });
+    markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0.001, step: 'any' }) + field('unit', 'Unit', item?.unit) + field('store', 'Where do you generally buy this? (optional)', item?.store || '', { placeholder: 'Costco, Trader Joe’s…', wide: true }) + (item ? field('listName', 'List name', section('shoppingList')?.name || 'Weekly groceries', { wide: true }) : '');
   } else if (kind === 'schedule') {
     title = 'Weekly rhythm';
     markup = field('weekStart', 'Week of', state.weekStart, { type: 'date', required: true, wide: true }) + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('');
@@ -425,9 +464,14 @@ async function submitEditor(data) {
     await save('/api/meal-plan', 'PUT', { id: state.plan?.id, weekStart: state.weekStart, status: state.plan?.status || 'draft', entries });
   } else if (kind === 'shopping') {
     const list = section('shoppingList');
-    const items = arr(list?.items).filter((entry) => entry.id !== item?.id);
-    items.push({ ...item, id: item?.id || crypto.randomUUID(), name: value('name'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, store: value('store'), purchased: item?.purchased || false });
-    await save('/api/shopping-list', 'PUT', { id: list?.id, name: value('listName') || 'Weekly groceries', status: list?.status || 'draft', mealPlanId: list?.mealPlanId, items });
+    const updated = { ...item, name: value('name'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, store: value('store') || null, purchased: item?.purchased || false };
+    if (item) {
+      const items = arr(list?.items).filter((entry) => entry.id !== item.id);
+      items.push(updated);
+      await save('/api/shopping-list', 'PUT', { id: list?.id, name: value('listName') || 'Weekly groceries', status: list?.status || 'draft', mealPlanId: list?.mealPlanId, items });
+    } else {
+      await save('/api/shopping-list/items', 'POST', { item: updated, listId: list?.id || null });
+    }
   } else if (kind === 'schedule') {
     await save('/api/schedule', 'PUT', { weekStart: value('weekStart'), days: DAYS.map((day) => ({ day, mode: value(day) })), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
   } else if (kind === 'feedback') {
@@ -448,6 +492,24 @@ async function handleAction(actionName, id) {
   const pantry = arr(section('pantry'));
   const shopping = arr(section('shoppingList')?.items);
   const plan = arr(state.plan?.entries);
+  if (actionName === 'review-invite') { location.assign('/invite'); return; }
+  if (actionName === 'leave-household') {
+    if (!confirm('Leave this household? You will lose access to its shared data.')) return;
+    await api('/api/households/leave', { method: 'POST' });
+    state.weekStart = null;
+    state.recipe = null;
+    return refresh('You left the household.');
+  }
+  if (actionName === 'revoke-invite') {
+    if (!confirm('Revoke this invitation?')) return;
+    await api(`/api/household/invitations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return refresh('Invitation revoked.');
+  }
+  if (actionName === 'remove-member') {
+    if (!confirm('Remove this person from the household? They will lose access to shared data.')) return;
+    await api(`/api/household/members/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return refresh('Collaborator removed.');
+  }
   if (TITLES[actionName]) return view(actionName);
   if (actionName === 'add-recipe') return openEditor('recipe');
   if (actionName === 'edit-recipe') return openEditor('recipe', state.recipe || recipes.find((item) => item.id === id));
@@ -527,7 +589,7 @@ async function handleAction(actionName, id) {
   }
   if (actionName === 'sign-out' && state.client) {
     await state.client.auth.signOut();
-    location.assign('/login?next=%2F');
+    location.assign('/login?next=%2Fapp');
   }
 }
 
@@ -587,12 +649,24 @@ content.addEventListener('input', (event) => {
 });
 
 content.addEventListener('submit', async (event) => {
-  if (!['settings-form', 'dashboard-form'].includes(event.target.id)) return;
+  if (!['settings-form', 'dashboard-form', 'invite-form', 'create-household-form'].includes(event.target.id)) return;
   event.preventDefault();
   const submit = event.target.querySelector('[type="submit"]');
   submit.disabled = true;
   try {
     const data = new FormData(event.target);
+    if (event.target.id === 'create-household-form') {
+      await save('/api/households', 'POST', { name: String(data.get('name') || '').trim() });
+      state.weekStart = null;
+      state.recipe = null;
+      await refresh('Household created and selected.');
+      return;
+    }
+    if (event.target.id === 'invite-form') {
+      await save('/api/household/invitations', 'POST', { email: String(data.get('email') || '').trim() });
+      await refresh('Invitation created. Ask them to open Meal Prep.');
+      return;
+    }
     if (event.target.id === 'settings-form') {
       const restrictionText = String(data.get('dietaryRestrictions') || '').trim();
       const stores = String(data.get('stores') || '').split(',').map((item) => item.trim()).filter(Boolean);
@@ -621,6 +695,21 @@ form.addEventListener('submit', async (event) => {
 
 document.querySelector('#refresh-button').addEventListener('click', () => refresh('Up to date.').catch((error) => showToast(error.message)));
 document.querySelector('#account-button').addEventListener('click', () => view('settings'));
+householdSelect.addEventListener('change', async () => {
+  householdSelect.disabled = true;
+  try {
+    await api(`/api/households/${encodeURIComponent(householdSelect.value)}/activate`, { method: 'POST' });
+    state.weekStart = null;
+    state.recipe = null;
+    state.recipeResults = null;
+    state.shareUrl = null;
+    state.shareId = null;
+    await refresh('Household switched.');
+  } catch (error) {
+    householdSelect.value = state.activeHouseholdId || '';
+    showToast(error.message);
+  } finally { householdSelect.disabled = false; }
+});
 
 async function start() {
   state.config = await fetch('/api/auth/config').then((response) => response.json());
@@ -628,7 +717,7 @@ async function start() {
     if (!window.supabase?.createClient) throw new Error('Sign in is unavailable. Check your connection and reload.');
     state.client = window.supabase.createClient(state.config.supabaseUrl, state.config.supabaseAnonKey);
     const { data, error } = await state.client.auth.getSession();
-    if (error || !data.session) { location.replace('/login?next=%2F'); return; }
+    if (error || !data.session) { location.replace('/login?next=%2Fapp'); return; }
     state.session = data.session;
     const email = data.session.user?.email || 'Account';
     document.querySelector('#account-label').textContent = email;
@@ -638,7 +727,7 @@ async function start() {
     document.querySelector('#account-label').textContent = 'Local demo';
   }
   await refresh();
-  if (household().onboardingComplete === false) view('settings');
+  if (household().onboardingComplete === false && !state.pendingInvites.length) view('settings');
 }
 
 start().catch((error) => {

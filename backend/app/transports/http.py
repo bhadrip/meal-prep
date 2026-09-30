@@ -49,7 +49,7 @@ WebServices = Annotated[MealPrepServices, Depends(web_services)]
 
 @router.get("/", include_in_schema=False)
 async def website_home() -> FileResponse:
-    return FileResponse(STATIC_DIR / "app.html")
+    return FileResponse(STATIC_DIR / "landing.html")
 
 
 @router.get("/app", include_in_schema=False)
@@ -60,6 +60,11 @@ async def website() -> FileResponse:
 @router.get("/login", include_in_schema=False)
 async def login() -> FileResponse:
     return FileResponse(STATIC_DIR / "login.html")
+
+
+@router.get("/invite", include_in_schema=False)
+async def invitation_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "invite.html")
 
 
 @router.get("/oauth/consent", include_in_schema=False)
@@ -203,6 +208,11 @@ async def save_shopping_list(
     shopping_list: dict[str, Any], services: WebServices
 ) -> dict:
     return await services.shopping.save(shopping_list)
+
+
+@router.post("/api/shopping-list/items")
+async def add_shopping_item(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.shopping.add_item(payload.get("item", {}), payload.get("listId"))
 
 
 @router.patch("/api/shopping-list/items/{item_id}")

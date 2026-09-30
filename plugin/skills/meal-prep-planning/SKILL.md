@@ -11,6 +11,12 @@ food preferences, or create a shopping list.
 
 ## Required sequence
 
+An account can belong to several households. If the user names a household or
+the target is unclear, call `list_households` and select the intended one with
+`switch_household` before reading or changing food data. The active choice is
+shared with the website. `create_household` makes a new household owned by the
+account and selects it.
+
 1. Call `get_planning_context` before drafting or revising a weekly plan,
    passing the requested `week_start` when known. It returns household
    preferences, the relevant weekly schedule, recent feedback, and active
@@ -47,6 +53,10 @@ food preferences, or create a shopping list.
    and orders belong to the commerce plugin, not Meal Prep.
 7. Call `save_shopping_list` only for the resulting durable list. Never state
    or imply that saving a list placed an order.
+   When somebody adds an individual shopping item, ask where they generally
+   buy it. The answer is an optional `store` tag on that item, not a household
+   store preference. Leave `store` empty if they do not specify one. Use
+   `add_shopping_item` to append it without replacing the rest of the list.
 8. Use `render_onboarding` for incomplete household setup. Use
    `render_household_snapshot` when the user asks to open, show, view, or
    customize their dashboard, asks what Meal Prep knows, or wants to inspect

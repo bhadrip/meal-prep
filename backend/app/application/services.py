@@ -36,6 +36,9 @@ def _dashboard_layout(preferences: dict[str, Any]) -> dict[str, list[str]]:
 
 class MealPrepRepository(Protocol):
     async def get_household_context(self, *, create_if_missing: bool = True) -> dict[str, Any]: ...
+    async def list_households(self) -> dict[str, Any]: ...
+    async def switch_household(self, household_id: str) -> dict[str, Any]: ...
+    async def create_household(self, name: str) -> dict[str, Any]: ...
     async def update_household_preferences(self, patch: dict[str, Any]) -> dict[str, Any]: ...
     async def search_recipes(self, query: str = "", limit: int = 10) -> list[dict[str, Any]]: ...
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None: ...
@@ -51,6 +54,7 @@ class MealPrepRepository(Protocol):
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None: ...
     async def save_shopping_list(self, shopping_list: dict[str, Any]) -> dict[str, Any]: ...
     async def get_shopping_list(self, list_id: str | None = None) -> dict[str, Any] | None: ...
+    async def add_shopping_item(self, item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]: ...
     async def mark_item_purchased(
         self,
         item_id: str,
@@ -90,6 +94,15 @@ class HouseholdService:
 
     async def get_context(self) -> dict[str, Any]:
         return await self.repository.get_household_context()
+
+    async def list_households(self) -> dict[str, Any]:
+        return await self.repository.list_households()
+
+    async def switch_household(self, household_id: str) -> dict[str, Any]:
+        return await self.repository.switch_household(household_id)
+
+    async def create_household(self, name: str) -> dict[str, Any]:
+        return await self.repository.create_household(name)
 
     async def update_preferences(
         self,
@@ -572,6 +585,27 @@ class ShoppingService:
 
     async def get(self, list_id: str | None = None) -> dict[str, Any] | None:
         return await self.repository.get_shopping_list(list_id)
+
+    async def add_item(self, item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]:
+        name = item.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ApplicationError("item.name is required")
+        store = item.get("store")
+        if store is not None and not isinstance(store, str):
+            raise ApplicationError("item.store must be a store name")
+        quantity = item.get("quantity")
+        if quantity is not None and (isinstance(quantity, bool) or not isinstance(quantity, (int, float)) or quantity <= 0):
+            raise ApplicationError("item.quantity must be positive")
+        unit = item.get("unit")
+        if unit is not None and not isinstance(unit, str):
+            raise ApplicationError("item.unit must be text")
+        normalized = {
+            "name": name.strip(),
+            "quantity": quantity,
+            "unit": (unit.strip() or None) if isinstance(unit, str) else None,
+            "store": (store.strip() or None) if isinstance(store, str) else None,
+        }
+        return await self.repository.add_shopping_item(normalized, list_id)
 
     async def mark_purchased(
         self,

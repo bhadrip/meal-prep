@@ -8,6 +8,7 @@ from app.application.services import (
     HouseholdService,
     PlanningService,
     RecipePantryService,
+    ShoppingService,
 )
 from app.infrastructure.repositories import DemoRepository
 
@@ -80,6 +81,23 @@ async def test_demo_plan_keeps_each_week_and_returns_the_latest_week():
     assert (await repository.get_meal_plan(first_week["weekStart"]))["id"] == first_week["id"]
     assert (await repository.get_meal_plan(next_week))["id"] == saved["id"]
     assert (await repository.get_meal_plan())["weekStart"] == next_week
+
+
+@pytest.mark.asyncio
+async def test_shopping_item_store_is_optional_and_does_not_replace_list():
+    service = ShoppingService(DemoRepository())
+    original = await service.get()
+    tagged = await service.add_item({"name": "  Milk  ", "store": "  Trader Joe's  ", "quantity": 1})
+    assert len(tagged["items"]) == len(original["items"]) + 1
+    assert tagged["items"][-1]["name"] == "Milk"
+    assert tagged["items"][-1]["store"] == "Trader Joe's"
+
+    untagged = await service.add_item({"name": "Bread", "store": "   "}, tagged["id"])
+    assert untagged["items"][-1]["store"] is None
+    assert untagged["items"][-2]["store"] == "Trader Joe's"
+
+    with pytest.raises(ApplicationError, match="item.name"):
+        await service.add_item({"name": " "})
 
 
 @pytest.mark.asyncio

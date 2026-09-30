@@ -5,7 +5,7 @@ const editor = (page) => page.locator('#editor-dialog');
 const unique = (prefix) => `${prefix} ${Date.now()}`;
 
 async function open(page, view) {
-  await page.goto('/');
+  await page.goto('/app');
   await expect(page.locator('#mode-badge')).toHaveText('Demo data');
   await page.locator(`.sidebar [data-view="${view}"]`).click();
   await expect(page.locator('#view-title')).toHaveText({ overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' }[view]);
@@ -210,7 +210,7 @@ test('recipe create, search, edit, share, copy, public save, revoke, and archive
   await expect(page.getByRole('heading', { name: title })).toBeVisible();
   await page.locator('#save-recipe').click();
   await expect(page.locator('#message')).toHaveText('Saved to your household recipes.');
-  await page.goto('/');
+  await page.goto('/app');
   await page.locator('.sidebar [data-view="recipes"]').click();
   await page.locator('#recipe-search').fill(title);
   await expect(content(page).locator('.recipe-card')).toHaveCount(2);
@@ -222,7 +222,7 @@ test('recipe create, search, edit, share, copy, public save, revoke, and archive
   await expect(page.getByRole('textbox', { name: 'New recipe share link' })).toHaveCount(0);
   await page.goto(shareUrl);
   await expect(page.getByText('Not Found')).toBeVisible();
-  await page.goto('/');
+  await page.goto('/app');
   await page.locator('.sidebar [data-view="recipes"]').click();
   await content(page).locator(`[data-action="open-recipe"][data-id="${originalId}"]`).click();
   page.once('dialog', (dialog) => dialog.accept());
@@ -270,9 +270,7 @@ test('shopping item can be added, purchased, edited, and removed', async ({ page
   await editor(page).locator('[name="quantity"]').fill('4');
   await editor(page).locator('[name="unit"]').fill('each');
   await editor(page).locator('[name="store"]').fill('Safeway');
-  await editor(page).locator('[name="listName"]').fill('Browser groceries');
   await saveEditor(page);
-  await expect(content(page)).toContainText('Browser groceries');
   let row = content(page).locator('.check-row').filter({ hasText: name });
   await expect(row).toContainText('4 each');
   await row.getByRole('checkbox').check();
@@ -280,7 +278,9 @@ test('shopping item can be added, purchased, edited, and removed', async ({ page
   await expect(row.getByRole('checkbox')).toBeChecked();
   await row.getByRole('button', { name: 'Edit' }).click();
   await editor(page).locator('[name="quantity"]').fill('5');
+  await editor(page).locator('[name="listName"]').fill('Browser groceries');
   await saveEditor(page);
+  await expect(content(page)).toContainText('Browser groceries');
   row = content(page).locator('.check-row').filter({ hasText: name });
   await expect(row).toContainText('5 each');
   await row.getByRole('checkbox').uncheck();
@@ -327,6 +327,8 @@ test('login page explains local demo mode', async ({ page }) => {
   await expect(page.locator('#message')).toContainText('demo mode');
   await expect(page.locator('#login-form')).toBeHidden();
   await page.getByRole('link', { name: 'Meal Prep' }).click();
+  await expect(page.getByRole('heading', { name: 'Your food week, all together.' })).toBeVisible();
+  await page.getByRole('link', { name: 'Open the app' }).first().click();
   await expect(page.locator('#view-title')).toHaveText('Overview');
 });
 
@@ -349,7 +351,7 @@ test('sign-in code, email change, error, and sign-out UI with a mocked auth prov
       signOut: async () => { sessionStorage.removeItem('mock-session'); return { error: null }; },
     } }) };`,
   }));
-  await page.goto('/login?next=%2F');
+  await page.goto('/login?next=%2Fapp');
   await page.locator('#email').fill('bad@example.com');
   await page.getByRole('button', { name: 'Send code' }).click();
   await expect(page.locator('#message')).toHaveText('Email is not approved');

@@ -31,7 +31,7 @@ async function setup() {
     if (!session?.access_token || completing) return;
     completing = true;
     sessionStorage.setItem('meal-prep-access-token', session.access_token);
-    location.replace(next || '/');
+    location.replace(next || '/app');
   }
 
   const { data: { session } } = await client.auth.getSession();
@@ -48,7 +48,7 @@ async function setup() {
     submit.disabled = true;
     const { error } = await client.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false },
+      options: { shouldCreateUser: true },
     });
     submit.disabled = false;
     if (error) {

@@ -4,13 +4,14 @@ The Chromium suite exercises every currently visible website form and action. Ea
 
 | Surface | UI paths exercised | Backend checks |
 | --- | --- | --- |
+| Landing and invitations | Landing links and MCP URL copy; signed-out invitation, empty state, account switch, invitation error/retry/accept | Invitation lifecycle and access routes |
 | Overview and navigation | Sidebar and mobile navigation, shortcuts, sidebar persistence, refresh, account link | Snapshot and health routes |
 | Weekly plan | Week picker, empty week, day-level Add, top-level Add, rhythm save, meal and prep create/edit/remove, linked recipe, invalid date, same-day meals, switching between saved weeks | Plan and schedule read/write; multiweek demo behavior; authenticated Supabase plan and rhythm roundtrip |
 | Recipes | List, search and empty result, detail and back, create/edit/archive, ingredients and method, feedback from detail, share/create/copy/revoke, public page and save | Recipe read/write/archive, detail feedback, lessons, share lifecycle |
 | Pantry | List, create, edit, storage, quantity, use-by date | Pantry read/write and snapshot |
 | Shopping | Store grouping, list rename, item create/edit/remove, purchased and unpurchased states | Shopping list read/write and purchase updates |
 | Reviews | Feedback create/read; memory create/confirm/update/forget | Feedback, what-worked, and memory routes |
-| Settings | Household setup, dashboard card order in both directions, visibility, saved values after reload | Household and dashboard read/write/reset |
+| Settings | Household setup, dashboard card order in both directions, visibility, saved values after reload; invitation create/revoke, member remove, household create/switch/leave | Household, invitation, and dashboard routes |
 | Sign-in | Demo screen, code request success/error, email change, invalid/valid code, sign-out | Shared bearer-token validation dependency |
 | OAuth consent | Missing request, signed-out redirect, scope display, approval, denial, unsupported callback | OAuth metadata and MCP HTTP tests |
 | Embedded MCP App | Dashboard, onboarding, plan, recipes, feedback, shopping; empty and unavailable states; shopping progress; recipe search/detail/share/copy/revoke | MCP tool and resource tests |

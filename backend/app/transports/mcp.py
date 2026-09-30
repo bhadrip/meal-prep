@@ -38,6 +38,9 @@ if settings.auth_required and settings.supabase_configured:
 mcp = FastMCP(
     "meal-prep",
     instructions=(
+        "An account may belong to several households. Call list_households when the user names a household "
+        "or the intended household is unclear; use switch_household before reading or changing that household. "
+        "The active household is shared by the website and MCP. Never mix data from different households. "
         "Call get_planning_context before drafting or revising a weekly meal plan. It returns household "
         "preferences, the requested or remembered weekly schedule, recent feedback, and active "
         "household knowledge. If onboardingComplete is false, call render_onboarding so the user can complete "
@@ -53,7 +56,8 @@ mcp = FastMCP(
         "an actionable nextTime, and query the recipe feedback summary before repeating a dish. A weekly check-in "
         "is a conversation that creates ordinary feedback entries; it is not a separate data type. "
         "A null schedule means no record exists, not permission to invent one. "
-        "Search stores in storePriority order. Save durable plans and lists only after the user agrees. "
+        "Search stores in storePriority order. When someone adds a shopping item, ask which store they generally buy it at; "
+        "the store is optional and belongs to that item. Save durable plans and lists only after the user agrees. "
         "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
         "a compact card dashboard instead of a long text inventory. When the user asks to change that "
         "dashboard, use get_dashboard_layout and configure_dashboard, then render it again for verification. "
@@ -86,6 +90,7 @@ mcp = FastMCP(
 
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+APPEND = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 ARCHIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
 SHARE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True)
 
@@ -94,6 +99,24 @@ SHARE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHin
 async def get_household_context() -> dict[str, Any]:
     """Load household size, restrictions, preferred stores, and planning preferences before planning."""
     return await services_for_request().household.get_context()
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_households() -> dict[str, Any]:
+    """List households this account belongs to and identify the active household."""
+    return await services_for_request().household.list_households()
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def switch_household(household_id: str) -> dict[str, Any]:
+    """Select a household by ID for subsequent website and MCP planning actions."""
+    return await services_for_request().household.switch_household(household_id)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def create_household(name: str) -> dict[str, Any]:
+    """Create another household owned by this account and make it active."""
+    return await services_for_request().household.create_household(name)
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
@@ -213,8 +236,14 @@ async def get_meal_plan(week_start: str | None = None) -> dict[str, Any]:
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_shopping_list(shopping_list: dict[str, Any]) -> dict[str, Any]:
-    """Persist a shopping list grouped by preferred store. This does not place an order."""
+    """Persist a shopping list. Each item may have an optional store tag. This does not place an order."""
     return await services_for_request().shopping.save(shopping_list)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def add_shopping_item(item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]:
+    """Add one item to a shopping list, creating a list if needed. Ask for the optional store generally used for this item; pass it as item.store. This does not place an order."""
+    return await services_for_request().shopping.add_item(item, list_id)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)

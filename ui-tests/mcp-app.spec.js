@@ -117,7 +117,7 @@ test('MCP views explain empty and unavailable data', async ({ page }) => {
   await show(page, { kind: 'meal_plan', plan: null });
   await expect(frame.locator('#root')).toContainText('No meal plan has been saved yet.');
   await show(page, { kind: 'shopping_list', shoppingList: null });
-  await expect(frame.locator('#root')).toContainText('No shopping list has been saved yet.');
+  await expect(frame.locator('#root')).toContainText('No items yet. Add one above.');
   await show(page, { kind: 'feedback', sections: { feedback: { status: 'unavailable', value: null } } });
   await expect(frame.locator('#root')).toContainText('Feedback unavailable');
   await show(page, { kind: 'recipe_library', recipes: [] });

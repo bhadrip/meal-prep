@@ -29,14 +29,15 @@ def rpc(client: TestClient, method: str, params: dict, request_id: int = 1) -> d
 
 
 def test_http_surface_serves_website_and_mcp(client: TestClient):
-    root = client.get("/")
+    root = client.get("/app")
     assert root.status_code == 200
     assert "Meal Prep" in root.text
     assert client.get("/static/app.js").status_code == 200
     assert client.get("/api/app/snapshot").status_code == 200
     login_script = client.get("/static/login.js")
     assert login_script.status_code == 200
-    assert "shouldCreateUser: false" in login_script.text
+    assert "shouldCreateUser: true" in login_script.text
+    assert client.get("/invite").status_code == 200
 
 
 def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
@@ -59,6 +60,7 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "configure_dashboard",
         "save_meal_plan",
         "save_shopping_list",
+        "add_shopping_item",
         "render_onboarding",
         "render_meal_plan",
         "render_shopping_list",
@@ -77,6 +79,9 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "review_household_memory",
     }.issubset(names)
     assert {"get_latest_retro", "get_weekly_retro", "save_weekly_retro"}.isdisjoint(names)
+    add_tool = next(tool for tool in tools if tool["name"] == "add_shopping_item")
+    assert "list_id" in add_tool["inputSchema"]["properties"]
+    assert add_tool["annotations"]["idempotentHint"] is False
     render_uris = {
         tool["name"]: tool["_meta"]["ui"]["resourceUri"]
         for tool in tools
@@ -103,6 +108,34 @@ def test_demo_weekly_schedule_can_be_saved_and_read(client: TestClient):
     assert saved["days"] == days
     loaded = rpc(client, "tools/call", {"name": "get_weekly_schedule", "arguments": {"week_start": "2026-09-28"}}, request_id=2)["structuredContent"]
     assert loaded["schedule"]["is_normal_week"] is False
+
+
+def test_shopping_item_tool_keeps_optional_store_in_rendered_list(client: TestClient):
+    current = rpc(client, "tools/call", {"name": "get_shopping_list", "arguments": {}}, request_id=30)["structuredContent"]["shoppingList"]
+    tagged = rpc(
+        client,
+        "tools/call",
+        {"name": "add_shopping_item", "arguments": {"item": {"name": "Olive oil", "store": "Trader Joe's"}, "list_id": current["id"]}},
+        request_id=31,
+    )["structuredContent"]
+    assert len(tagged["items"]) == len(current["items"]) + 1
+    assert tagged["items"][-1]["store"] == "Trader Joe's"
+
+    untagged = rpc(
+        client,
+        "tools/call",
+        {"name": "add_shopping_item", "arguments": {"item": {"name": "Salt"}, "list_id": current["id"]}},
+        request_id=32,
+    )["structuredContent"]
+    assert untagged["items"][-1]["store"] is None
+    rendered = rpc(client, "tools/call", {"name": "render_shopping_list", "arguments": {"list_id": current["id"]}}, request_id=33)["structuredContent"]
+    assert rendered["shoppingList"]["items"][-2:] == untagged["items"][-2:]
+
+    contents = rpc(client, "resources/read", {"uri": "ui://meal-prep/shopping-list-v2.html"}, request_id=34)["contents"]
+    html = contents[0]["text"]
+    assert 'id="shopping-add-form"' in html
+    assert 'Where do you generally buy this?' in html
+    assert 'class="store-tag"' in html
 
 
 def test_demo_weekly_check_in_is_saved_as_feedback(client: TestClient):

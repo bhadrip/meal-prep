@@ -106,6 +106,15 @@ class SupabaseRepository:
             raise RepositoryError("No household is available for this user")
         return value
 
+    async def list_households(self) -> dict[str, Any]:
+        return await self.rpc("list_my_households")
+
+    async def switch_household(self, household_id: str) -> dict[str, Any]:
+        return await self.rpc("set_active_household", {"requested_household_id": household_id})
+
+    async def create_household(self, name: str) -> dict[str, Any]:
+        return await self.rpc("create_my_household", {"requested_name": name})
+
     async def update_household_preferences(self, patch: dict[str, Any]) -> dict[str, Any]:
         allowed = {
             "household_size": "householdSize",
@@ -238,6 +247,9 @@ class SupabaseRepository:
     async def get_shopping_list(self, list_id: str | None = None) -> dict[str, Any] | None:
         value = await self.rpc("get_shopping_list", {"requested_list_id": list_id})
         return value if isinstance(value, dict) else None
+
+    async def add_shopping_item(self, item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]:
+        return await self.rpc("add_shopping_item", {"item": item, "requested_list_id": list_id})
 
     async def mark_item_purchased(
         self, item_id: str, purchased: bool, purchased_quantity: float | None = None
@@ -464,6 +476,17 @@ class DemoRepository:
     async def get_household_context(self, **_: Any) -> dict[str, Any]:
         return deepcopy(self._context)
 
+    async def list_households(self) -> dict[str, Any]:
+        return {"activeHouseholdId": self._context["householdId"], "households": [{"id": self._context["householdId"], "name": self._context["householdName"], "role": "owner"}]}
+
+    async def switch_household(self, household_id: str) -> dict[str, Any]:
+        if household_id != self._context["householdId"]:
+            raise RepositoryError("Household is not available in demo mode")
+        return await self.list_households()
+
+    async def create_household(self, name: str) -> dict[str, Any]:
+        raise RepositoryError("Creating households requires Supabase")
+
     async def update_household_preferences(self, patch: dict[str, Any]) -> dict[str, Any]:
         self._context.update(deepcopy(patch))
         return deepcopy(self._context)
@@ -570,6 +593,12 @@ class DemoRepository:
         return deepcopy(self._shopping_list)
 
     async def get_shopping_list(self, list_id: str | None = None) -> dict[str, Any] | None:
+        return deepcopy(self._shopping_list)
+
+    async def add_shopping_item(self, item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]:
+        if list_id and list_id != self._shopping_list["id"]:
+            raise RepositoryError("Shopping list was not found")
+        self._shopping_list["items"].append({"id": str(uuid4()), **deepcopy(item), "purchased": False})
         return deepcopy(self._shopping_list)
 
     async def mark_item_purchased(
