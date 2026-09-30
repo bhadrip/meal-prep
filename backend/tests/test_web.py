@@ -30,7 +30,10 @@ def test_website_uses_plugin_logo_and_self_hosted_type():
     assert 'value="cancel" formnovalidate>Cancel</button>' in html
     assert client.get("/static/typography.css").status_code == 200
     assert 'background: #252a40' in client.get("/static/app.css").text
-    assert "/login?next=%2Fapp" in client.get("/static/app.js").text
+    script = client.get("/static/app.js").text
+    assert "routeFromUrl()" in script
+    assert "addEventListener('popstate'" in script
+    assert "encodeURIComponent(location.pathname + location.search + location.hash)" in script
     assert "location.replace(next || '/app')" in client.get("/static/login.js").text
 
     plugin_logo = Path(__file__).resolve().parents[2] / "plugin/assets/meal-prep-icon.svg"

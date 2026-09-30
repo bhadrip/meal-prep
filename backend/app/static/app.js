@@ -38,6 +38,31 @@ const CARD_NAMES = {
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' };
 const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
+function routeFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const requestedView = params.get('view');
+  const view = Object.hasOwn(TITLES, requestedView) ? requestedView : 'overview';
+  const week = params.get('week');
+  const validWeek = week && /^\d{4}-\d{2}-\d{2}$/.test(week) && !Number.isNaN(Date.parse(`${week}T12:00:00`));
+  return {
+    view,
+    weekStart: view === 'plan' && validWeek ? week : null,
+    recipeId: view === 'recipes' ? params.get('recipe') : null,
+  };
+}
+
+function writeRoute(mode = 'push') {
+  const url = new URL(location.href);
+  ['view', 'week', 'recipe'].forEach((key) => url.searchParams.delete(key));
+  if (state.view !== 'overview') url.searchParams.set('view', state.view);
+  if (state.view === 'plan' && state.weekStart) url.searchParams.set('week', state.weekStart);
+  if (state.view === 'recipes' && state.recipe?.id) url.searchParams.set('recipe', state.recipe.id);
+  history[mode === 'replace' ? 'replaceState' : 'pushState'](null, '', url);
+}
+
+function loginPath() {
+  return `/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
+}
 const esc = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const arr = (value) => Array.isArray(value) ? value : [];
 const pick = (value, ...keys) => keys.map((key) => value?.[key]).find((item) => item !== undefined && item !== null);
@@ -72,14 +97,14 @@ async function api(path, options = {}) {
   if (state.client) {
     const { data, error } = await state.client.auth.getSession();
     if (error || !data.session?.access_token) {
-      location.assign('/login?next=%2Fapp');
+      location.assign(loginPath());
       throw new Error('Sign in to continue.');
     }
     headers.Authorization = `Bearer ${data.session.access_token}`;
   }
   const response = await fetch(path, { ...options, headers });
   if (response.status === 401) {
-    location.assign('/login?next=%2Fapp');
+    location.assign(loginPath());
     throw new Error('Your session has expired.');
   }
   const data = await response.json().catch(() => ({}));
@@ -122,16 +147,18 @@ async function refresh(message) {
   state.plan = section('mealPlan');
   state.schedule = section('schedule');
   if (!state.weekStart) state.weekStart = state.plan?.weekStart || state.schedule?.week_start || monday();
-  render();
+  if (state.view === 'plan' && household().onboardingComplete !== false) await loadWeek(state.weekStart);
+  else render();
   if (message) showToast(message);
 }
 
 async function loadWeek(weekStart) {
-  state.weekStart = monday(`${weekStart}T12:00:00`);
+  const selectedWeek = monday(`${weekStart}T12:00:00`);
   const [plan, schedule] = await Promise.all([
-    api(`/api/meal-plan?week_start=${encodeURIComponent(state.weekStart)}`),
-    api(`/api/schedule?week_start=${encodeURIComponent(state.weekStart)}`),
+    api(`/api/meal-plan?week_start=${encodeURIComponent(selectedWeek)}`),
+    api(`/api/schedule?week_start=${encodeURIComponent(selectedWeek)}`),
   ]);
+  state.weekStart = selectedWeek;
   state.plan = plan.plan;
   state.schedule = schedule.schedule;
   render();
@@ -322,11 +349,12 @@ function render() {
   content.innerHTML = views[state.view]?.() || renderOverview();
 }
 
-function view(name) {
+function view(name, historyMode = 'push') {
   state.view = name;
   state.recipe = null;
   state.shareUrl = null;
   state.shareId = null;
+  writeRoute(historyMode);
   render();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -456,6 +484,7 @@ async function submitEditor(data) {
     const saved = await save('/api/recipes', 'PUT', recipe);
     await loadRecipe(saved.id);
     state.view = 'recipes';
+    writeRoute();
   } else if (kind === 'pantry') {
     await save('/api/pantry', 'PUT', { id: item?.id, name: value('name'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, storageLocation: value('storageLocation'), quantityConfidence: value('quantityConfidence'), useByDate: value('useByDate') || null });
   } else if (kind === 'meal') {
@@ -489,7 +518,6 @@ async function submitEditor(data) {
   }
   dialog.close();
   await refresh('Saved to your household.');
-  if (kind === 'meal' || kind === 'schedule') await loadWeek(state.weekStart);
 }
 
 async function handleAction(actionName, id) {
@@ -520,9 +548,10 @@ async function handleAction(actionName, id) {
   if (actionName === 'edit-recipe') return openEditor('recipe', state.recipe || recipes.find((item) => item.id === id));
   if (actionName === 'open-recipe') {
     await loadRecipe(id);
+    writeRoute();
     return render();
   }
-  if (actionName === 'close-recipe') { state.recipe = null; state.shareUrl = null; state.shareId = null; return render(); }
+  if (actionName === 'close-recipe') { state.recipe = null; state.shareUrl = null; state.shareId = null; writeRoute(); return render(); }
   if (actionName === 'create-share') {
     const share = await api(`/api/recipes/${encodeURIComponent(id)}/shares`, { method: 'POST' });
     state.shareUrl = share.url;
@@ -550,6 +579,7 @@ async function handleAction(actionName, id) {
     if (!confirm('Archive this recipe? It will leave the active recipe library.')) return;
     await api(`/api/recipes/${encodeURIComponent(id)}`, { method: 'DELETE' });
     state.recipe = null;
+    writeRoute('replace');
     return refresh('Recipe archived.');
   }
   if (actionName === 'add-pantry') return openEditor('pantry');
@@ -562,7 +592,7 @@ async function handleAction(actionName, id) {
     if (!confirm(`Remove ${item.meal || item.title} from this plan?`)) return;
     await save('/api/meal-plan', 'PUT', { id: state.plan?.id, weekStart: state.weekStart, status: state.plan?.status || 'draft', entries: plan.filter((entry) => entry !== item) });
     await refresh('Meal removed.');
-    return loadWeek(state.weekStart);
+    return;
   }
   if (actionName === 'add-shopping') return openEditor('shopping');
   if (actionName === 'edit-shopping') return openEditor('shopping', shopping.find((item) => item.id === id));
@@ -595,7 +625,7 @@ async function handleAction(actionName, id) {
   }
   if (actionName === 'sign-out' && state.client) {
     await state.client.auth.signOut();
-    location.assign('/login?next=%2Fapp');
+    location.assign(loginPath());
   }
 }
 
@@ -614,7 +644,7 @@ document.addEventListener('click', async (event) => {
 
 content.addEventListener('change', async (event) => {
   if (event.target.id === 'week-picker') {
-    try { await loadWeek(event.target.value); }
+    try { await loadWeek(event.target.value); writeRoute(); }
     catch (error) { showToast(error.message); }
   }
   const checkbox = event.target.closest('[data-purchase-id]');
@@ -710,6 +740,7 @@ householdSelect.addEventListener('change', async () => {
     state.recipeResults = null;
     state.shareUrl = null;
     state.shareId = null;
+    writeRoute('replace');
     await refresh('Household switched.');
   } catch (error) {
     householdSelect.value = state.activeHouseholdId || '';
@@ -718,12 +749,15 @@ householdSelect.addEventListener('change', async () => {
 });
 
 async function start() {
+  const route = routeFromUrl();
+  state.view = route.view;
+  state.weekStart = route.weekStart;
   state.config = await fetch('/api/auth/config').then((response) => response.json());
   if (state.config.supabaseUrl && state.config.supabaseAnonKey) {
     if (!window.supabase?.createClient) throw new Error('Sign in is unavailable. Check your connection and reload.');
     state.client = window.supabase.createClient(state.config.supabaseUrl, state.config.supabaseAnonKey);
     const { data, error } = await state.client.auth.getSession();
-    if (error || !data.session) { location.replace('/login?next=%2Fapp'); return; }
+    if (error || !data.session) { location.replace(loginPath()); return; }
     state.session = data.session;
     const email = data.session.user?.email || 'Account';
     document.querySelector('#account-label').textContent = email;
@@ -733,8 +767,28 @@ async function start() {
     document.querySelector('#account-label').textContent = 'Local demo';
   }
   await refresh();
-  if (household().onboardingComplete === false && !state.pendingInvites.length) view('settings');
+  if (household().onboardingComplete === false && !state.pendingInvites.length) {
+    view('settings', 'replace');
+    return;
+  }
+  if (route.recipeId) { await loadRecipe(route.recipeId); render(); }
 }
+
+window.addEventListener('popstate', async () => {
+  const route = routeFromUrl();
+  state.view = route.view;
+  state.recipe = null;
+  state.shareUrl = null;
+  state.shareId = null;
+  state.plan = section('mealPlan');
+  state.schedule = section('schedule');
+  state.weekStart = route.weekStart || state.plan?.weekStart || state.schedule?.week_start || monday();
+  render();
+  try {
+    if (route.weekStart) await loadWeek(route.weekStart);
+    if (route.recipeId) { await loadRecipe(route.recipeId); render(); }
+  } catch (error) { showToast(error.message || 'Could not open this page.'); }
+});
 
 start().catch((error) => {
   content.innerHTML = empty('Could not open Meal Prep', error.message || 'Please reload and try again.');
