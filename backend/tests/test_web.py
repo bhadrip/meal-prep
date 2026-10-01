@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -71,6 +72,38 @@ def test_website_uses_plugin_logo_and_self_hosted_type():
 
     plugin_logo = Path(__file__).resolve().parents[2] / "plugin/assets/meal-prep-icon.svg"
     assert client.get("/static/meal-prep-icon.svg").text == plugin_logo.read_text()
+
+
+def test_pantry_evidence_api_pages_saved_photos_and_rejects_invalid_limits():
+    demo_repository.cache_clear()
+    repository = demo_repository()
+    repository._pantry_photos = []
+    for name in ("Milk", "Eggs", "Spinach"):
+        asyncio.run(repository.save_pantry_photo(
+            image=b"webp", width=20, height=20, file_id=f"file-{name}",
+            note=f"Photo of {name}", observations=[{"name": name}],
+            apply_to_pantry=False,
+        ))
+    client = TestClient(app)
+    first = client.get("/api/pantry/evidence?limit=2")
+    assert first.status_code == 200
+    assert [item["observations"][0]["name"] for item in first.json()["items"]] == ["Spinach", "Eggs"]
+    assert first.json()["hasMore"] is True
+    assert first.json()["nextOffset"] == 2
+    last = client.get("/api/pantry/evidence?limit=2&offset=2")
+    assert [item["observations"][0]["name"] for item in last.json()["items"]] == ["Milk"]
+    assert last.json()["hasMore"] is False
+    assert client.get("/api/pantry/evidence?limit=0").status_code == 422
+    assert client.get("/api/pantry/evidence?offset=-1").status_code == 422
+    demo_repository.cache_clear()
+
+
+def test_pantry_evidence_api_requires_a_session(monkeypatch):
+    monkeypatch.setattr(http, "get_settings", lambda: Settings(
+        supabase_url="https://example.supabase.co", supabase_anon_key="test",
+        auth_required=True, _env_file=None,
+    ))
+    assert TestClient(app).get("/api/pantry/evidence").status_code == 401
 
 
 def test_retired_weekly_review_api_is_not_exposed():

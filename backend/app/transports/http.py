@@ -242,6 +242,22 @@ async def get_pantry(services: WebServices) -> dict:
     return {"items": items, "count": len(items)}
 
 
+@router.get("/api/pantry/evidence")
+async def get_pantry_evidence(
+    services: WebServices,
+    limit: Annotated[int, Query(ge=1, le=50)] = 30,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict:
+    photos = await services.food.get_pantry_photos(limit + 1, offset)
+    items = photos[:limit]
+    return {
+        "items": items,
+        "count": len(items),
+        "hasMore": len(photos) > limit,
+        "nextOffset": offset + len(items),
+    }
+
+
 @router.put("/api/pantry")
 async def update_pantry_item(item: dict[str, Any], services: WebServices) -> dict:
     return await services.food.update_pantry_item(item)
