@@ -56,6 +56,10 @@ h1, h2, h3 { color: var(--ink); }
 .household-picker select { max-width: 220px; min-height: 42px; padding: 0 28px 0 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); font: inherit; font-size: .76rem; font-weight: 700; }
 .icon-button { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--primary); font-size: 1.15rem; }
 .icon-button:hover { border-color: #a7aec5; }
+.notification-button { position: relative; }
+.notification-count { position: absolute; top: -7px; right: -7px; min-width: 19px; padding: 1px 4px; border-radius: 10px; background: var(--copper); color: white; font-size: .65rem; font-weight: 800; }
+.notification-item.unread { border-color: var(--copper); }
+.notification-new { color: var(--copper); font-size: .72rem; font-weight: 800; }
 .account-button { display: flex; align-items: center; gap: 9px; min-height: 42px; padding: 5px 12px 5px 5px; border: 1px solid var(--line); border-radius: 13px; background: var(--paper); color: var(--ink); font-size: .78rem; font-weight: 700; }
 .account-button > span:first-child { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 10px; background: var(--primary); color: white; font-size: .68rem; }
 .mode-badge, .pill { display: inline-flex; align-items: center; min-height: 25px; padding: 0 9px; border-radius: 999px; background: var(--copper-soft); color: #8d4a36; font-size: .66rem; font-weight: 700; }
