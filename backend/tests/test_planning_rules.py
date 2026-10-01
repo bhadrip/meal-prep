@@ -103,3 +103,59 @@ def test_http_rules_roundtrip_and_conflicts_do_not_overwrite():
         assert client.get("/api/app/snapshot").json()["sections"]["mealPlanRules"]["value"] == second
     finally:
         demo_repository.cache_clear()
+
+
+def test_rule_viewer_reads_the_plan_revision_and_rejects_unavailable_versions():
+    demo_repository.cache_clear()
+    try:
+        client = TestClient(app)
+        original = client.put("/api/meal-plan-rules", json={
+            "text": "Saturday pasta.", "expectedRevision": 0,
+        }).json()
+        client.put("/api/meal-plan", json={
+            "weekStart": "2030-02-04", "ruleRevisionId": original["id"],
+            "entries": [{"date": "2030-02-04", "slot": "dinner", "meal": "Pasta"}],
+        }).raise_for_status()
+        current = client.put("/api/meal-plan-rules", json={
+            "text": "Saturday stir-fry.", "expectedRevision": 1,
+        }).json()
+        plan = client.get("/api/meal-plan?week_start=2030-02-04").json()["plan"]
+        preview = client.get(f"/api/meal-plan-rules?revision_id={plan['ruleRevisionId']}")
+        assert preview.status_code == 200 and preview.json()["rules"] == original
+        assert preview.json()["rules"] != current
+        for revision_id, message in [(str(uuid4()), "not found"), ("invalid", "Invalid")]:
+            failed = client.get("/api/meal-plan-rules", params={"revision_id": revision_id})
+            assert failed.status_code == 422 and message in failed.json()["detail"]
+        assert client.get("/api/meal-plan-rules").json()["rules"] == current
+        assert client.get("/api/meal-plan?week_start=2030-02-04").json()["plan"] == plan
+    finally:
+        demo_repository.cache_clear()
+
+
+def test_week_note_edit_preserves_rhythm_rules_and_rejects_an_oversized_draft():
+    demo_repository.cache_clear()
+    try:
+        client = TestClient(app)
+        rules = client.put("/api/meal-plan-rules", json={
+            "text": "Cook ambta baaji on Saturday.", "expectedRevision": 0,
+        }).json()
+        rhythm = {"weekStart": "2030-02-04", "isNormalWeek": False, "rememberRhythm": False,
+            "days": [{"day": day, "mode": "busy" if day == "Monday" else "leftovers"}
+                for day in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")]}
+        original = client.put("/api/schedule", json=rhythm).json()
+        failed = client.put("/api/schedule", json={**rhythm, "notes": "x" * 3001})
+        assert failed.status_code == 422 and "Week notes" in failed.json()["detail"]
+        assert client.get("/api/schedule?week_start=2030-02-04").json()["schedule"] == original
+        saved = client.put("/api/schedule", json={**rhythm, "notes": "Guests Saturday; use spinach."}).json()
+        assert saved["days"] == original["days"]
+        assert saved["is_normal_week"] is False and saved["remember_rhythm"] is False
+        context = client.get("/api/planning-context?week_start=2030-02-04").json()
+        assert context["schedule"]["notes"] == saved["notes"]
+        assert context["mealPlanRules"] == rules
+        assert client.get("/api/meal-plan-rules/history").json()["items"] == [rules]
+        changed_rhythm = {**rhythm, "days": [{**day, "mode": "quick"} for day in rhythm["days"]]}
+        changed = client.put("/api/schedule", json=changed_rhythm).json()
+        assert changed["notes"] == saved["notes"] and changed["id"] == saved["id"]
+        assert all(day["mode"] == "quick" for day in changed["days"])
+    finally:
+        demo_repository.cache_clear()

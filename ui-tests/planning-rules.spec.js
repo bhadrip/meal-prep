@@ -6,10 +6,12 @@ const rulesCard = (page) => page.locator('article.card').filter({ has: page.getB
 async function openPlan(page) {
   await page.goto('/app?view=plan');
   await expect(page.locator('#view-title')).toHaveText('Weekly plan');
-  await expect(rulesCard(page)).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Plan', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#week-picker')).toBeVisible();
 }
 
 async function saveRules(page, text) {
+  await page.getByRole('tab', { name: 'Planning rules', exact: true }).click();
   await page.getByRole('button', { name: 'Edit planning rules', exact: true }).click();
   await editor(page).locator('[name="text"]').fill(text);
   const saved = page.waitForResponse((r) => r.url().endsWith('/api/meal-plan-rules') && r.request().method() === 'PUT');
@@ -33,17 +35,22 @@ test('English rule revisions persist, retain history, and leave existing plans i
   await page.reload();
   await expect(rulesCard(page).locator('.planning-text').first()).toHaveText(secondText);
   await page.getByRole('button', { name: 'View rule history', exact: true }).click();
-  const old = page.locator('#planning-rule-history .feedback').filter({ has: page.locator('strong', { hasText: new RegExp(`^Version ${first.revision}$`) }) });
-  await expect(old.locator('.planning-text')).toHaveText(text);
+  await page.locator('#planning-rule-history').getByRole('button', { name: `View version ${first.revision}`, exact: true }).click();
+  await expect(page.locator('#planning-rule-preview .planning-text')).toHaveText(text);
+  await expect(page.getByRole('button', { name: 'Edit planning rules', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'View current rules', exact: true }).click();
+  await expect(rulesCard(page).locator('.planning-text').first()).toHaveText(secondText);
   expect((await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan).toEqual(original);
   await saveRules(page, '');
   await page.getByRole('button', { name: 'View rule history', exact: true }).click();
-  await expect(page.locator('#planning-rule-history')).toContainText(text);
+  await page.locator('#planning-rule-history').getByRole('button', { name: `View version ${first.revision}`, exact: true }).click();
+  await expect(page.locator('#planning-rule-preview .planning-text')).toHaveText(text);
 });
 
 test('a stale editor retains its draft and can reload a concurrent change', async ({ page }) => {
   await openPlan(page);
   const current = (await (await page.request.get('/api/meal-plan-rules')).json()).rules;
+  await page.getByRole('tab', { name: 'Planning rules', exact: true }).click();
   await page.getByRole('button', { name: 'Edit planning rules', exact: true }).click();
   const draft = `My draft ${Date.now()}`;
   await editor(page).locator('[name="text"]').fill(draft);
@@ -70,17 +77,34 @@ test('week notes stay with their week and reach MCP planning context', async ({ 
   date.setUTCDate(date.getUTCDate() + 7);
   const nextWeek = date.toISOString().slice(0, 10);
   const note = `Guests Saturday; use leftover spinach. ${Date.now()}`;
-  await page.getByRole('button', { name: 'Edit weekly rhythm', exact: true }).click();
+  const rhythm = (await (await page.request.get(`/api/schedule?week_start=${week}`)).json()).schedule;
+  const rules = (await (await page.request.get('/api/meal-plan-rules')).json()).rules;
+  await page.getByRole('button', { name: 'Edit notes', exact: true }).click();
   await editor(page).locator('[name="notes"]').fill(note);
   await editor(page).locator('#dialog-save').click();
   await expect(editor(page)).toBeHidden();
-  const notes = page.locator('article.card').filter({ has: page.getByRole('heading', { name: 'Notes for this week', exact: true }) });
+  const notes = page.locator('#week-notes');
+  await notes.locator('summary').click();
   await expect(notes).toContainText(note);
+  expect((await (await page.request.get(`/api/schedule?week_start=${week}`)).json()).schedule.days).toEqual(rhythm.days);
+  expect((await (await page.request.get('/api/meal-plan-rules')).json()).rules).toEqual(rules);
+  await page.getByRole('button', { name: 'Edit weekly rhythm', exact: true }).click();
+  await expect(editor(page)).toContainText(`Week of ${week}`);
+  const monday = editor(page).locator('input[name="Monday"]').locator('..');
+  await monday.locator('.choice-trigger').click();
+  await monday.locator('[data-choice-value="busy"]').click();
+  await editor(page).locator('#dialog-save').click();
+  await expect(editor(page)).toBeHidden();
+  await expect(page.locator('.day-card').first()).toContainText('busy');
+  await notes.locator('summary').click();
+  await expect(notes.locator('.planning-text')).toHaveText(note);
   await page.locator('#week-picker').fill(nextWeek);
   await expect(notes).not.toContainText(note);
   await page.locator('#week-picker').fill(week);
+  await notes.locator('summary').click();
   await expect(notes).toContainText(note);
   await page.reload();
+  await notes.locator('summary').click();
   await expect(notes).toContainText(note);
   const response = await page.request.post('/mcp', {
     headers: { Accept: 'application/json, text/event-stream' },
@@ -97,6 +121,7 @@ test('manual meal edits keep the rule version used to create the plan', async ({
     entries: [{ date: week, slot: 'dinner', meal: 'Pasta from Saturday', notes: 'Reuse the batch.' }] } });
   expect(response.ok()).toBeTruthy();
   await saveRules(page, `Saturday stir-fry. ${Date.now()}`);
+  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
   await page.locator('#week-picker').fill(week);
   const source = page.locator('#plan-rule-source');
   await expect(source).toContainText(`version ${first.revision}`);
@@ -106,7 +131,86 @@ test('manual meal edits keep the rule version used to create the plan', async ({
   await expect(editor(page)).toBeHidden();
   await expect(page.locator('.meal')).toContainText('Pasta with a vegetable side');
   await expect(source).toContainText(`version ${first.revision}`);
-  await source.locator('summary').click();
-  await expect(source.locator('.planning-text')).toHaveText(first.text);
+  await source.click();
+  await expect(page.locator('#planning-rule-preview .planning-text')).toHaveText(first.text);
+  await expect(page).toHaveURL(new RegExp(`tab=rules&revision=${first.id}`));
+  await page.reload();
+  await expect(page.locator('#planning-rule-preview .planning-text')).toHaveText(first.text);
+  await expect(page.locator('#planning-panel')).toContainText(`Used for the week of ${week}`);
+  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
+  await expect(page.locator('#week-picker')).toHaveValue(week);
+  await expect(page.locator('.meal')).toContainText('Pasta with a vegetable side');
   expect((await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan.ruleRevisionId).toBe(first.id);
+});
+
+test('tabs preserve the selected week through reload, browser navigation, and keyboard use', async ({ page }) => {
+  await openPlan(page);
+  const week = '2031-03-03';
+  await page.locator('#week-picker').fill(week);
+  await expect(page).toHaveURL(new RegExp(`week=${week}`));
+  await page.getByRole('tab', { name: 'Planning rules', exact: true }).click();
+  await expect(page.locator('#week-picker')).toHaveCount(0);
+  await expect(page.locator('.week-grid')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Planning rules', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.goBack();
+  await expect(page.getByRole('tab', { name: 'Plan', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#week-picker')).toHaveValue(week);
+  await page.goForward();
+  await expect(page.getByRole('tab', { name: 'Planning rules', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: 'Planning rules', exact: true }).focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('tab', { name: 'Plan', exact: true })).toBeFocused();
+  await expect(page.locator('#week-picker')).toHaveValue(week);
+  await expect(rulesCard(page)).toHaveCount(0);
+});
+
+test('mobile notes editing preserves a failed draft, saves an empty week, and keeps days readable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openPlan(page);
+  const week = '2031-04-07';
+  await page.locator('#week-picker').fill(week);
+  await expect(page).toHaveURL(new RegExp(`week=${week}`));
+  await page.getByRole('button', { name: 'Edit notes', exact: true }).click();
+  await editor(page).locator('[name="notes"]').fill('x'.repeat(3001));
+  await editor(page).locator('#dialog-save').click();
+  await expect(editor(page).locator('#dialog-error')).toContainText('Week notes');
+  await expect(editor(page).locator('[name="notes"]')).toHaveValue('x'.repeat(3001));
+  expect((await (await page.request.get(`/api/schedule?week_start=${week}`)).json()).schedule).toBeNull();
+  const note = `Guests on Saturday ${Date.now()}`;
+  await editor(page).locator('[name="notes"]').fill(note);
+  await editor(page).locator('#dialog-save').click();
+  await expect(editor(page)).toBeHidden();
+  await page.locator('#week-notes summary').click();
+  await expect(page.locator('#week-notes .planning-text')).toHaveText(note);
+  const monday = page.locator('.day-card').nth(0);
+  const tuesday = page.locator('.day-card').nth(1);
+  const firstBox = await monday.boundingBox();
+  const secondBox = await tuesday.boundingBox();
+  expect(secondBox.y).toBeGreaterThan(firstBox.y + firstBox.height);
+  expect(secondBox.x).toBe(firstBox.x);
+  await tuesday.getByRole('button', { name: 'Add meal to Tuesday' }).click();
+  await expect(editor(page).locator('[name="date"]')).toHaveValue('2031-04-08');
+  await editor(page).locator('[name="meal"]').fill('Ambta baaji leftovers');
+  await editor(page).locator('#dialog-save').click();
+  await expect(editor(page)).toBeHidden();
+  await expect(tuesday.locator('.meal')).toContainText('Ambta baaji leftovers');
+  await page.getByRole('tab', { name: 'Planning rules', exact: true }).click();
+  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
+  await expect(page.locator('#week-picker')).toHaveValue(week);
+  await expect(tuesday.locator('.meal')).toContainText('Ambta baaji leftovers');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+});
+
+test('an unavailable rule revision shows an error and can return to the current rules', async ({ page }) => {
+  await openPlan(page);
+  const current = await saveRules(page, `Usual Saturday pasta ${Date.now()}`);
+  await page.goto('/app?view=plan&week=2030-02-04&tab=rules&revision=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  await expect(page.locator('#planning-panel')).toContainText('Could not load this version');
+  await expect(page.locator('#planning-panel')).toContainText('not found');
+  await expect(page.locator('#planning-rule-preview')).toHaveCount(0);
+  await page.getByRole('button', { name: 'View current rules', exact: true }).click();
+  await expect(rulesCard(page).locator('.planning-text')).toHaveText(current.text);
+  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
+  await expect(page.locator('#week-picker')).toHaveValue('2030-02-04');
 });

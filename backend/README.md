@@ -227,8 +227,12 @@ Presentation tools:
 
 ## English planning rules
 
-The weekly plan page lets members write recurring instructions in English,
-inspect saved versions, and add temporary notes through **Edit weekly rhythm**.
+Weekly plan has two tabs: **Plan** for the selected week’s meals, prep, and
+temporary notes, and **Planning rules** for recurring English instructions and
+version history. **Edit notes** changes only that week’s notes; **Edit weekly
+rhythm** sets the pace for each day. The plan’s **Rules used: version N** link
+opens its exact saved rules as a read-only document. Tab, week, and revision
+links survive reload and browser navigation. On phones, day cards stack vertically.
 Rules start empty. Each changed document creates an immutable household
 revision; clearing the text preserves history. Saves include the revision
 read by the editor so simultaneous changes cannot silently overwrite each other.
