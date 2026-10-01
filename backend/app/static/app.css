@@ -103,6 +103,10 @@ h1, h2, h3 { color: var(--ink); }
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag { padding: 5px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: .63rem; font-weight: 700; }
 .tag.orange { background: var(--copper-soft); color: #8d4a36; }
+.recipe-tag-button { border: 0; cursor: pointer; font: inherit; }
+.recipe-tag-button:hover, .recipe-tag-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.recipe-tags { margin-top: 12px; }
+.recipe-filter { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; font-size: .75rem; }
 .empty { display: grid; place-items: center; min-height: 170px; padding: 28px; border: 1px dashed #bfc1ca; border-radius: 12px; color: var(--muted); text-align: center; }
 .empty b { margin-bottom: 6px; color: var(--ink); }
 .week-grid { display: grid; grid-template-columns: repeat(7,minmax(135px,1fr)); gap: 10px; overflow-x: auto; padding-bottom: 5px; }

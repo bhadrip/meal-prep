@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
+import json
 from secrets import token_hex
 from typing import Any
 from urllib.parse import quote
@@ -154,7 +155,7 @@ class SupabaseRepository:
         self._household_context = None
         return await self.get_household_context()
 
-    async def search_recipes(self, query: str = "", limit: int = 10) -> list[dict[str, Any]]:
+    async def search_recipes(self, query: str = "", limit: int = 10, tag: str = "") -> list[dict[str, Any]]:
         household_id = await self.household_id()
         params = {
             "select": "id,title,description,servings,active_minutes,total_minutes,tags,ingredients,instructions,source_url,created_at,updated_at",
@@ -163,9 +164,19 @@ class SupabaseRepository:
             "order": "updated_at.desc",
             "limit": str(min(max(limit, 1), 25)),
         }
-        if query.strip():
-            params["title"] = f"ilike.*{query.strip()[:80]}*"
-        return await self.request("GET", "recipes", params=params) or []
+        if tag:
+            params["tags"] = f"cs.{{{json.dumps(tag)}}}"
+            rows = await self.request("GET", "recipes", params=params) or []
+            needle = query.strip().casefold()
+            return [row for row in rows if not needle or any(needle in str(row.get(key) or "").casefold() for key in ("title", "description")) or needle in [str(value).casefold() for value in row.get("tags", [])]]
+        if not query.strip():
+            return await self.request("GET", "recipes", params=params) or []
+        needle = query.strip()[:80]
+        results = []
+        for key, value in (("title", f"ilike.*{needle}*"), ("description", f"ilike.*{needle}*"), ("tags", f"cs.{{{json.dumps(needle.casefold())}}}")):
+            rows = await self.request("GET", "recipes", params={**params, key: value}) or []
+            results.extend(rows)
+        return list({row["id"]: row for row in results}.values())[: min(max(limit, 1), 25)]
 
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None:
         rows = await self.request(
@@ -645,8 +656,14 @@ class DemoRepository:
         self._context.update(deepcopy(patch))
         return deepcopy(self._context)
 
-    async def search_recipes(self, query: str = "", limit: int = 10) -> list[dict[str, Any]]:
-        matches = [item for item in self._recipes if query.lower() in item["title"].lower()]
+    async def search_recipes(self, query: str = "", limit: int = 10, tag: str = "") -> list[dict[str, Any]]:
+        needle = query.strip().casefold()
+        matches = [item for item in self._recipes if (
+            not tag or tag in [str(value).casefold() for value in item.get("tags", [])]
+        ) and (
+            not needle or any(needle in str(item.get(key) or "").casefold() for key in ("title", "description"))
+            or needle in [str(value).casefold() for value in item.get("tags", [])]
+        )]
         return deepcopy(matches[:limit])
 
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None:

@@ -249,6 +249,30 @@ test('recipe create, search, edit, share, copy, public save, revoke, and archive
   await expect(content(page).locator(`[data-action="open-recipe"][data-id="${originalId}"]`)).toHaveCount(0);
 });
 
+test('recipe tags can be saved, searched, and opened as exact filters', async ({ page }) => {
+  await open(page, 'recipes');
+  const tag = `sickness-friendly-${Date.now()}`;
+  const soup = unique('Recovery soup');
+  const dinner = unique('Guest dinner');
+  for (const [title, tags] of [[soup, `${tag}, comfort`], [dinner, 'guest-friendly']]) {
+    await content(page).getByRole('button', { name: 'Add recipe' }).click();
+    await editor(page).locator('[name="title"]').fill(title);
+    await editor(page).locator('[name="tags"]').fill(tags);
+    await saveEditor(page);
+    await content(page).getByRole('button', { name: '← All recipes' }).click();
+  }
+  await page.locator('#recipe-search').fill(tag);
+  await expect(content(page).locator('.recipe-card')).toHaveCount(1);
+  await expect(content(page).locator('.recipe-card')).toContainText(soup);
+  await page.locator('#recipe-search').fill('');
+  await content(page).getByRole('button', { name: `Show recipes tagged ${tag}` }).click();
+  await expect(content(page).locator('.recipe-card')).toHaveCount(1);
+  await expect(content(page).locator('.recipe-card')).toContainText(soup);
+  await expect(content(page).locator('.recipe-card')).not.toContainText(dinner);
+  await content(page).getByRole('button', { name: 'Clear tag' }).click();
+  await expect(content(page).locator('.recipe-card').filter({ hasText: dinner })).toHaveCount(1);
+});
+
 test('recipe feedback appears in the open detail without leaving the page', async ({ page }) => {
   await open(page, 'recipes');
   await content(page).locator('[data-action="open-recipe"][data-id="11111111-1111-1111-1111-111111111111"]').click();

@@ -130,6 +130,22 @@ test('MCP onboarding and recipe library actions', async ({ page }) => {
   await expect(frame.getByRole('heading', { name: 'Your recipes' })).toBeVisible();
 });
 
+test('MCP recipe tags filter the rendered library and open matching recipes', async ({ page }) => {
+  const frame = await host(page);
+  await show(page, { kind: 'recipe_library', recipes: [recipe, {
+    id: 'guest-recipe', title: 'Guest dinner', description: 'Dinner for visitors', tags: ['guest-friendly'],
+  }] });
+  await frame.getByRole('button', { name: 'weeknight', exact: true }).click();
+  await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(1);
+  await expect(frame.locator('#recipe-results')).toContainText('Lentil bowls');
+  await expect(frame.locator('#recipe-results')).not.toContainText('Guest dinner');
+  await frame.getByRole('button', { name: 'Open Lentil bowls' }).click();
+  await frame.getByRole('button', { name: 'Show recipes tagged weeknight' }).click();
+  await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(1);
+  await frame.getByRole('button', { name: 'All recipes' }).click();
+  await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(2);
+});
+
 test('MCP views explain empty and unavailable data', async ({ page }) => {
   const frame = await host(page);
   await show(page, { kind: 'meal_plan', plan: null });

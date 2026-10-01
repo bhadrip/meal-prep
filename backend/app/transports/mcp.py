@@ -177,9 +177,9 @@ async def configure_dashboard(
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
-async def search_recipes(query: str = "", limit: int = 10) -> dict[str, Any]:
-    """Search the household recipe library without changing it."""
-    items = await services_for_request().food.search_recipes(query=query, limit=limit)
+async def search_recipes(query: str = "", limit: int = 10, tag: str = "") -> dict[str, Any]:
+    """Search saved recipes by title, description, or tag. Set tag for an exact tag filter."""
+    items = await services_for_request().food.search_recipes(query=query, limit=limit, tag=tag)
     return {"items": items, "count": len(items)}
 
 
@@ -191,7 +191,7 @@ async def get_recipe(recipe_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
-    """Create or update a normalized household recipe with provenance fields when available."""
+    """Create or update a household recipe. Include tags as a list of reusable labels such as sickness-friendly or guest-friendly."""
     return await services_for_request().food.save_recipe(recipe)
 
 
@@ -413,10 +413,10 @@ async def render_household_snapshot() -> dict[str, Any]:
     meta={"ui": {"resourceUri": RECIPE_LIBRARY_UI_URI}},
     structured_output=True,
 )
-async def render_recipe_library(query: str = "", limit: int = 50) -> dict[str, Any]:
-    """Render saved recipes as a visual library with expandable recipe details."""
-    recipes = await services_for_request().food.search_recipes(query=query, limit=limit)
-    return {"kind": "recipe_library", "recipes": recipes, "query": query, "count": len(recipes)}
+async def render_recipe_library(query: str = "", limit: int = 50, tag: str = "") -> dict[str, Any]:
+    """Render saved recipes as a visual library; filter by a tag when requested."""
+    recipes = await services_for_request().food.search_recipes(query=query, limit=limit, tag=tag)
+    return {"kind": "recipe_library", "recipes": recipes, "query": query, "tag": tag, "count": len(recipes)}
 
 
 @mcp.tool(

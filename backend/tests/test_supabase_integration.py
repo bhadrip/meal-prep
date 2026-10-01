@@ -40,6 +40,12 @@ async def test_local_supabase_week_plan_and_rhythm_roundtrip():
             )
             household_id = (await repository.get_household_context())["householdId"]
 
+            saved_recipe = await repository.save_recipe({"title": "Ginger rasam", "tags": ["sickness-friendly", "rasam"]})
+            assert saved_recipe["tags"] == ["sickness-friendly", "rasam"]
+            assert [item["id"] for item in await repository.search_recipes(tag="sickness-friendly")] == [saved_recipe["id"]]
+            assert [item["id"] for item in await repository.search_recipes(query="rasam")] == [saved_recipe["id"]]
+            assert await repository.search_recipes(tag="guest-friendly") == []
+
             first_week = "2030-02-04"
             second_week = "2030-02-11"
             first = await repository.save_meal_plan({
