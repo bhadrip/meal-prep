@@ -37,7 +37,7 @@ test('meals render while pantry and notifications wait, and recipes load on navi
     expect(names.sort()).toEqual(['mealPlan', 'pantry', 'shoppingList']);
     await page.getByRole('button', { name: 'Browse recipes', exact: true }).click();
     await expect(page.locator('.recipe-card')).not.toHaveCount(0);
-    await page.locator('.recipe-card').first().getByRole('button', { name: 'View recipe' }).click();
+    await page.locator('.recipe-card').first().getByRole('button', { name: /^Open / }).click();
     await expect(page.getByRole('heading', { name: 'Recipe details' })).toBeVisible();
     expect(names).toContain('recipes');
     expect(names).not.toContain('feedback');

@@ -13,6 +13,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 
 from ..application.errors import RepositoryError, RevisionConflictError, StorageNotInstalledError
 from ..application.pantry_categories import infer_pantry_category
+from ..application.recipe_graph import CATEGORY_FIELDS, category_id, relationships_from_data
 from ..config import Settings, get_settings
 
 
@@ -23,6 +24,9 @@ PLANNING_TABLES = {
     "meal_plan_rule_revisions": "meal plan rules",
 }
 PLANNING_FUNCTIONS = {
+    "rpc/get_recipe_graph_data": "recipe relationships",
+    "rpc/save_recipe_relationship": "recipe relationships",
+    "rpc/delete_recipe_relationship": "recipe relationships",
     "rpc/get_experience_feedback": "feedback",
     "rpc/save_experience_feedback": "feedback",
     "rpc/record_pantry_use": "pantry use",
@@ -179,6 +183,15 @@ class SupabaseRepository:
     async def list_recipe_tags(self) -> list[dict[str, Any]]:
         return await self.rpc("list_recipe_tags") or []
 
+    async def get_recipe_graph_data(self) -> dict[str, Any]:
+        return await self.rpc("get_recipe_graph_data")
+
+    async def save_recipe_relationship(self, relationship: dict[str, Any]) -> dict[str, Any]:
+        return await self.rpc("save_recipe_relationship", {"requested_relationship": relationship})
+
+    async def delete_recipe_relationship(self, relationship_id: str) -> bool:
+        return await self.rpc("delete_recipe_relationship", {"requested_id": relationship_id})
+
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None:
         rows = await self.request(
             "GET",
@@ -203,6 +216,7 @@ class SupabaseRepository:
             "source_url": recipe.get("sourceUrl"),
             "source_type": recipe.get("sourceType", "manual"),
         }
+        row.update({field: recipe[field] for field in CATEGORY_FIELDS.values() if field != "tags" and field in recipe})
         rows = await self.request(
             "POST", "recipes", params={"on_conflict": "id"}, json=row
         )
@@ -572,6 +586,8 @@ class DemoRepository:
     """Deterministic local state used when Supabase is not configured."""
 
     def __init__(self) -> None:
+        self._recipes = deepcopy(self._recipes)
+        self._recipe_relationships: list[dict[str, Any]] = []
         initial_plan = deepcopy(self._meal_plan)
         for entry in initial_plan["entries"]:
             entry["id"] = entry.get("id") or str(uuid4())
@@ -710,8 +726,50 @@ class DemoRepository:
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None:
         return deepcopy(next((item for item in self._recipes if item["id"] == recipe_id), None))
 
+    async def get_recipe_graph_data(self) -> dict[str, Any]:
+        return {"recipes": deepcopy(sorted(self._recipes, key=lambda r: r["title"].casefold())),
+                "relationships": deepcopy(self._recipe_relationships)}
+
+    def _remove_recipe_relationship(self, edge: dict[str, Any]) -> None:
+        if edge["type"] in CATEGORY_FIELDS:
+            field = CATEGORY_FIELDS[edge["type"]]
+            for recipe in self._recipes:
+                if recipe["id"] == edge["sourceRecipeId"]:
+                    recipe[field] = [value for value in recipe.get(field, []) if value != edge["label"]]
+        else:
+            self._recipe_relationships = [r for r in self._recipe_relationships if r["id"] != edge["id"]]
+
+    async def save_recipe_relationship(self, relationship: dict[str, Any]) -> dict[str, Any]:
+        old = next((r for r in relationships_from_data(await self.get_recipe_graph_data()) if r["id"] == relationship.get("id")), None)
+        if old:
+            self._remove_recipe_relationship(old)
+        saved = deepcopy(relationship)
+        if saved["type"] in CATEGORY_FIELDS:
+            saved["id"] = category_id(saved["type"], saved["sourceRecipeId"], saved["label"])
+            field = CATEGORY_FIELDS[saved["type"]]
+            for recipe in self._recipes:
+                if recipe["id"] == saved["sourceRecipeId"]:
+                    recipe[field] = [*recipe.get(field, []), saved["label"]]
+        else:
+            saved["id"] = old["id"] if old and old["type"] not in CATEGORY_FIELDS else str(uuid4())
+            self._recipe_relationships.append(saved)
+        return deepcopy(saved)
+
+    async def delete_recipe_relationship(self, relationship_id: str) -> bool:
+        old = next((r for r in relationships_from_data(await self.get_recipe_graph_data()) if r["id"] == relationship_id), None)
+        if not old:
+            return False
+        self._remove_recipe_relationship(old)
+        return True
+
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]:
-        row = {"id": recipe.get("id") or str(uuid4()), **deepcopy(recipe)}
+        existing = next((r for r in self._recipes if r["id"] == recipe.get("id")), {})
+        row = {"id": recipe.get("id") or str(uuid4()),
+               **{field: deepcopy(existing.get(field, [])) for field in CATEGORY_FIELDS.values()}, **deepcopy(recipe)}
+        for camel, snake in (("totalMinutes", "total_minutes"), ("activeMinutes", "active_minutes"),
+                             ("sourceUrl", "source_url"), ("sourceType", "source_type")):
+            if camel in recipe:
+                row[snake] = row.pop(camel)
         self._recipes = [item for item in self._recipes if item["id"] != row["id"]] + [row]
         return deepcopy(row)
 

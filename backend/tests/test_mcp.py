@@ -1,3 +1,4 @@
+import re
 from copy import deepcopy
 
 from fastapi.testclient import TestClient
@@ -34,7 +35,8 @@ def test_mcp_dropdown_assets_are_embedded_for_hosts_without_static_asset_access(
         html = rpc(client, "resources/read", {"uri": uri})["contents"][0]["text"]
         assert '/static/choices.js' not in html
         assert '/static/choices.css' not in html
-        assert '<select' not in html
+        markup = re.sub(r'<script\b[^>]*>.*?</script>', '', html, flags=re.S)
+        assert '<select' not in markup
         assert 'window.MealPrepChoices =' in html
 
 
@@ -159,6 +161,7 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     assert render_uris == {
         "render_household_snapshot": "ui://meal-prep/household-dashboard-v4.html",
         "render_recipe_library": "ui://meal-prep/recipe-library-v1.html",
+        "render_recipe_graph": "ui://meal-prep/recipe-library-v1.html",
         "render_feedback": "ui://meal-prep/feedback-v2.html",
         "render_onboarding": "ui://meal-prep/onboarding-v2.html",
         "render_meal_plan": "ui://meal-prep/meal-plan-v2.html",
@@ -415,7 +418,7 @@ def test_recipe_library_is_served_as_a_visual_mcp_app(client: TestClient):
 
     assert rendered["kind"] == "recipe_library"
     assert rendered["count"] == len(rendered["recipes"])
-    assert rendered["recipes"][0]["title"] == "Paneer rice bowls"
+    assert any(recipe["title"] == "Paneer rice bowls" for recipe in rendered["recipes"])
 
     contents = rpc(
         client,
@@ -600,3 +603,47 @@ def test_household_onboarding_can_be_completed_only_with_full_answers(client: Te
     )["structuredContent"]
     assert completed["householdSize"] == 2
     assert completed["onboardingCompletedAt"] != "2026-01-01T00:00:00+00:00"
+
+
+def test_mcp_graph_roundtrip_and_self_link_failure(client):
+    def call(name, arguments):
+        response = client.post('/mcp', headers={"Accept": "application/json, text/event-stream"}, json={
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
+        assert response.status_code == 200
+        return response.json()["result"]
+    recipe = call('save_recipe', {"recipe": {"title": "MCP rasam"}})["structuredContent"]
+    saved = call('save_recipe_relationship', {"relationship": {"sourceRecipeId": recipe["id"], "type": "cuisine", "label": "South Indian"}})["structuredContent"]
+    graph = call('render_recipe_graph', {})["structuredContent"]
+    assert graph["kind"] == "recipe_graph"
+    assert any(e["id"] == saved["id"] for e in graph["graph"]["edges"])
+    invalid = call('save_recipe_relationship', {"relationship": {"sourceRecipeId": recipe["id"], "targetRecipeId": recipe["id"], "type": "variant_of"}})
+    assert invalid["isError"] is True
+    assert 'different recipes' in str(invalid["content"])
+    assert call('delete_recipe_relationship', {"relationship_id": saved["id"]})["structuredContent"]["deleted"] is True
+    assert not any(e["id"] == saved["id"] for e in call('get_recipe_graph', {})["structuredContent"]["edges"])
+
+
+def test_mcp_browses_typed_categories_and_rejects_unknown_filters(client):
+    def call(name, arguments):
+        return rpc(client, 'tools/call', {"name": name, "arguments": arguments})
+    recipe = call('save_recipe', {"recipe": {"title": "MCP tofu", "eating_goals": ["protein rich"], "meal_types": ["dinner"]}})["structuredContent"]
+    arguments = {"filters": {"goal": ["protein rich"], "meal": ["dinner"]}}
+    results = call('browse_recipe_library', arguments)["structuredContent"]
+    assert any(r["id"] == recipe["id"] for r in results["items"])
+    rendered = call('render_recipe_library', arguments)["structuredContent"]
+    assert rendered["kind"] == 'recipe_library' and rendered["filters"] == arguments["filters"]
+    assert rendered["exploreOpen"] is False and rendered["items"] == results["items"]
+    empty = call('render_recipe_library', {"query": "MCP tofu", "filters": {"meal": ["breakfast"]}})["structuredContent"]
+    assert empty["count"] == 0 and empty["items"] == [] and empty["exploreOpen"] is False
+    invalid_render = call('render_recipe_library', {"filters": {"healthy": ["yes"]}})
+    assert invalid_render["isError"] is True and 'valid recipe filter' in str(invalid_render["content"])
+    assert call('render_recipe_library', arguments)["structuredContent"] == rendered
+    graph = call('render_recipe_graph', {**arguments, "query": "MCP tofu"})["structuredContent"]
+    assert graph["graph"]["matchingRecipeIds"] == [recipe["id"]]
+    assert graph["graph"]["scope"]["filters"] == arguments["filters"]
+    assert call('get_recipe_graph', {"query": "MCP tofu", "filters": {"meal": ["breakfast"]}})["structuredContent"]["nodes"] == []
+    bad_graph = call('get_recipe_graph', {"filters": {"healthy": ["yes"]}})
+    assert bad_graph["isError"] is True and 'valid recipe filter' in str(bad_graph["content"])
+    invalid = call('browse_recipe_library', {"filters": {"healthy": ["yes"]}})
+    assert invalid["isError"] is True and 'valid recipe filter' in str(invalid["content"])
+    assert call('get_recipe', {"recipe_id": recipe["id"]})["structuredContent"]["meal_types"] == ["dinner"]

@@ -244,6 +244,10 @@
         .snapshot-head { align-items:start; }
       }
     </style>
+    <link rel="stylesheet" href="/static/recipe-graph.css" />
+    <script src="/static/recipe-graph.js"></script>
+    <link rel="stylesheet" href="/static/recipe-browser.css" />
+    <script src="/static/recipe-browser.js"></script>
   </head>
   <body>
     <main id="root"><div class="empty">Loading meal-prep data…</div></main>
@@ -252,6 +256,7 @@
       let requestId = 0;
       let householdSnapshot = null;
       let recipeLibrary = [];
+      let recipeBrowser = null, browserUi = {}, modernLibrary = false;
       let availableRecipeTags = [];
       let recipeSearchTimer = null;
       let recipeSearchSequence = 0;
@@ -407,12 +412,18 @@
         return `<section class="recipe-library">
           <div class="recipe-library-head"><div><h1>${escapeHtml(title)}</h1><p><span id="recipe-count">${recipes.length}</span> saved recipe${recipes.length === 1 ? '' : 's'} · select one to see the full recipe</p></div>
           <label class="recipe-search"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" placeholder="Search recipes or tags" aria-label="Search recipes" value="${escapeHtml(options.query || '')}"></label></div>
+          <div class="recipe-view-switch"><button type="button" data-explore-connections>Explore</button></div>
           <div id="recipe-tag-suggestions" class="recipe-tag-suggestions" role="group" aria-label="Suggested recipe tags"></div>
           ${allTags.length ? `<div class="recipe-tags" aria-label="Filter recipes by tag"><button class="recipe-tag ${activeRecipeTag ? '' : 'active'}" data-filter-recipe-tag="">All recipes</button>${allTags.map((tag) => `<button class="recipe-tag ${tag === activeRecipeTag ? 'active' : ''}" data-filter-recipe-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}</div>` : ''}
           <div id="recipe-results">${recipes.length ? renderRecipeCards(recipes) : '<div class="callout"><strong>No saved recipes yet</strong><p>Recipes you save will appear here as visual cards with ingredients and instructions.</p></div>'}</div>
         </section>`;
       }
 
+      function recipeCategories(recipe) {
+        const names = {cuisine:'Cuisine',goal:'Eating goal',meal:'Meal',diet:'Diet'};
+        const fields = {cuisine:'cuisines',goal:'eating_goals',meal:'meal_types',diet:'diets'};
+        return `<div class="recipe-tags">${Object.entries(fields).flatMap(([kind,field]) => asArray(recipe[field]).map(value => `<button type="button" class="recipe-tag" data-browse-category="${kind}" data-category-label="${escapeHtml(value)}" aria-label="Show recipes with ${names[kind].toLowerCase()} ${escapeHtml(value)}">${escapeHtml(value)}</button>`)).join('')}</div>`;
+      }
       function renderRecipeDetail(recipe) {
         const ingredients = asArray(recipe.ingredients);
         const instructions = asArray(recipe.instructions);
@@ -428,7 +439,7 @@
         const instructionMarkup = instructions.length ? instructions.map((instruction) => `<li><span>${escapeHtml(instructionText(instruction))}</span></li>`).join('') : '<li><span>Instructions have not been added yet.</span></li>';
         return `<section class="recipe-detail">
           <button class="recipe-back" data-recipe-back>← All recipes</button>
-          <div class="recipe-hero"><span class="recipe-art" aria-hidden="true">${escapeHtml(recipeInitial(recipe))}</span><div><h1>${escapeHtml(recipe.title || 'Untitled recipe')}</h1><p>${escapeHtml(recipe.description || 'Saved recipe')}</p><div class="recipe-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${tags.length ? `<div class="recipe-tags">${tags.map((tag) => `<button class="recipe-tag" data-filter-recipe-tag="${escapeHtml(tag)}" aria-label="Show recipes tagged ${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}</div>` : ''}</div></div>
+          <div class="recipe-hero"><span class="recipe-art" aria-hidden="true">${escapeHtml(recipeInitial(recipe))}</span><div><h1>${escapeHtml(recipe.title || 'Untitled recipe')}</h1><p>${escapeHtml(recipe.description || 'Saved recipe')}</p><div class="recipe-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${recipeCategories(recipe)}${tags.length ? `<div class="recipe-tags">${tags.map((tag) => `<button class="recipe-tag" data-filter-recipe-tag="${escapeHtml(tag)}" aria-label="Show recipes tagged ${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}</div>` : ''}</div></div>
           <div class="recipe-columns"><section class="recipe-section"><h2>Ingredients</h2><ul class="recipe-list">${ingredientMarkup}</ul></section><section class="recipe-section"><h2>Instructions</h2><ol class="recipe-steps">${instructionMarkup}</ol></section></div>
           <section class="recipe-section"><h2>Share this recipe</h2><p>A shared link contains this recipe's ingredients and instructions. Cooking notes and household details stay private.</p><div class="recipe-share-actions"><button data-create-recipe-share="${escapeHtml(recipe.id || '')}">Create share link</button></div><div id="recipe-share-result" role="status"></div><div id="recipe-share-list" class="recipe-share-list"></div></section>
           ${recipe.feedbackUnavailable ? '<section class="recipe-section"><h2>Cooking notes</h2><p>Cooking notes are temporarily unavailable.</p></section>' : feedback.length ? `<section class="recipe-section"><h2>Cooking notes</h2><div class="recipe-notes">${feedback.map((item) => `<article class="recipe-note"><p>${escapeHtml(item.note || item.content || 'Saved feedback')}</p>${pick(item, 'nextTime', 'next_time') ? `<small>Next time: ${escapeHtml(pick(item, 'nextTime', 'next_time'))}</small>` : ''}</article>`).join('')}</div></section>` : ''}
@@ -610,15 +621,57 @@
         }).join('')}</section>`;
       }
 
-      function applyResult(result) {
+      function leaveBrowser() {
+        if (recipeBrowser) { browserUi = recipeBrowser.snapshot(); recipeBrowser.destroy(); recipeBrowser = null; }
+      }
+      function mountRecipeBrowser(initial) {
+        leaveBrowser(); modernLibrary = true;
+        root.innerHTML = '<div id="recipe-browser"></div>';
+        recipeBrowser = new RecipeBrowser(root.querySelector('#recipe-browser'), {
+          load: ui => {
+            if (initial) { const data = initial; initial = null; return Promise.resolve(data); }
+            return graphCall('browse_recipe_library', {query: ui.query, filters: ui.filters, max_minutes: ui.maxMinutes, limit: 25, offset: ui.offset});
+          },
+          openRecipe: async recipe_id => {
+            try { const recipe = await graphCall('get_recipe', {recipe_id}); leaveBrowser(); root.innerHTML = renderRecipeDetail(recipe); await loadRecipeShares(recipe_id); }
+            catch (error) { if (recipeBrowser?.graph) recipeBrowser.graph.failure(error); else if (root.querySelector('.rb-error')) root.querySelector('.rb-error').textContent = error.message; }
+          },
+          graph: {
+            load: ui => graphCall('get_recipe_graph', {query: ui.query, filters: ui.filters, max_minutes: ui.maxMinutes}),
+            save: relationship => graphCall('save_recipe_relationship', {relationship}),
+            remove: relationship_id => graphCall('delete_recipe_relationship', {relationship_id}),
+          },
+        }, browserUi);
+      }
+
+      async function graphCall(name, arguments_ = {}) {
+        const result = await rpc('tools/call', { name, arguments: arguments_ });
+        if (result?.isError) throw new Error(result.content?.find(c => c.type === 'text')?.text || 'Could not update connections');
+        return result?.structuredContent || result;
+      }
+
+      function mountRecipeGraph(initial) {
+        leaveBrowser();
+        if (initial?.scope) browserUi = {...browserUi, query: initial.scope.query, filters: initial.scope.filters, maxMinutes: initial.scope.maxMinutes};
+        browserUi.exploreOpen = true;
+        mountRecipeBrowser();
+      }
+
+      function applyResult(result, preserveGraph = false) {
         const data = result?.structuredContent || result;
         if (!data) return;
+        if (!['household_snapshot', 'onboarding', 'recipe_library', 'recipe_graph', 'feedback', 'pantry_evidence', 'shopping_list', 'meal_plan'].includes(data.kind) && !data.onboardingCompletedAt) return;
+        leaveBrowser(); if (!preserveGraph) { browserUi = {}; modernLibrary = false; }
         if (data.kind === 'household_snapshot') {
           activePantryItemId = null;
           pantryNotice = '';
           renderHouseholdSnapshot(data);
         }
         else if (data.kind === 'onboarding') root.innerHTML = renderOnboarding(data.household);
+        else if (data.kind === 'recipe_library' && data.facets) {
+          browserUi = {query: data.query || '', filters: data.filters || {}, maxMinutes: data.maxMinutes || null, exploreOpen: data.exploreOpen === true};
+          mountRecipeBrowser(data);
+        }
         else if (data.kind === 'recipe_library') {
           clearTimeout(recipeSearchTimer);
           recipeSearchSequence += 1;
@@ -627,6 +680,7 @@
           root.innerHTML = renderRecipeLibrary(asArray(data.recipes), { query: data.query });
           updateRecipeResults();
         }
+        else if (data.kind === 'recipe_graph') mountRecipeGraph(data.graph);
         else if (data.kind === 'feedback') {
           householdSnapshot = { sections: data.sections || {} };
           root.innerHTML = renderFeedback();
@@ -663,8 +717,20 @@
       });
 
       root.addEventListener('click', async (event) => {
+        if (event.target.closest('[data-explore-connections]')) { mountRecipeGraph(); return; }
+        if (event.target.closest('[data-graph-cards]')) {
+          if (modernLibrary) { mountRecipeBrowser(); return; }
+          try {
+            const data = await graphCall('render_recipe_library', { limit: 50 });
+            applyResult(data, true);
+          } catch (error) { root.innerHTML = `<p role="alert">${escapeHtml(error.message)}</p><button data-explore-connections>Return to Explore</button>`; }
+          return;
+        }
+        const category = event.target.closest('[data-browse-category]');
+        if (category) { browserUi = {query: '', filters: {[category.dataset.browseCategory]: [category.dataset.categoryLabel]}, tab: category.dataset.browseCategory}; mountRecipeBrowser(); return; }
         const recipeTag = event.target.closest('[data-filter-recipe-tag]');
         if (recipeTag) {
+          if (modernLibrary) { browserUi = {query: '', filters: {tag: [recipeTag.dataset.filterRecipeTag]}, tab: 'tag'}; mountRecipeBrowser(); return; }
           activeRecipeTag = recipeTag.dataset.filterRecipeTag;
           if (!root.querySelector('#recipe-results')) root.innerHTML = renderRecipeLibrary(recipeLibrary);
           root.querySelectorAll('[data-filter-recipe-tag]').forEach((button) => button.classList.toggle('active', button.dataset.filterRecipeTag === activeRecipeTag));
@@ -735,6 +801,7 @@
           return;
         }
         if (event.target.closest('[data-recipe-back]')) {
+          if (modernLibrary) { mountRecipeBrowser(); return; }
           root.innerHTML = renderRecipeLibrary(recipeLibrary);
           updateRecipeResults();
         }
@@ -775,7 +842,7 @@
       }
 
       root.addEventListener('input', (event) => {
-        if (!event.target.matches('#recipe-search')) return;
+        if (event.target.closest('.recipe-browser') || !event.target.matches('#recipe-search')) return;
         updateRecipeResults();
         clearTimeout(recipeSearchTimer);
         recipeSearchTimer = setTimeout(fetchRecipeResults, 250);
