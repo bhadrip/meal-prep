@@ -26,6 +26,7 @@ app/
 - Supabase Auth bearer-token validation and OAuth 2.1 discovery through the MCP SDK
 - Supabase schema, transactional functions, and RLS policies
 - Private Supabase Storage bucket for compressed pantry photo evidence and a review gallery
+- Pantry use records that subtract from remaining quantity, optionally name a meal or saved recipe, and drive a simple remaining-quantity bar
 - Vercel serverless entrypoint and deployment configuration
 
 The website has no model integration. Users edit their data directly there. The service never calls a model to make domain writes. ChatGPT can create a plan through MCP, while Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
@@ -202,7 +203,7 @@ Data tools:
 - `update_household_preferences`
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
 - `create_recipe_share`, `list_recipe_shares`, `revoke_recipe_share`, `copy_shared_recipe`
-- `get_pantry`, `update_pantry_item`
+- `get_pantry`, `update_pantry_item`, `record_pantry_use`
 - `save_pantry_photo`, `get_pantry_evidence`, `apply_pantry_evidence`
 - `get_weekly_schedule`, `save_weekly_schedule`
 - `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`

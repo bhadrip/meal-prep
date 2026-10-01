@@ -23,6 +23,7 @@ PLANNING_TABLES = {
 PLANNING_FUNCTIONS = {
     "rpc/get_experience_feedback": "feedback",
     "rpc/save_experience_feedback": "feedback",
+    "rpc/record_pantry_use": "pantry use",
 }
 
 
@@ -235,6 +236,18 @@ class SupabaseRepository:
             "POST", "pantry_items", params={"on_conflict": "id"}, json=row
         )
         return rows[0]
+
+    async def record_pantry_use(
+        self, item_id: str, quantity: float, recipe_id: str | None = None,
+        meal_title: str | None = None,
+    ) -> dict[str, Any]:
+        await self.household_id()
+        return await self.rpc("record_pantry_use", {
+            "requested_item_id": item_id,
+            "amount_used": quantity,
+            "requested_recipe_id": recipe_id,
+            "requested_meal_title": meal_title,
+        })
 
     async def save_pantry_photo(
         self, *, image: bytes, width: int, height: int,
@@ -695,8 +708,35 @@ class DemoRepository:
 
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]:
         row = {"id": item.get("id") or str(uuid4()), **deepcopy(item)}
+        if row.get("quantity") is not None and row.get("reference_quantity") is None:
+            row["reference_quantity"] = row["quantity"]
         self._pantry = [value for value in self._pantry if value["id"] != row["id"]] + [row]
         return deepcopy(row)
+
+    async def record_pantry_use(
+        self, item_id: str, quantity: float, recipe_id: str | None = None,
+        meal_title: str | None = None,
+    ) -> dict[str, Any]:
+        item = next((row for row in self._pantry if row["id"] == item_id), None)
+        if not item:
+            raise RepositoryError("Pantry item was not found")
+        if item.get("quantity") is None:
+            raise RepositoryError("Set a remaining quantity before recording use")
+        if quantity > float(item["quantity"]):
+            raise RepositoryError("Amount used exceeds the remaining quantity")
+        recipe = await self.get_recipe(recipe_id) if recipe_id else None
+        if recipe_id and not recipe:
+            raise RepositoryError("Recipe was not found")
+        before = float(item["quantity"])
+        item["reference_quantity"] = item.get("reference_quantity") or before
+        item["quantity"] = round(before - quantity, 3)
+        return {
+            "id": str(uuid4()), "itemId": item_id, "name": item["name"],
+            "quantityUsed": quantity, "quantityBefore": before,
+            "quantityRemaining": item["quantity"], "unit": item.get("unit"),
+            "recipeId": recipe_id, "recipeTitle": recipe["title"] if recipe else None,
+            "mealTitle": meal_title, "item": deepcopy(item),
+        }
 
     async def save_pantry_photo(
         self, *, image: bytes, width: int, height: int,

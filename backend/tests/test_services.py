@@ -35,6 +35,30 @@ async def test_recipe_detail_survives_missing_feedback_storage():
 
 
 @pytest.mark.asyncio
+async def test_record_pantry_use_subtracts_and_links_recipe():
+    repository = DemoRepository()
+    service = RecipePantryService(repository)
+    item = (await service.get_pantry())[0]
+    use = await service.record_pantry_use(
+        item["id"], 0.25, "11111111-1111-1111-1111-111111111111", "Tuesday dinner",
+    )
+    assert use["quantityBefore"] == 1
+    assert use["quantityRemaining"] == 0.75
+    assert use["recipeTitle"] == "Paneer rice bowls"
+    assert use["mealTitle"] == "Tuesday dinner"
+    assert (await service.get_pantry())[0]["quantity"] == 0.75
+    assert (await service.get_pantry())[0]["reference_quantity"] == 1
+
+    with pytest.raises(ApplicationError, match="exceeds"):
+        await service.record_pantry_use(item["id"], 1)
+    with pytest.raises(ApplicationError, match="positive"):
+        await service.record_pantry_use(item["id"], -1)
+    with pytest.raises(ApplicationError, match="Recipe was not found"):
+        await service.record_pantry_use(item["id"], 0.1, "missing")
+    assert (await service.get_pantry())[0]["quantity"] == 0.75
+
+
+@pytest.mark.asyncio
 async def test_household_service_owns_onboarding_rules():
     service = HouseholdService(DemoRepository())
 

@@ -51,6 +51,7 @@ class MealPrepRepository(Protocol):
     async def copy_shared_recipe(self, token: str) -> str: ...
     async def get_pantry(self) -> list[dict[str, Any]]: ...
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]: ...
+    async def record_pantry_use(self, item_id: str, quantity: float, recipe_id: str | None = None, meal_title: str | None = None) -> dict[str, Any]: ...
     async def save_pantry_photo(self, *, image: bytes, width: int, height: int, file_id: str, note: str, observations: list[dict[str, Any]], apply_to_pantry: bool) -> dict[str, Any]: ...
     async def get_pantry_photos(self, limit: int = 30) -> list[dict[str, Any]]: ...
     async def apply_pantry_photo(self, evidence_id: str, observations: list[dict[str, Any]] | None = None) -> dict[str, Any]: ...
@@ -286,6 +287,35 @@ class RecipePantryService:
         if not str(item.get("name", "")).strip():
             raise ApplicationError("item.name is required")
         return await self.repository.update_pantry_item(item)
+
+    async def record_pantry_use(
+        self, item_id: str, quantity: float, recipe_id: str | None = None,
+        meal_title: str | None = None,
+    ) -> dict[str, Any]:
+        from decimal import Decimal, InvalidOperation
+
+        if not item_id:
+            raise ApplicationError("item_id is required")
+        try:
+            amount = Decimal(str(quantity))
+        except (InvalidOperation, ValueError):
+            raise ApplicationError("quantity must be a positive number") from None
+        if not amount.is_finite() or amount <= 0 or amount.as_tuple().exponent < -3:
+            raise ApplicationError("quantity must be positive with at most 3 decimal places")
+        if meal_title is not None and len(meal_title.strip()) > 180:
+            raise ApplicationError("meal_title must be 180 characters or fewer")
+        try:
+            return await self.repository.record_pantry_use(
+                item_id, float(amount), recipe_id or None, meal_title.strip() if meal_title else None,
+            )
+        except RepositoryError as exc:
+            if str(exc) in {
+                "Pantry item was not found", "Set a remaining quantity before recording use",
+                "Amount used exceeds the remaining quantity", "Recipe was not found",
+                "Meal title is too long", "Amount used must be positive with at most 3 decimal places",
+            }:
+                raise ApplicationError(str(exc)) from exc
+            raise
 
     async def save_pantry_photo(
         self, file: dict[str, str], observed_items: list[dict[str, Any]],

@@ -31,6 +31,7 @@ async function host(page) {
           if (name === 'revoke_recipe_share') window.revoked = true;
           if (name === 'list_recipe_shares') result = { items: window.revoked ? [] : [{ id: 'share-test', recipeId: 'recipe-ui-test', createdAt: '2026-09-30T00:00:00Z' }] };
           if (name === 'update_household_preferences') result = { onboardingCompletedAt: '2026-09-30T00:00:00Z' };
+          if (name === 'record_pantry_use') result = { itemId: 'spinach-1', name: 'Spinach', quantityBefore: 1, quantityRemaining: 0.5, unit: 'bag', recipeTitle: 'Lentil bowls', item: { id: 'spinach-1', name: 'Spinach', quantity: 0.5, unit: 'bag', reference_quantity: 1 } };
           event.source.postMessage({ jsonrpc: '2.0', id: message.id, result: { structuredContent: result } }, '*');
         });
       </script></body></html>`,
@@ -78,6 +79,23 @@ test('MCP dashboard, plan, feedback, and shopping views', async ({ page }) => {
   await expect(frame.locator('label.done')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.calls.at(-1))).toEqual({
     name: 'mark_item_purchased', arguments: { item_id: 'item-1', purchased: false },
+  });
+});
+
+test('MCP pantry use updates the remaining amount', async ({ page }) => {
+  const frame = await host(page);
+  await show(page, { kind: 'household_snapshot', household: { householdName: 'Test kitchen' }, sections: {
+    pantry: { status: 'ready', value: [{ id: 'spinach-1', name: 'Spinach', quantity: 1, unit: 'bag', reference_quantity: 1 }] },
+    recipes: { status: 'ready', value: [recipe] },
+  } });
+  await frame.getByRole('button', { name: 'Use' }).click();
+  await frame.locator('#pantry-use-form input[name="quantity"]').fill('0.5');
+  await frame.locator('#pantry-use-form select[name="recipeId"]').selectOption('recipe-ui-test');
+  await frame.getByRole('button', { name: 'Record use' }).click();
+  await expect(frame.locator('[data-card-id="pantry"]')).toContainText('0.5 bag left');
+  await expect(frame.locator('[data-card-id="pantry"] [role="meter"]')).toHaveAttribute('aria-valuenow', '50');
+  await expect.poll(() => page.evaluate(() => window.calls.at(-1))).toEqual({
+    name: 'record_pantry_use', arguments: { item_id: 'spinach-1', quantity: 0.5, recipe_id: 'recipe-ui-test', meal_title: null },
   });
 });
 

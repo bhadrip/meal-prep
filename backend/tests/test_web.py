@@ -97,6 +97,17 @@ def test_local_website_edits_share_application_data_across_requests():
     snapshot = client.get("/api/app/snapshot").json()
     assert any(item["name"] == "Lentils" and item["quantity"] == 2 for item in snapshot["sections"]["pantry"]["value"])
     assert "retro" not in snapshot["sections"]
+    used = client.post("/api/pantry/use", json={
+        "itemId": pantry.json()["id"], "quantity": 0.5,
+        "recipeId": recipe_id, "mealTitle": "Tuesday dinner",
+    })
+    assert used.status_code == 200
+    assert used.json()["quantityRemaining"] == 1.5
+    assert used.json()["recipeTitle"] == "Local lentil bowls"
+    assert client.get("/api/pantry").json()["items"][-1]["quantity"] == 1.5
+    assert client.post("/api/pantry/use", json={
+        "itemId": pantry.json()["id"], "quantity": 2,
+    }).status_code == 422
 
     invalid = client.put("/api/meal-plan", json={"weekStart": "2026-09-28", "entries": [{"meal": "Soup"}]})
     assert invalid.status_code == 422
