@@ -353,6 +353,47 @@ test('pantry categories and search narrow items and save corrections', async ({ 
   await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
 });
 
+test('pantry photo evidence can be reviewed, retried, and paged from Pantry', async ({ page }) => {
+  const requests = [];
+  let firstAttempt = true;
+  await page.route('**/api/pantry/evidence?*', async (route) => {
+    const offset = Number(new URL(route.request().url()).searchParams.get('offset'));
+    requests.push(offset);
+    if (firstAttempt) {
+      firstAttempt = false;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Photos are temporarily unavailable.' }) });
+      return;
+    }
+    const photo = offset === 0
+      ? { id: 'photo-1', created_at: '2026-09-30T12:00:00Z', image_url: 'https://example.test/pantry-photo.webp', image_bytes: 4096, status: 'applied', note: 'Fridge shelf', observations: [{ name: 'Milk', quantity: 1, unit: 'carton' }] }
+      : { id: 'photo-2', created_at: '2026-09-29T12:00:00Z', image_url: null, image_bytes: 2048, status: 'captured', note: 'Pantry shelf', observations: [{ name: 'Rice', quantity: 2, unit: 'bags' }] };
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [photo], count: 1, hasMore: offset === 0, nextOffset: offset + 1 }) });
+  });
+  await page.route('https://example.test/pantry-photo.webp', (route) => route.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLxSQAAAABJRU5ErkJggg==', 'base64'),
+  }));
+  await open(page, 'pantry');
+  await content(page).getByRole('button', { name: 'Photo evidence' }).click();
+  await expect(content(page).getByRole('alert')).toContainText('Photos are temporarily unavailable.');
+  await content(page).getByRole('button', { name: 'Try again' }).click();
+  await expect(content(page).locator('.pantry-photo-card')).toHaveCount(1);
+  await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Milk — 1 carton');
+  await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Added to pantry');
+  await expect(content(page).locator('.pantry-photo-card img')).toHaveJSProperty('naturalWidth', 1);
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toHaveCount(0);
+  await content(page).getByRole('button', { name: 'Load older photos' }).click();
+  await expect(content(page).locator('.pantry-photo-card')).toHaveCount(2);
+  await expect(content(page).locator('.pantry-photo-card').last()).toContainText('Rice — 2 bags');
+  await expect(content(page).locator('.pantry-photo-card').last()).toContainText('Saved for review');
+  expect(requests).toEqual([0, 0, 1]);
+  await page.reload();
+  await expect(content(page).locator('.pantry-photo-card')).toHaveCount(1);
+  await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Milk — 1 carton');
+  await content(page).getByRole('button', { name: 'Items' }).click();
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
+});
+
 test('pantry use records a meal and shows the remaining quantity', async ({ page }) => {
   await open(page, 'pantry');
   const name = unique('Playwright rice');
