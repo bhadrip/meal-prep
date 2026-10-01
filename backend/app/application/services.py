@@ -207,7 +207,9 @@ class HouseholdService:
             "household": updated,
         }
 
-    async def snapshot(self) -> dict[str, Any]:
+    async def snapshot(
+        self, *, sections: list[str] | None = None, week_start: str | None = None,
+    ) -> dict[str, Any]:
         async def section(loader: Callable[[], Awaitable[Any]]) -> dict[str, Any]:
             try:
                 value = await loader()
@@ -216,17 +218,22 @@ class HouseholdService:
             empty = value is None or value == [] or value == {}
             return {"status": "empty" if empty else "ready", "value": value}
 
-        household = await self.repository.get_household_context()
         loaders = {
             "pantry": self.repository.get_pantry,
             "recipes": lambda: self.repository.search_recipes(query="", limit=25),
-            "schedule": self.repository.get_weekly_schedule,
+            "schedule": lambda: self.repository.get_weekly_schedule(week_start),
             "feedback": lambda: self.repository.get_feedback(limit=25),
             "memories": self.repository.get_household_memory,
-            "mealPlan": self.repository.get_meal_plan,
+            "mealPlan": lambda: self.repository.get_meal_plan(week_start),
             "mealPlanRules": self.repository.get_meal_plan_rules,
             "shoppingList": self.repository.get_shopping_list,
         }
+        if sections is not None:
+            unknown = set(sections) - loaders.keys()
+            if unknown:
+                raise ApplicationError(f"Unknown snapshot sections: {', '.join(sorted(unknown))}")
+            loaders = {name: loaders[name] for name in dict.fromkeys(sections)}
+        household = await self.repository.get_household_context()
         values = await asyncio.gather(*(section(loader) for loader in loaders.values()))
         return {
             "household": household,

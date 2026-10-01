@@ -23,6 +23,41 @@ async function saveRules(page, text) {
   return response.json();
 }
 
+test('unavailable planning rules leave the plan usable and retry from the rules tab', async ({ page }) => {
+  let fail = true;
+  let rulesReads = 0;
+  await page.route('**/api/app/snapshot?*', async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.get('sections') !== 'mealPlanRules') return route.continue();
+    rulesReads += 1;
+    if (fail) return route.fulfill({ status: 503, json: { detail: 'Rules unavailable' } });
+    const data = await (await route.fetch()).json();
+    data.sections.mealPlanRules = { status: 'ready', value: { revision: 3, text: 'Keep Tuesday dinner quick.' } };
+    await route.fulfill({ json: data });
+  });
+  await page.goto('/app');
+  await expect(page.locator('[data-home-section="mealPlan"] .section-loading')).toHaveCount(0);
+  expect(rulesReads).toBe(0);
+  await page.getByRole('button', { name: 'Open weekly plan', exact: true }).click();
+  await expect(page.locator('#week-picker')).toBeVisible();
+  await expect.poll(() => rulesReads).toBe(1);
+  await page.getByRole('tab', { name: 'Planning rules', exact: true }).click();
+  await expect(page.locator('#app-content')).toContainText('Could not load planning rules');
+  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
+  await expect(page.locator('#week-picker')).toBeVisible();
+  await page.getByRole('tab', { name: 'Planning rules', exact: true }).click();
+  fail = false;
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(rulesCard(page).locator('.planning-text')).toHaveText('Keep Tuesday dinner quick.');
+  await page.getByRole('tab', { name: 'Plan', exact: true }).click();
+  await expect(page.locator('#week-picker')).toBeVisible();
+  await page.getByRole('button', { name: 'Add meal or prep', exact: true }).click();
+  await editor(page).locator('[name="meal"]').fill('Dinner after retry');
+  await editor(page).locator('#dialog-save').click();
+  await expect(editor(page)).toBeHidden();
+  await expect(page.locator('.meal').filter({ hasText: 'Dinner after retry' })).toBeVisible();
+});
+
 test('English rule revisions persist, retain history, and leave existing plans intact', async ({ page }) => {
   await openPlan(page);
   const week = await page.locator('#week-picker').inputValue();

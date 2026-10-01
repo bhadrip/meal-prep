@@ -512,6 +512,18 @@ async def render_shopping_list(list_id: str | None = None) -> dict[str, Any]:
     return {"kind": "shopping_list", "shoppingList": value}
 
 
+def _ui_resource() -> str:
+    """Keep embedded controls self-contained in hosts that disallow asset requests."""
+    html = (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    css = (STATIC_DIR / "choices.css").read_text(encoding="utf-8")
+    script = (STATIC_DIR / "choices.js").read_text(encoding="utf-8")
+    return html.replace(
+        '<link rel="stylesheet" href="/static/choices.css?v=1" />', f"<style>{css}</style>",
+    ).replace(
+        '<script src="/static/choices.js?v=1" defer></script>', f"<script>{script}</script>",
+    )
+
+
 @mcp.resource(
     MEAL_PLAN_UI_URI,
     name="meal-plan-ui",
@@ -521,7 +533,7 @@ async def render_shopping_list(list_id: str | None = None) -> dict[str, Any]:
     meta={"ui": {"prefersBorder": True}},
 )
 def meal_plan_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -533,7 +545,7 @@ def meal_plan_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def shopping_list_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -545,7 +557,7 @@ def shopping_list_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def household_snapshot_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -557,7 +569,7 @@ def household_snapshot_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def onboarding_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -569,7 +581,7 @@ def onboarding_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def recipe_library_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -581,7 +593,7 @@ def recipe_library_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def feedback_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -593,7 +605,7 @@ def feedback_resource() -> str:
     meta={"ui": {"prefersBorder": True, "csp": {"resourceDomains": [settings.supabase_url.rstrip('/')] if settings.supabase_url else []}}},
 )
 def pantry_evidence_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 mcp_app = mcp.streamable_http_app()

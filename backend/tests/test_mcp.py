@@ -12,6 +12,32 @@ HEADERS = {"Accept": "application/json, text/event-stream"}
 DEFAULT_DEMO_CONTEXT = deepcopy(DemoRepository._context)
 
 
+def test_mcp_recipe_dropdown_selection_records_use_and_rejects_missing_recipe(client):
+    def call(name, arguments, request_id):
+        return rpc(client, "tools/call", {"name": name, "arguments": arguments}, request_id)
+
+    recipe = call("save_recipe", {"recipe": {"title": "Dropdown test soup"}}, 910)["structuredContent"]
+    item = call("update_pantry_item", {"item": {"name": "Dropdown test lentils", "quantity": 1, "unit": "cup"}}, 911)["structuredContent"]
+    saved = call("record_pantry_use", {"item_id": item["id"], "quantity": 0.25, "recipe_id": recipe["id"]}, 912)["structuredContent"]
+    assert saved["recipeId"] == recipe["id"]
+    assert saved["recipeTitle"] == "Dropdown test soup"
+    assert saved["quantityRemaining"] == 0.75
+    rejected = call("record_pantry_use", {"item_id": item["id"], "quantity": 0.25, "recipe_id": "missing-recipe"}, 913)
+    assert rejected["isError"] is True
+    assert "Recipe was not found" in str(rejected["content"])
+    pantry = call("get_pantry", {}, 914)["structuredContent"]["items"]
+    assert next(row for row in pantry if row["id"] == item["id"])["quantity"] == 0.75
+
+
+def test_mcp_dropdown_assets_are_embedded_for_hosts_without_static_asset_access(client):
+    for uri in ("ui://meal-prep/onboarding-v2.html", "ui://meal-prep/household-dashboard-v4.html"):
+        html = rpc(client, "resources/read", {"uri": uri})["contents"][0]["text"]
+        assert '/static/choices.js' not in html
+        assert '/static/choices.css' not in html
+        assert '<select' not in html
+        assert 'window.MealPrepChoices =' in html
+
+
 def test_oauth_requests_only_identity_and_refresh_scopes():
     assert MCP_AUTH_SCOPES == ("openid", "email", "offline_access")
 

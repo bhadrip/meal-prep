@@ -74,7 +74,7 @@ test('household settings create, revoke, remove, switch, and leave through the U
   ];
   const invitations = [];
   const calls = [];
-  await page.route('**/api/app/bootstrap', async (route) => {
+  await page.route('**/api/app/bootstrap?*', async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     return route.fulfill({ json: {
@@ -144,9 +144,11 @@ test('household settings create, revoke, remove, switch, and leave through the U
   await page.getByRole('button', { name: 'Create household' }).click();
   await expect(page.locator('#household-select')).toHaveValue('home-2');
   await expect(page.locator('#app-content')).toContainText('Weekend kitchen');
-  await page.locator('#household-select').selectOption('home-1');
+  await page.locator('#household-choice .choice-trigger').click();
+  await page.getByRole('option', { name: 'Home · Owner', exact: true }).click();
   await expect(page.locator('#household-select')).toHaveValue('home-1');
-  await page.locator('#household-select').selectOption('home-2');
+  await page.locator('#household-choice .choice-trigger').click();
+  await page.getByRole('option', { name: 'Weekend kitchen · Member', exact: true }).click();
   await expect(page.locator('#household-select')).toHaveValue('home-2');
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Leave this household' }).click();

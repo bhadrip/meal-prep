@@ -7,9 +7,11 @@
     <title>Meal Prep</title>
     <link rel="icon" type="image/svg+xml" href="/static/meal-prep-icon.svg" />
     <link rel="stylesheet" href="/static/typography.css?v=1" />
-    <link rel="stylesheet" href="/static/app.css?v=16" />
+    <link rel="stylesheet" href="/static/app.css?v=17" />
+    <link rel="stylesheet" href="/static/choices.css?v=1" />
     <script src="/static/vendor/supabase.js" defer></script>
-    <script src="/static/app.js?v=18" defer></script>
+    <script src="/static/choices.js?v=1" defer></script>
+    <script src="/static/app.js?v=19" defer></script>
   </head>
   <body>
     <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -52,7 +54,7 @@
           </div>
           <div class="top-actions">
             <span class="mode-badge" id="mode-badge" hidden>Demo data</span>
-            <label class="household-picker" id="household-picker" hidden><span>Household</span><select id="household-select" aria-label="Active household"></select></label>
+            <div class="household-picker" id="household-picker" hidden><span id="household-choice-label">Household</span><div id="household-choice"></div></div>
             <button class="icon-button notification-button" id="notifications-button" type="button" aria-label="Notifications" title="Notifications"><svg class="nav-svg" aria-hidden="true"><use href="#icon-bell" /></svg><span id="notification-count" class="notification-count" hidden></span></button>
             <button class="icon-button" id="refresh-button" aria-label="Refresh data">↻</button>
             <button class="account-button" id="account-button" aria-label="Account settings"><span id="account-avatar">MP</span><span id="account-label">Account</span></button>
