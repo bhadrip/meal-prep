@@ -281,6 +281,40 @@ test('pantry item can be added and edited', async ({ page }) => {
   await expect(content(page).locator('.table-row').filter({ hasText: name })).toContainText('3 bags');
 });
 
+test('pantry categories and search narrow items and save corrections', async ({ page }) => {
+  await open(page, 'pantry');
+  const chili = unique('Chili oil');
+  const mystery = unique('Mystery tin');
+  for (const name of [chili, mystery]) {
+    await content(page).getByRole('button', { name: 'Add pantry item' }).click();
+    await editor(page).locator('[name="name"]').fill(name);
+    await saveEditor(page);
+  }
+  await content(page).locator('[data-pantry-category="condiments"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: chili })).toBeVisible();
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toHaveCount(0);
+  await content(page).locator('[data-pantry-category="uncategorized"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
+  await content(page).locator('.table-row').filter({ hasText: mystery }).getByRole('button', { name: 'Edit' }).click();
+  await choose(page, 'category', 'snacks');
+  await saveEditor(page);
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toHaveCount(0);
+  await content(page).locator('[data-pantry-category="snacks"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
+  await content(page).locator('#pantry-search').fill('no match');
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toHaveCount(0);
+  await content(page).locator('#pantry-search').fill('Mystery tin');
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
+  await content(page).locator('[data-pantry-category="all"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: chili })).toHaveCount(0);
+  await content(page).locator('#pantry-search').fill('');
+  await expect(content(page).locator('.table-row').filter({ hasText: chili })).toBeVisible();
+  await page.reload();
+  await page.locator('.sidebar [data-view="pantry"]').click();
+  await content(page).locator('[data-pantry-category="snacks"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
+});
+
 test('pantry use records a meal and shows the remaining quantity', async ({ page }) => {
   await open(page, 'pantry');
   const name = unique('Playwright rice');

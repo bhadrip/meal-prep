@@ -12,6 +12,7 @@ import httpx
 from mcp.server.auth.middleware.auth_context import get_access_token
 
 from ..application.errors import RepositoryError, StorageNotInstalledError
+from ..application.pantry_categories import infer_pantry_category
 from ..config import Settings, get_settings
 
 
@@ -244,6 +245,7 @@ class SupabaseRepository:
             "quantity": item.get("quantity"),
             "unit": item.get("unit"),
             "storage_location": item.get("storageLocation", "pantry"),
+            "category": item.get("category") or infer_pantry_category(item["name"], item.get("storageLocation", "pantry")),
             "quantity_confidence": item.get("quantityConfidence", "estimated"),
             "use_by_date": item.get("useByDate"),
             "freshness_basis": item.get("freshnessBasis"),
@@ -576,6 +578,7 @@ class DemoRepository:
             "quantity": 1,
             "unit": "bag",
             "storage_location": "fridge",
+            "category": "vegetables",
             "quantity_confidence": "exact",
             "use_by_date": date.today().isoformat(),
         }
@@ -727,6 +730,7 @@ class DemoRepository:
 
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]:
         row = {"id": item.get("id") or str(uuid4()), **deepcopy(item)}
+        row["category"] = row.get("category") or infer_pantry_category(row["name"], row.get("storageLocation", row.get("storage_location", "")))
         if row.get("quantity") is not None and row.get("reference_quantity") is None:
             row["reference_quantity"] = row["quantity"]
         self._pantry = [value for value in self._pantry if value["id"] != row["id"]] + [row]
