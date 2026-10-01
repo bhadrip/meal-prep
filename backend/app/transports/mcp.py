@@ -17,6 +17,18 @@ from ..container import services_for_request
 
 settings = get_settings()
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+
+
+def mcp_app_html() -> str:
+    """MCP resources are self-contained because hosts need not allow static asset URLs."""
+    html = (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    for asset in ("recipe-graph", "recipe-browser"):
+        css = (STATIC_DIR / f"{asset}.css").read_text(encoding="utf-8")
+        script = (STATIC_DIR / f"{asset}.js").read_text(encoding="utf-8")
+        html = html.replace(f'<link rel="stylesheet" href="/static/{asset}.css" />', f"<style>{css}</style>").replace(
+            f'<script src="/static/{asset}.js"></script>', f"<script>{script}</script>")
+    return html
+
 MEAL_PLAN_UI_URI = "ui://meal-prep/meal-plan-v2.html"
 SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v2.html"
 HOUSEHOLD_UI_URI = "ui://meal-prep/household-dashboard-v4.html"
@@ -72,8 +84,12 @@ mcp = FastMCP(
         "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
         "a compact card dashboard instead of a long text inventory. When the user asks to change that "
         "dashboard, use get_dashboard_layout and configure_dashboard, then render it again for verification. "
+        "When the user asks to explore recipe connections, use render_recipe_graph. "
         "When the user asks to see, browse, or list saved recipes, use render_recipe_library so the recipes "
-        "appear as visual cards with expandable ingredients and instructions instead of a text list. "
+        "appear as a clickable library with cuisine, goal, meal, diet, tag, and cooking-time filters. "
+        "For recipe recommendations, use browse_recipe_library to apply known constraints, get_recipe_graph "
+        "for saved variations and serving pairings, and the recipe feedback summary for household experience. "
+        "Eating goals and diets are saved household labels; do not infer nutrition facts from them. "
         "When the user asks to share a saved recipe, use create_recipe_share and return its URL. "
         "Anyone with that link can view a fixed recipe snapshot. Use list_recipe_shares and "
         "revoke_recipe_share when they ask to stop sharing. A recipient can save an independent "
@@ -191,6 +207,31 @@ async def list_recipe_tags() -> dict[str, Any]:
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_recipe_graph(query: str = "", filters: dict[str, list[str]] | None = None,
+                           max_minutes: int | None = None) -> dict[str, Any]:
+    """Explore search results with the same cuisine/goal/meal/diet/tag filters as browsing.
+    Includes matching recipes and directly linked variations or serving partners; isMatch marks the search matches.
+    No filters returns all active recipes. Related recipes can be outside the search filters.
+    """
+    return await services_for_request().food.get_recipe_graph(query, filters, max_minutes)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_recipe_relationship(relationship: dict[str, Any]) -> dict[str, Any]:
+    """Add or edit a recipe detail. Supply sourceRecipeId and type, plus id to edit.
+    Types cuisine/goal/meal/diet/tag use label; variant_of/pairs_with use targetRecipeId.
+    variant_of points from variation to base recipe. Categories are explicit household labels.
+    """
+    return await services_for_request().food.save_recipe_relationship(relationship)
+
+
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def delete_recipe_relationship(relationship_id: str) -> dict[str, Any]:
+    """Remove a recipe connection by its id."""
+    return await services_for_request().food.delete_recipe_relationship(relationship_id)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_recipe(recipe_id: str) -> dict[str, Any]:
     """Get one recipe by its UUID."""
     return await services_for_request().food.get_recipe(recipe_id)
@@ -198,7 +239,9 @@ async def get_recipe(recipe_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
-    """Create or update a household recipe. Include tags as a list of reusable labels such as sickness-friendly or guest-friendly."""
+    """Create or update a household recipe. Category lists: cuisines, eating_goals, meal_types, diets, tags.
+    Omitted typed categories retain saved values. Use totalMinutes for total cooking time.
+    """
     return await services_for_request().food.save_recipe(recipe)
 
 
@@ -420,12 +463,35 @@ async def render_household_snapshot() -> dict[str, Any]:
     meta={"ui": {"resourceUri": RECIPE_LIBRARY_UI_URI}},
     structured_output=True,
 )
-async def render_recipe_library(query: str = "", limit: int = 50, tag: str = "") -> dict[str, Any]:
-    """Render saved recipes as a visual library; filter by a tag when requested."""
+async def render_recipe_library(query: str = "", limit: int = 50, tag: str = "", filters: dict[str, list[str]] | None = None,
+                                max_minutes: int | None = None) -> dict[str, Any]:
+    """Browse recipes by cuisine, eating goal, meal, diet, tags, and cooking time. Keep the graph available in Explore."""
     service = services_for_request().food
-    recipes = await service.search_recipes(query=query, limit=limit, tag=tag)
-    tags = await service.list_recipe_tags()
-    return {"kind": "recipe_library", "recipes": recipes, "tags": tags, "query": query, "tag": tag, "count": len(recipes)}
+    selected = {**(filters or {})}
+    if tag: selected["tag"] = [tag]
+    data = await service.browse_recipe_library(query, selected, max_minutes, limit)
+    return {"kind": "recipe_library", **data, "exploreOpen": False, "recipes": data["items"], "tag": tag,
+            "tags": [{"tag": item["label"], "recipe_count": item["count"]} for item in data["facets"]["tag"]]}
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def browse_recipe_library(query: str = "", filters: dict[str, list[str]] | None = None,
+                                max_minutes: int | None = None, limit: int = 25, offset: int = 0) -> dict[str, Any]:
+    """Filter all active household recipes. Filter keys: cuisine, goal, meal, diet, tag. OR within a key, AND across keys.
+    Categories are household-entered labels, not verified nutrition. Use get_recipe_graph for variations and serving pairings.
+    """
+    return await services_for_request().food.browse_recipe_library(query, filters, max_minutes, limit, offset)
+
+
+@mcp.tool(
+    annotations=READ_ONLY,
+    meta={"ui": {"resourceUri": RECIPE_LIBRARY_UI_URI}},
+    structured_output=True,
+)
+async def render_recipe_graph(query: str = "", filters: dict[str, list[str]] | None = None,
+                              max_minutes: int | None = None) -> dict[str, Any]:
+    """Render recipe search with its Explore results panel open. Categories and recipe links remain editable."""
+    return {"kind": "recipe_graph", "graph": await services_for_request().food.get_recipe_graph(query, filters, max_minutes)}
 
 
 @mcp.tool(
@@ -495,7 +561,7 @@ async def render_shopping_list(list_id: str | None = None) -> dict[str, Any]:
     meta={"ui": {"prefersBorder": True}},
 )
 def meal_plan_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return mcp_app_html()
 
 
 @mcp.resource(
@@ -507,7 +573,7 @@ def meal_plan_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def shopping_list_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return mcp_app_html()
 
 
 @mcp.resource(
@@ -519,7 +585,7 @@ def shopping_list_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def household_snapshot_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return mcp_app_html()
 
 
 @mcp.resource(
@@ -531,7 +597,7 @@ def household_snapshot_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def onboarding_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return mcp_app_html()
 
 
 @mcp.resource(
@@ -543,7 +609,7 @@ def onboarding_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def recipe_library_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return mcp_app_html()
 
 
 @mcp.resource(
@@ -555,7 +621,7 @@ def recipe_library_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def feedback_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return mcp_app_html()
 
 
 @mcp.resource(
@@ -567,7 +633,7 @@ def feedback_resource() -> str:
     meta={"ui": {"prefersBorder": True, "csp": {"resourceDomains": [settings.supabase_url.rstrip('/')] if settings.supabase_url else []}}},
 )
 def pantry_evidence_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return mcp_app_html()
 
 
 mcp_app = mcp.streamable_http_app()

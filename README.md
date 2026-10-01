@@ -16,6 +16,15 @@ Future mobile app → HTTP API ─┘
 
 Open the [Meal Prep landing page](https://meal-prep-swart.vercel.app/) and choose **Open the app**, or go straight to `/app`. Sign up or sign in with the same Supabase email used for the MCP connection. Browser and MCP clients have separate sessions, but they share the same identity and active household. The app supports manual edits and never places grocery orders.
 
+In **Recipes**, start with a cuisine, eating goal, meal, diet, or saved tag. Filters combine across groups (for example, protein rich + dinner), with alternatives within a group. Search includes ingredients, and cooking time filters require a saved total time. Filters stay in the website URL through recipe detail and reload; **Show more recipes** continues beyond the first 25.
+
+**Explore these results** starts collapsed whenever the website opens or reloads; opening it stays a session choice and does not change the URL. Expand it below the result count to see the clickable graph alongside your recipe cards. It follows the current search and filters across all matching recipes, including those beyond the first card page. Direct variations and serving partners outside the filters are labeled **Related recipe**. Use the main recipe search and select **Explore** on a result card to start from that dish. Follow a dish or category in the graph, and use **Add detail** or select an edge to edit it. The editor can link any active recipe in the household. **Variation of** points to the base recipe; **Serve with** works in either direction. Recipe cards with variations open that neighborhood in the same panel. Undo reverses the last graph change during the session. Categories can also be edited in **Edit recipe** and immediately affect browsing.
+
+Chat uses the same data through `render_recipe_library`, `browse_recipe_library`, `get_recipe_graph`, `render_recipe_graph`, and the relationship tools. Graph tools accept the same search, filters, and cooking time constraints as browsing and distinguish matching recipes from related ones. Eating goals and diets are household-entered categories, not verified nutrition. Existing tags are preserved; they are not automatically reclassified.
+
+Apply `202610010005_recipe_relationships.sql` followed by `202610010006_recipe_browsing.sql` for graph relationships and browsing categories in Supabase.
+
+
 For local demo mode or a full local Supabase and email flow, see [`backend/README.md`](backend/README.md#run-locally).
 
 ## Access

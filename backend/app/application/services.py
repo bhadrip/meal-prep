@@ -44,6 +44,9 @@ class MealPrepRepository(Protocol):
     async def update_household_preferences(self, patch: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, Any]: ...
     async def search_recipes(self, query: str = "", limit: int = 10, tag: str = "") -> list[dict[str, Any]]: ...
     async def list_recipe_tags(self) -> list[dict[str, Any]]: ...
+    async def get_recipe_graph_data(self) -> dict[str, Any]: ...
+    async def save_recipe_relationship(self, relationship: dict[str, Any]) -> dict[str, Any]: ...
+    async def delete_recipe_relationship(self, relationship_id: str) -> bool: ...
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None: ...
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]: ...
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]: ...
@@ -238,6 +241,33 @@ class RecipePantryService:
     async def list_recipe_tags(self) -> list[dict[str, Any]]:
         return await self.repository.list_recipe_tags()
 
+    async def browse_recipe_library(self, query: str = "", filters: dict | None = None,
+                                   max_minutes: int | None = None, limit: int = 25, offset: int = 0) -> dict:
+        from .recipe_browsing import browse
+        return browse(await self.repository.get_recipe_graph_data(), query, filters, max_minutes, limit, offset)
+
+    async def get_recipe_graph(self, query: str = "", filters: dict | None = None,
+                               max_minutes: int | None = None) -> dict[str, Any]:
+        from .recipe_browsing import browse
+        from .recipe_graph import build_result_graph
+        data = await self.repository.get_recipe_graph_data()
+        results = browse(data, query, filters, max_minutes)
+        return {**build_result_graph(data, results["matchingRecipeIds"]),
+                "scope": {"query": results["query"], "filters": results["filters"], "maxMinutes": max_minutes}}
+
+    async def save_recipe_relationship(self, relationship: dict[str, Any]) -> dict[str, Any]:
+        from .recipe_graph import validate_relationship
+        clean = validate_relationship(relationship, await self.get_recipe_graph())
+        return await self.repository.save_recipe_relationship(clean)
+
+    async def delete_recipe_relationship(self, relationship_id: str) -> dict[str, Any]:
+        graph = await self.get_recipe_graph()
+        if not any(edge["id"] == relationship_id for edge in graph["edges"]):
+            raise ApplicationError("Relationship was not found")
+        if not await self.repository.delete_recipe_relationship(relationship_id):
+            raise ApplicationError("Relationship was not found")
+        return {"id": relationship_id, "deleted": True}
+
     async def get_recipe(self, recipe_id: str) -> dict[str, Any]:
         recipe = await self.repository.get_recipe(recipe_id)
         if not recipe:
@@ -267,7 +297,13 @@ class RecipePantryService:
             tag = " ".join(value.split()).casefold()
             if tag not in tags:
                 tags.append(tag)
-        return await self.repository.save_recipe({**recipe, "tags": tags})
+        from .recipe_browsing import normalize_categories
+        from .recipe_graph import CATEGORY_FIELDS
+        clean = {**recipe, "tags": tags}
+        for field in CATEGORY_FIELDS.values():
+            if field != "tags" and field in recipe:
+                clean[field] = normalize_categories(recipe[field], field)
+        return await self.repository.save_recipe(clean)
 
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]:
         return await self.repository.archive_recipe(recipe_id)

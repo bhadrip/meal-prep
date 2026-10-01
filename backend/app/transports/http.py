@@ -199,6 +199,39 @@ async def list_recipe_tags(services: WebServices) -> dict:
     return {"items": items, "count": len(items)}
 
 
+@router.get("/api/recipe-graph")
+async def get_recipe_graph(
+    services: WebServices, query: str = "", cuisine: list[str] = Query([]),
+    goal: list[str] = Query([]), meal: list[str] = Query([]), diet: list[str] = Query([]),
+    tag: list[str] = Query([]), max_minutes: int | None = None,
+) -> dict:
+    return await services.food.get_recipe_graph(query, {
+        "cuisine": cuisine, "goal": goal, "meal": meal, "diet": diet, "tag": tag,
+    }, max_minutes)
+
+
+@router.get("/api/recipe-library")
+async def browse_recipe_library(
+    services: WebServices, query: str = "", cuisine: list[str] = Query([]),
+    goal: list[str] = Query([]), meal: list[str] = Query([]), diet: list[str] = Query([]),
+    tag: list[str] = Query([]), max_minutes: int | None = None,
+    limit: int = 25, offset: int = 0,
+) -> dict:
+    return await services.food.browse_recipe_library(query, {
+        "cuisine": cuisine, "goal": goal, "meal": meal, "diet": diet, "tag": tag,
+    }, max_minutes, limit, offset)
+
+
+@router.put("/api/recipe-relationships")
+async def save_recipe_relationship(relationship: dict[str, Any], services: WebServices) -> dict:
+    return await services.food.save_recipe_relationship(relationship)
+
+
+@router.delete("/api/recipe-relationships/{relationship_id:path}")
+async def delete_recipe_relationship(relationship_id: str, services: WebServices) -> dict:
+    return await services.food.delete_recipe_relationship(relationship_id)
+
+
 @router.get("/api/recipes/{recipe_id}")
 async def get_recipe(recipe_id: str, services: WebServices) -> dict:
     return await services.food.get_recipe(recipe_id)

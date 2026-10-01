@@ -6,6 +6,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from app.application.errors import RepositoryError
+from app.application.services import RecipePantryService
 from app.config import Settings
 from app.infrastructure.repositories import SupabaseRepository
 
@@ -28,6 +30,7 @@ async def test_local_supabase_week_plan_and_rhythm_roundtrip():
         assert created.status_code in (200, 201), created.text
         user_id = created.json()["id"]
         household_id = None
+        extra_household_id = None
         try:
             signed_in = await client.post(
                 "/auth/v1/token", params={"grant_type": "password"},
@@ -53,6 +56,57 @@ async def test_local_supabase_week_plan_and_rhythm_roundtrip():
             assert {item["tag"] for item in await repository.list_recipe_tags()} == {"sickness-friendly", "rasam"}
             assert await repository.search_recipes(tag="guest-friendly") == []
             assert await repository.search_recipes(query="not-a-real-tag") == []
+
+            food = RecipePantryService(repository)
+            base = saved_recipe["id"]
+            variation = (await food.save_recipe({"title": "Pepper rasam"}))["id"]
+            graph = await food.get_recipe_graph()
+            assert len([n for n in graph["nodes"] if n["kind"] == "recipe"]) == 28
+            cuisine = await food.save_recipe_relationship({"sourceRecipeId": base, "type": "cuisine", "label": "South Indian"})
+            tag = await food.save_recipe_relationship({"sourceRecipeId": variation, "type": "tag", "label": "protein rich"})
+            assert (await repository.search_recipes(tag="protein rich"))[0]["id"] == variation
+            variant = await food.save_recipe_relationship({"sourceRecipeId": variation, "targetRecipeId": base, "type": "variant_of"})
+            for kind, value in [("goal", "comfort food"), ("meal", "dinner"), ("diet", "vegan")]:
+                detail = await food.save_recipe_relationship({"sourceRecipeId": base, "type": kind, "label": value})
+                result = await food.browse_recipe_library(filters={"cuisine": ["south indian"], kind: [value]})
+                assert result["count"] == 1 and result["items"][0]["id"] == base
+                assert result["items"][0]["variationCount"] == 1
+                with pytest.raises(RepositoryError, match="already exists"):
+                    await repository.save_recipe_relationship({**detail, "id": None})
+            await food.save_recipe({"id": base, "title": "Ginger rasam", "totalMinutes": 20,
+                                    "meal_types": ["dinner", "lunch"], "tags": ["rasam"]})
+            timed = await food.browse_recipe_library(filters={"goal": ["comfort food"], "meal": ["lunch"]}, max_minutes=20)
+            assert timed["items"][0]["total_minutes"] == 20
+            assert (await food.browse_recipe_library(max_minutes=10))["count"] == 0
+            assert (await food.browse_recipe_library(limit=25, offset=25))["count"] == 28
+            before = await food.get_recipe_graph()
+            # Exercise database validation directly, bypassing service checks.
+            for payload, message in [
+                ({"sourceRecipeId": base, "targetRecipeId": variation, "type": "variant_of"}, "loop"),
+                ({"id": variant["id"], "sourceRecipeId": base, "targetRecipeId": base, "type": "variant_of"}, "different recipes"),
+                ({"id": cuisine["id"], "sourceRecipeId": variation, "type": "tag", "label": "protein rich"}, "already exists"),
+                ({"sourceRecipeId": base, "type": "cuisine", "label": 42}, "must be text"),
+                ({"id": detail["id"], "sourceRecipeId": base, "type": "meal", "label": "dinner"}, "already exists"),
+            ]:
+                with pytest.raises(RepositoryError, match=message):
+                    await repository.save_recipe_relationship(payload)
+                assert await food.get_recipe_graph() == before
+            await food.save_recipe({"id": base, "title": "Edited rasam", "tags": ["rasam"]})
+            assert (await repository.get_recipe(base))["cuisines"] == ["south indian"]
+            assert (await repository.get_recipe(base))["meal_types"] == ["dinner", "lunch"]
+            await repository.create_household("Other graph kitchen")
+            extra_household_id = (await repository.get_household_context())["householdId"]
+            foreign = (await repository.save_recipe({"title": "Private soup"}))["id"]
+            assert not any(n.get("recipeId") == base for n in (await food.get_recipe_graph())["nodes"])
+            assert (await food.browse_recipe_library(filters={"meal": ["dinner"]}))["count"] == 0
+            await repository.switch_household(household_id)
+            with pytest.raises(RepositoryError, match="Target recipe was not found"):
+                await repository.save_recipe_relationship({"sourceRecipeId": base, "targetRecipeId": foreign, "type": "pairs_with"})
+            assert not any(n.get("recipeId") == foreign for n in (await food.get_recipe_graph())["nodes"])
+            await food.delete_recipe_relationship(tag["id"])
+            assert await repository.search_recipes(tag="protein rich") == []
+            await food.archive_recipe(variation)
+            assert not any(e["id"] == variant["id"] for e in (await food.get_recipe_graph())["edges"])
 
             first_week = "2030-02-04"
             second_week = "2030-02-11"
@@ -83,6 +137,9 @@ async def test_local_supabase_week_plan_and_rhythm_roundtrip():
             days[0]["mode"] = "busy"
             assert (await repository.save_weekly_schedule({"weekStart": second_week, "days": days}))["days"][0]["mode"] == "busy"
         finally:
+            if extra_household_id:
+                removed = await client.delete("/rest/v1/households", params={"id": f"eq.{extra_household_id}"}, headers=admin_headers)
+                assert removed.status_code in (200, 204), removed.text
             if household_id:
                 removed = await client.delete(
                     "/rest/v1/households", params={"id": f"eq.{household_id}"},
