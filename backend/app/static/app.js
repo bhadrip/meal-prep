@@ -40,7 +40,7 @@ const CARD_NAMES = {
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings', notifications: 'Notifications' };
 let recipeBrowser = null;
-const state = { browserUi: {}, view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, mealPlanRules: null, ruleHistory: null, planTab: 'plan', ruleRevisionId: null, rulePreview: null, rulePreviewError: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', pantrySection: 'items', pantryPhotos: [], pantryPhotosHasMore: false, pantryPhotosLoading: false, pantryPhotosError: null, pantryPhotosRequest: 0, client: null, session: null, config: null, editor: null };
+const state = { browserUi: {}, view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, mealPlanRules: null, ruleHistory: null, planTab: 'plan', ruleRevisionId: null, rulePreview: null, rulePreviewError: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', pantryStock: 'on-hand', pantryReview: false, pantryQuantityId: null, pantrySection: 'items', pantryPhotos: [], pantryPhotosHasMore: false, pantryPhotosLoading: false, pantryPhotosError: null, pantryPhotosRequest: 0, client: null, session: null, config: null, editor: null };
 const VIEW_SECTIONS = { overview: ['mealPlan', 'shoppingList', 'pantry'], plan: ['mealPlan', 'schedule'], recipes: ['recipes'], pantry: ['pantry'], shopping: ['shoppingList'], reviews: ['feedback', 'memories'], settings: [], notifications: [] };
 const SECTION_NAMES = { mealPlan: 'meals and prep', shoppingList: 'shopping list', pantry: 'pantry', schedule: 'weekly rhythm', mealPlanRules: 'planning rules', recipes: 'recipes', feedback: 'reviews', memories: 'household memory' };
 Object.assign(state, { dataGeneration: 0, sectionRequests: new Map(), sectionWeeks: {}, dashboardExpanded: false, notificationsLoading: true });
@@ -347,15 +347,15 @@ function renderToday() {
   const soonDate = dateForDay(today, 3);
   const useSoon = arr(section('pantry')).filter((item) => {
     const date = pick(item, 'use_by_date', 'useByDate');
-    return date && date <= soonDate && (item.quantity === null || item.quantity === undefined || Number(item.quantity) > 0);
+    return ((date && date <= soonDate) || item.freshness?.status === 'review_age') && (item.quantity === null || item.quantity === undefined || Number(item.quantity) > 0);
   }).sort((a, b) => String(pick(a, 'use_by_date', 'useByDate')).localeCompare(String(pick(b, 'use_by_date', 'useByDate'))));
   const mealBody = meals.length ? `<div class="today-meals">${meals.map((entry) => `<div class="today-meal"><span class="pill">${esc(label(entry.slot || 'dinner'))}</span><div><h3>${esc(entry.meal || entry.title)}</h3>${entry.notes ? `<p class="muted tiny">${esc(entry.notes)}</p>` : ''}</div><div class="today-meal-actions">${entry.recipeId ? action('View recipe', 'today-recipe', entry.recipeId) : ''}${action('Edit', 'edit-meal', entry.id || `${entry.day}:${entry.slot}`)}</div></div>`).join('')}</div>` : '<p class="muted">No meals or prep planned for today. Add one to get started.</p>';
   const mealReady = ['ready', 'empty'].includes(sectionStatus('mealPlan'));
   const shoppingBody = groceries.length ? `<p class="muted tiny">${groceries.length} ${groceries.length === 1 ? 'item' : 'items'} left to pick up</p><div class="stack">${groceries.slice(0, 5).map((item) => `<label class="check-row"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}${item.store ? ` · ${esc(item.store)}` : ''}</small></span></label>`).join('')}</div>` : '<p class="muted">Nothing left on your shopping list.</p>';
-  const pantryBody = useSoon.length ? `<p class="muted tiny">Recorded use-by dates within the next three days, or earlier.</p><div class="stack">${useSoon.slice(0, 5).map((item) => {
+  const pantryBody = useSoon.length ? `<p class="muted tiny">Recorded dates coming up, and produce purchased at least 7 days ago.</p><div class="stack">${useSoon.slice(0, 5).map((item) => {
     const date = pick(item, 'use_by_date', 'useByDate');
-    return row(item.name, `${date < today ? 'Past recorded date' : date === today ? 'Use-by today' : `Use-by ${date}`} · ${item.quantity ?? 'Amount unknown'} ${item.unit || ''}`, action('Review', 'edit-pantry', item.id));
-  }).join('')}</div>` : '<p class="muted">No pantry items with a recorded use-by date in the next three days.</p>';
+    return row(item.name, `${!date ? `Review first · purchased ${item.freshness.ageDays} days ago` : date < today ? 'Past recorded date' : date === today ? 'Use-by today' : `Use-by ${date}`} · ${item.quantity ?? 'Amount unknown'} ${item.unit || ''}`, action('Review', 'edit-pantry', item.id));
+  }).join('')}</div>` : '<p class="muted">No recorded dates or produce ages need review today. Open Pantry to check missing dates.</p>';
   return `<section class="today-heading"><div><p class="eyebrow">${esc(household().householdName || 'Your kitchen')} · ${esc(new Date(`${today}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }))}</p><h2>What’s on today?</h2></div>${action('Open weekly plan', 'plan', '', 'primary')}</section>
     <article class="card today-plan" data-home-section="mealPlan"><div class="card-head"><h3>Today’s meals & prep</h3>${mealReady ? action('Add a meal for today', 'add-meal', today) : ''}</div>${sectionContent('mealPlan', mealBody)}</article>
     <div class="home-attention-grid"><article class="card" data-home-section="shoppingList"><div class="card-head"><h3>Still to shop</h3>${action('Open list', 'shopping')}</div>${sectionContent('shoppingList', shoppingBody)}</article><article class="card" data-home-section="pantry"><div class="card-head"><h3>Use soon</h3>${action('View pantry', 'pantry')}</div>${sectionContent('pantry', pantryBody)}</article></div>
@@ -525,22 +525,34 @@ async function loadPantryPhotos(append = false) {
   }
 }
 
+function renderFreshness(item) {
+  const f = item.freshness || {};
+  const age = f.ageDays === null || f.ageDays === undefined ? '' : `Purchased ${f.ageDays === 0 ? 'today' : `${f.ageDays} day${f.ageDays === 1 ? '' : 's'} ago`}`;
+  let title = f.useByDate ? (f.daysUntilUseBy < 0 ? 'Past recorded date' : f.daysUntilUseBy === 0 ? 'Use-by today' : f.daysUntilUseBy <= 2 ? `Use in ${f.daysUntilUseBy} days` : 'Recorded use-by') : f.status === 'review_age' ? 'Review first · older produce' : f.isProduce ? (age ? 'No use-by recorded' : 'Purchase age unknown') : 'No date recorded';
+  return `<div class="pantry-freshness ${['past_date', 'due_soon', 'review_age'].includes(f.status) ? 'needs-review' : ''}"><strong>${esc(title)}</strong><small>${esc([f.useByDate && f.useByDate, age].filter(Boolean).join(' · '))}</small>${f.isProduce && !age ? `<button type="button" class="pantry-date-link" data-action="edit-pantry" data-id="${esc(item.id)}">Add purchase date</button>` : ''}</div>`;
+}
+
 function renderPantry() {
   const items = arr(section('pantry'));
+  const visibleItems = items.filter((item) => state.pantryStock === 'all' || (state.pantryStock === 'finished' ? item.quantity === 0 : item.quantity !== 0));
   const query = state.pantrySearch.trim().toLocaleLowerCase();
-  const matches = items.filter((item) => (state.pantryCategory === 'all' || (item.category || 'uncategorized') === state.pantryCategory) && item.name.toLocaleLowerCase().includes(query));
-  let html = `<div class="toolbar pantry-toolbar"><div><p class="muted tiny">Find what is on hand. Dates are entered by you.</p><input class="search" id="pantry-search" type="search" placeholder="Search pantry items" value="${esc(state.pantrySearch)}" aria-label="Search pantry items" /></div><div class="pantry-toolbar-actions"><button type="button" class="pantry-photo-trigger" data-pantry-section="${state.pantrySection === 'photos' ? 'items' : 'photos'}" aria-expanded="${state.pantrySection === 'photos'}" aria-controls="pantry-photo-panel">${state.pantrySection === 'photos' ? 'Hide photo history' : 'Photo history'}</button>${action('Add pantry item', 'add-pantry', '', 'primary')}</div></div>`;
+  const needsReview = (item) => ['past_date', 'due_soon', 'review_age', 'age_unknown'].includes(item.freshness?.status);
+  const matches = visibleItems.filter((item) => (!state.pantryReview || needsReview(item)) && (state.pantryCategory === 'all' || (item.category || 'uncategorized') === state.pantryCategory) && item.name.toLocaleLowerCase().includes(query)).sort((a, b) => ({ past_date: 0, due_soon: 1, review_age: 2, age_unknown: 3 }[a.freshness?.status] ?? 4) - ({ past_date: 0, due_soon: 1, review_age: 2, age_unknown: 3 }[b.freshness?.status] ?? 4) || (b.freshness?.ageDays || 0) - (a.freshness?.ageDays || 0));
+  let html = `<div class="toolbar pantry-toolbar"><div><p class="muted tiny">Track what is left. Produce age is a planning reminder, not an expiry estimate.</p><input class="search" id="pantry-search" type="search" placeholder="Search pantry items" value="${esc(state.pantrySearch)}" aria-label="Search pantry items" /></div><div class="pantry-toolbar-actions"><button type="button" class="pantry-photo-trigger" data-pantry-section="${state.pantrySection === 'photos' ? 'items' : 'photos'}" aria-expanded="${state.pantrySection === 'photos'}" aria-controls="pantry-photo-panel">${state.pantrySection === 'photos' ? 'Hide photo history' : 'Photo history'}</button>${action('Add pantry item', 'add-pantry', '', 'primary')}</div></div>`;
   if (state.pantrySection === 'photos') html += `<section id="pantry-photo-panel" class="pantry-photo-panel" aria-label="Photo history"><h2>Photo history</h2>${renderPantryPhotos()}</section>`;
   if (sectionStatus('pantry') === 'unavailable') return html + empty('Pantry unavailable', 'Try refreshing this page.');
-  html += `<div class="pantry-filters" role="group" aria-label="Pantry categories">${PANTRY_CATEGORIES.map(([value, title]) => `<button type="button" class="pantry-filter ${state.pantryCategory === value ? 'active' : ''}" data-pantry-category="${value}" aria-pressed="${state.pantryCategory === value}">${title} <span>${value === 'all' ? items.length : items.filter((item) => (item.category || 'uncategorized') === value).length}</span></button>`).join('')}</div>`;
+  html += `<div class="pantry-filters" role="group" aria-label="Pantry stock"><button type="button" class="pantry-filter ${state.pantryStock === 'on-hand' ? 'active' : ''}" data-action="pantry-stock" data-id="on-hand" aria-pressed="${state.pantryStock === 'on-hand'}">On hand <span>${items.filter((item) => item.quantity !== 0).length}</span></button><button type="button" class="pantry-filter ${state.pantryStock === 'finished' ? 'active' : ''}" data-action="pantry-stock" data-id="finished" aria-pressed="${state.pantryStock === 'finished'}">Finished <span>${items.filter((item) => item.quantity === 0).length}</span></button><button type="button" class="pantry-filter ${state.pantryStock === 'all' ? 'active' : ''}" data-action="pantry-stock" data-id="all" aria-pressed="${state.pantryStock === 'all'}">All records</button></div><p class="muted tiny">Food carries forward between weeks. Zero amounts move to Finished; restock them when you buy more.</p>`;
+  html += `<div class="pantry-filters" role="group" aria-label="Pantry categories">${PANTRY_CATEGORIES.map(([value, title]) => `<button type="button" class="pantry-filter ${state.pantryCategory === value ? 'active' : ''}" data-pantry-category="${value}" aria-pressed="${state.pantryCategory === value}">${title} <span>${value === 'all' ? visibleItems.length : visibleItems.filter((item) => (item.category || 'uncategorized') === value).length}</span></button>`).join('')}</div>`;
+  html += `<button type="button" class="pantry-filter ${state.pantryReview ? 'active' : ''}" data-action="review-produce" aria-pressed="${state.pantryReview}">Review produce &amp; dates <span>${visibleItems.filter(needsReview).length}</span></button><p class="muted tiny">Review reminders start at 7 days for produce. Missing purchase dates are shown for follow-up.</p>`;
   html += `<p class="muted tiny pantry-result-count" role="status">Showing ${matches.length} of ${items.length} items</p>`;
-  if (!matches.length) return html + empty(items.length ? 'No matching items' : 'Your pantry is empty', items.length ? 'Try another search or category.' : 'Add food you want to keep track of.');
-  html += `<div class="card table-card"><div class="table-row header"><span>Item</span><span>Remaining</span><span>Location</span><span>Use by</span><span></span></div>${matches.map((item) => {
+  if (!matches.length) return html + empty(items.length ? 'No matching items' : 'Your pantry is empty', state.pantryStock === 'finished' ? 'Finished items appear here when their remaining amount reaches zero.' : items.length ? 'Try another search, category, or stock view.' : 'Add food you want to keep track of.');
+  html += `<div class="card table-card pantry-table"><div class="table-row header"><span>Item</span><span>Remaining</span><span>Location</span><span>Freshness</span><span>Actions</span></div>${matches.map((item) => {
     const quantity = item.quantity === null || item.quantity === undefined ? null : Number(item.quantity);
     const reference = Number(item.reference_quantity);
     const fraction = quantity !== null && reference > 0 ? Math.round(Math.max(0, Math.min(1, quantity / reference)) * 100) : null;
     const meter = fraction === null ? '' : `<div class="pantry-stock" role="meter" aria-label="${esc(item.name)} remaining compared with tracked amount" aria-valuenow="${fraction}" aria-valuemin="0" aria-valuemax="100"><span style="width:${fraction}%"></span></div>`;
-    return `<div class="table-row"><strong>${esc(item.name)}<small class="pantry-item-category">${esc(PANTRY_CATEGORIES.find(([value]) => value === (item.category || 'uncategorized'))?.[1] || 'Uncategorized')}</small></strong><div class="pantry-quantity"><span class="tiny">${quantity === null ? 'Amount unknown' : `${esc(quantity)} ${esc(item.unit || '')} left`}</span>${meter}</div><span class="tiny">${esc(label(pick(item, 'storage_location', 'storageLocation') || 'pantry'))}</span><span class="tiny">${esc(pick(item, 'use_by_date', 'useByDate') || '—')}</span><div class="pantry-actions">${quantity !== null && quantity > 0 ? action('Use', 'use-pantry', item.id, 'primary') : ''}${action('Edit', 'edit-pantry', item.id)}</div></div>`;
+    const amountEditor = state.pantryQuantityId === item.id ? `<form class="pantry-inline-form" data-quantity-id="${esc(item.id)}"><label>Remaining<input name="quantity" type="number" min="0" step="0.001" required value="${quantity ?? ''}" aria-label="Remaining ${esc(item.name)}" /></label><label>Unit<input name="unit" value="${esc(item.unit || '')}" aria-label="Unit for ${esc(item.name)}" placeholder="e.g. lb, bag" /></label><div><button class="button primary" type="submit">Save amount</button>${action('Cancel', 'cancel-quantity', item.id)}</div></form>` : `<button type="button" class="pantry-amount-button" data-action="edit-quantity" data-id="${esc(item.id)}" aria-label="Update remaining ${esc(item.name)}">${quantity === null ? 'Set amount' : `${esc(quantity)} ${esc(item.unit || '')} left`} <span aria-hidden="true">✎</span></button>${meter}${quantity !== null && quantity > 0 ? `<div class="pantry-quick-actions">${action('Used half', 'half-pantry', item.id)}${action('Finished', 'finish-pantry', item.id)}</div>` : ''}`;
+    return `<div class="table-row" data-pantry-id="${esc(item.id)}"><strong>${esc(item.name)}<small class="pantry-item-category">${esc(PANTRY_CATEGORIES.find(([value]) => value === (item.category || 'uncategorized'))?.[1] || 'Uncategorized')}</small></strong><div class="pantry-quantity">${amountEditor}</div><span class="tiny">${esc(label(pick(item, 'storage_location', 'storageLocation') || 'pantry'))}</span>${renderFreshness(item)}<div class="pantry-actions">${quantity !== null && quantity > 0 ? action('Use', 'use-pantry', item.id, 'primary') : quantity === 0 ? action('Restock', 'restock-pantry', item.id, 'primary') : ''}${action('Edit', 'edit-pantry', item.id)}</div></div>`;
   }).join('')}</div>`;
   return html;
 }
@@ -702,7 +714,7 @@ function openEditor(kind, item = null, selectedDate = null) {
     markup = field('title', 'Recipe name', item?.title, { required: true, wide: true }) + field('description', 'Description', item?.description, { type: 'textarea', wide: true }) + field('servings', 'Servings', item?.servings || 4, { type: 'number', min: 1 }) + field('totalMinutes', 'Total minutes', item?.total_minutes ?? item?.totalMinutes, { type: 'number', min: 1 }) + field('activeMinutes', 'Active minutes', item?.active_minutes ?? item?.activeMinutes, { type: 'number', min: 1 }) + field('tags', 'Tags, separated by commas', joinNames(item?.tags), { wide: true }) + ['cuisines','eating_goals','meal_types','diets'].map((key, index) => field(key, ['Cuisines','Eating goals (e.g. protein rich)','Meals (e.g. dinner)','Diets (e.g. vegetarian)'][index] + ', separated by commas', joinNames(item?.[key]), { wide: true })).join('') + field('ingredients', 'Ingredients — one per line: name | quantity | unit', arr(item?.ingredients).map((entry) => typeof entry === 'string' ? entry : `${entry.name || ''} | ${entry.quantity ?? ''} | ${entry.unit || ''}`).join('\n'), { type: 'textarea', wide: true }) + field('instructions', 'Instructions — one step per line', arr(item?.instructions).map((entry) => typeof entry === 'string' ? entry : entry.text || entry.instruction || '').join('\n'), { type: 'textarea', wide: true }) + field('sourceUrl', 'Source URL', item?.source_url || item?.sourceUrl, { type: 'url', wide: true });
   } else if (kind === 'pantry') {
     title = item ? 'Edit pantry item' : 'Add pantry item';
-    markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('category', 'Category', item?.category || 'auto', { choices: [{ value: 'auto', label: 'Categorize from name' }, ...PANTRY_CATEGORIES.filter(([value]) => value !== 'all').map(([value, title]) => ({ value, label: title }))] }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0 }) + field('unit', 'Unit', item?.unit) + field('storageLocation', 'Storage location', pick(item, 'storage_location', 'storageLocation') || 'pantry', { choices: ['pantry', 'fridge', 'freezer', 'other'] }) + field('quantityConfidence', 'Quantity confidence', pick(item, 'quantity_confidence', 'quantityConfidence') || 'estimated', { choices: ['exact', 'estimated', 'unknown'] }) + field('useByDate', 'Use by date (only if known)', pick(item, 'use_by_date', 'useByDate'), { type: 'date' });
+    markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('category', 'Category', item?.category || 'auto', { choices: [{ value: 'auto', label: 'Categorize from name' }, ...PANTRY_CATEGORIES.filter(([value]) => value !== 'all').map(([value, title]) => ({ value, label: title }))] }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0, step: 0.001 }) + field('unit', 'Unit', item?.unit) + field('storageLocation', 'Storage location', pick(item, 'storage_location', 'storageLocation') || 'pantry', { choices: ['pantry', 'fridge', 'freezer', 'other'] }) + field('quantityConfidence', 'Quantity confidence', pick(item, 'quantity_confidence', 'quantityConfidence') || 'estimated', { choices: ['exact', 'estimated', 'unknown'] }) + field('acquiredAt', 'Purchase date (if known)', pick(item, 'acquired_at', 'acquiredAt') || item?.freshness?.purchaseDate, { type: 'date' }) + field('freshnessBasis', 'Freshness notes / evidence', pick(item, 'freshness_basis', 'freshnessBasis'), { wide: true }) + field('useByDate', 'Use by date (only if known)', pick(item, 'use_by_date', 'useByDate'), { type: 'date' });
   } else if (kind === 'pantry-use') {
     title = `Use ${item.name}`;
     markup = `<p class="muted tiny wide">${esc(item.quantity)} ${esc(item.unit || '')} remaining</p>` + field('quantity', `Amount used (${item.unit || 'units'})`, '', { type: 'number', min: 0.001, max: item.quantity, step: 0.001, required: true }) + field('recipeId', 'Saved recipe (optional)', '', { choices: [{ value: '', label: 'No recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('mealTitle', 'Meal (optional)', '', { placeholder: 'e.g. Tuesday dinner', wide: true });
@@ -751,7 +763,7 @@ async function submitEditor(data) {
     state.view = 'recipes';
     writeRoute();
   } else if (kind === 'pantry') {
-    await save('/api/pantry', 'PUT', { id: item?.id, name: value('name'), category: value('category') === 'auto' ? null : value('category'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, storageLocation: value('storageLocation'), quantityConfidence: value('quantityConfidence'), useByDate: value('useByDate') || null });
+    await save('/api/pantry', 'PUT', { id: item?.id, name: value('name'), category: value('category') === 'auto' ? null : value('category'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, storageLocation: value('storageLocation'), quantityConfidence: value('quantityConfidence'), acquiredAt: value('acquiredAt') || null, freshnessBasis: value('freshnessBasis') || null, useByDate: value('useByDate') || null });
   } else if (kind === 'pantry-use') {
     await save('/api/pantry/use', 'POST', { itemId: item.id, quantity: Number(value('quantity')), recipeId: value('recipeId') || null, mealTitle: value('mealTitle') || null });
   } else if (kind === 'meal') {
@@ -895,6 +907,32 @@ async function handleAction(actionName, id) {
     writeRoute('replace');
     return refresh('Recipe archived.');
   }
+  if (actionName === 'pantry-stock') { state.pantryStock = id; state.pantryReview = false; state.pantryCategory = 'all'; return render(); }
+  if (actionName === 'restock-pantry') {
+    const item = pantry.find((entry) => entry.id === id);
+    openEditor('pantry', item);
+    fields.querySelector('[name=quantity]').value = '';
+    fields.querySelector('[name=quantity]').required = true;
+    fields.querySelector('[name=quantity]').min = '0.001';
+    fields.querySelector('[name=acquiredAt]').value = new Date().toLocaleDateString('en-CA');
+    fields.querySelector('[name=useByDate]').value = '';
+    fields.querySelector('[name=freshnessBasis]').value = '';
+    fields.querySelector('[name=quantity]').focus();
+    return;
+  }
+  if (actionName === 'review-produce') { state.pantryReview = !state.pantryReview; return render(); }
+  if (actionName === 'edit-quantity' || actionName === 'cancel-quantity') {
+    state.pantryQuantityId = actionName === 'edit-quantity' ? id : null;
+    render();
+    content.querySelector('.pantry-inline-form input')?.focus();
+    return;
+  }
+  if (actionName === 'half-pantry' || actionName === 'finish-pantry') {
+    const item = pantry.find((entry) => entry.id === id);
+    const quantity = actionName === 'half-pantry' ? Math.ceil(Number(item.quantity) * 500) / 1000 : Number(item.quantity);
+    await save('/api/pantry/use', 'POST', { itemId: id, quantity });
+    return refresh('Pantry quantity updated.');
+  }
   if (actionName === 'add-pantry') return openEditor('pantry');
   if (actionName === 'load-pantry-photos') return loadPantryPhotos();
   if (actionName === 'load-older-pantry-photos') return loadPantryPhotos(true);
@@ -1020,6 +1058,19 @@ content.addEventListener('input', (event) => {
 });
 
 content.addEventListener('submit', async (event) => {
+  if (event.target.matches('.pantry-inline-form')) {
+    event.preventDefault();
+    const submit = event.target.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      const data = new FormData(event.target);
+      await save('/api/pantry', 'PUT', { id: event.target.dataset.quantityId, quantity: Number(data.get('quantity')), unit: String(data.get('unit') || '').trim() || null, quantityConfidence: 'estimated' });
+      state.pantryQuantityId = null;
+      await refresh('Pantry quantity updated.');
+    } catch (error) { showToast(error.message); }
+    finally { submit.disabled = false; }
+    return;
+  }
   if (!['settings-form', 'dashboard-form', 'invite-form', 'create-household-form'].includes(event.target.id)) return;
   event.preventDefault();
   const submit = event.target.querySelector('[type="submit"]');

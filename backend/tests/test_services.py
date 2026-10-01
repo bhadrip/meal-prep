@@ -246,3 +246,72 @@ async def test_feedback_service_treats_a_preference_as_a_signal():
     assert {tag["slug"] for tag in saved["tags"]} == {"preference-signal"}
     legacy_filter = await service.list(feedback_type="preference")
     assert any(item["id"] == saved["id"] for item in legacy_filter)
+
+
+@pytest.mark.asyncio
+async def test_pantry_partial_quantity_edit_preserves_evidence_and_rejects_invalid_values():
+    service = RecipePantryService(DemoRepository())
+    saved = await service.update_pantry_item({"name": "Mushrooms", "quantity": 2, "unit": "boxes", "storageLocation": "fridge",
+                                             "acquiredAt": "2026-09-24", "freshnessBasis": "Receipt", "useByDate": "2026-10-03"})
+    updated = await service.update_pantry_item({"id": saved["id"], "quantity": 0.5})
+    assert updated["name"] == "Mushrooms"
+    assert updated["acquiredAt"] == "2026-09-24"
+    assert updated["freshnessBasis"] == "Receipt"
+    assert updated["useByDate"] == "2026-10-03"
+    assert updated["storageLocation"] == "fridge"
+    assert updated["reference_quantity"] == 2
+    for bad in (-1, "nan", "infinity", 0.0001, "oops"):
+        with pytest.raises(ApplicationError, match="quantity must"):
+            await service.update_pantry_item({"id": saved["id"], "quantity": bad})
+    with pytest.raises(ApplicationError, match="not found"):
+        await service.update_pantry_item({"id": "missing", "quantity": 1})
+    with pytest.raises(ApplicationError, match="valid date"):
+        await service.update_pantry_item({"id": saved["id"], "acquiredAt": "2026-02-30"})
+    assert next(row for row in await service.get_pantry() if row["id"] == saved["id"])["quantity"] == 0.5
+
+
+def test_pantry_freshness_uses_purchase_evidence_without_inventing_expiry():
+    from datetime import date
+    from app.application.pantry_freshness import pantry_freshness
+    today = date(2026, 10, 1)
+    item = {"name": "Mushrooms", "category": "uncategorized", "quantity": 1, "storage_location": "fridge",
+            "freshness_basis": "Purchased 2026-09-24 at Costco", "created_at": "2026-09-01"}
+    result = pantry_freshness(item, today)
+    assert result["ageDays"] == 7
+    assert result["status"] == "review_age"
+    assert result["useByDate"] is None
+    assert result["source"] == "Purchase date from receipt evidence"
+    assert pantry_freshness({**item, "quantity": 0}, today)["status"] == "finished"
+    assert pantry_freshness({**item, "storage_location": "freezer"}, today)["status"] == "undated"
+    for evidence in (None, "Purchased 2026-02-30", "Purchased 2026-10-02", "Uploaded 2026-09-24"):
+        unknown = pantry_freshness({**item, "freshness_basis": evidence}, today)
+        assert unknown["ageDays"] is None
+        assert unknown["status"] == "age_unknown"
+    assert pantry_freshness({**item, "use_by_date": "2026-09-30"}, today)["status"] == "past_date"
+    assert pantry_freshness({**item, "use_by_date": "2026-10-02"}, today)["daysUntilUseBy"] == 1
+
+
+@pytest.mark.asyncio
+async def test_snapshot_and_pantry_service_share_freshness():
+    repository = DemoRepository()
+    repository._pantry = [{"id": "mushroom", "name": "Mushrooms", "quantity": 1, "acquiredAt": "2020-01-01"}]
+    direct = await RecipePantryService(repository).get_pantry()
+    snapshot = await HouseholdService(repository).snapshot(sections=["pantry"])
+    assert snapshot["sections"]["pantry"]["value"] == direct
+    assert direct[0]["freshness"]["status"] == "review_age"
+
+
+@pytest.mark.asyncio
+async def test_finished_pantry_is_retained_and_restock_resets_tracked_amount():
+    service = RecipePantryService(DemoRepository())
+    item = await service.update_pantry_item({"name": "Raspberries", "quantity": 1, "unit": "package", "acquiredAt": "2020-01-01"})
+    await service.record_pantry_use(item["id"], 1)
+    finished = next(row for row in await service.get_pantry() if row["id"] == item["id"])
+    assert finished["quantity"] == 0
+    assert finished["freshness"]["status"] == "finished"
+    with pytest.raises(ApplicationError, match="exceeds"):
+        await service.record_pantry_use(item["id"], 1)
+    restocked = await service.update_pantry_item({"id": item["id"], "quantity": 3, "acquiredAt": "2026-10-01"})
+    assert restocked["reference_quantity"] == 3
+    assert restocked["acquiredAt"] == "2026-10-01"
+    assert len([row for row in await service.get_pantry() if row["id"] == item["id"]]) == 1
