@@ -74,10 +74,19 @@ test('household settings create, revoke, remove, switch, and leave through the U
   ];
   const invitations = [];
   const calls = [];
-  await page.route('**/api/invitations/mine', (route) => route.fulfill({ json: { invitations: [], hasHousehold: true } }));
-  await page.route('**/api/household/access', (route) => route.fulfill({ json: {
-    role: activeId === 'home-1' ? 'owner' : 'member', members: activeId === 'home-1' ? members : [], invitations,
-  } }));
+  await page.route('**/api/app/bootstrap', async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    return route.fulfill({ json: {
+      ...data,
+      pendingInvites: [],
+      access: {
+        role: activeId === 'home-1' ? 'owner' : 'member',
+        members: activeId === 'home-1' ? members : [], invitations,
+      },
+      memberships: { households, activeHouseholdId: activeId },
+    } });
+  });
   await page.route('**/api/households', async (route) => {
     if (route.request().method() === 'POST') {
       const payload = route.request().postDataJSON();
