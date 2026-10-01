@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import UUID
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, HTMLResponse
@@ -123,6 +125,31 @@ async def app_bootstrap(services: WebServices) -> dict:
             "pendingInvites": invitations,
         }
     return {"snapshot": await services.household.snapshot(), "pendingInvites": []}
+
+
+@router.get("/api/notifications")
+async def list_notifications(services: WebServices) -> dict:
+    repository = services.household.repository
+    if not isinstance(repository, SupabaseRepository):
+        return {"items": [], "unreadCount": 0}
+    rows = await repository.request("GET", "notifications", params={
+        "select": "id,household_id,kind,title,target_path,created_at,read_at",
+        "order": "created_at.desc", "limit": "100",
+    }) or []
+    return {"items": rows, "unreadCount": sum(row["read_at"] is None for row in rows)}
+
+
+@router.patch("/api/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: UUID, services: WebServices) -> dict:
+    repository = services.household.repository
+    if not isinstance(repository, SupabaseRepository):
+        raise HTTPException(status_code=404, detail="Notification not found")
+    rows = await repository.request("PATCH", "notifications",
+        params={"id": f"eq.{notification_id}"},
+        json={"read_at": datetime.now(UTC).isoformat()}) or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"id": rows[0]["id"], "readAt": rows[0]["read_at"]}
 
 
 @router.get("/api/household")

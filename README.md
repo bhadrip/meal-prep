@@ -4,6 +4,8 @@ Meal Prep is a household food-planning app available as a website and a hosted M
 
 The website offers direct, manual access to household setup, planning, recipes, pantry, shopping, and feedback. The installable plugin supplies workflow guidance and the MCP connection. Both use the same application services and Supabase household data. The website has no AI features.
 
+The website also has a personal notification inbox for household invitations and activity. Alerts stay in the website; they do not send email or push messages. The inbox shows activity from households you still belong to, and opening an alert switches to its household when needed.
+
 ```text
 Website           → HTTP API ─┐
 Codex / ChatGPT   → MCP BFF ──┼→ application services → Supabase

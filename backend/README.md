@@ -17,6 +17,7 @@ app/
 
 - Getting-started landing page at `/` and manual app at `/app`, with household setup, weekly plan and rhythm, recipes and recipe sharing, pantry, shopping, feedback, reviews, memory, and dashboard settings
 - Owner-managed invitations, multiple household memberships, and an active-household switcher
+- A website notification inbox for invitations, membership, settings, plans, recipes, pantry, shopping, and reviews
 - Authenticated JSON API under `/api` for the website and future mobile clients
 - Streamable HTTP MCP endpoint at `/mcp`
 - Domain tools for household context, preferences, recipes, pantry, meal plans, and shopping lists
@@ -30,6 +31,8 @@ app/
 - Vercel serverless entrypoint and deployment configuration
 
 The website has no model integration. Users edit their data directly there. The service never calls a model to make domain writes. ChatGPT can create a plan through MCP, while Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
+
+Inbox entries are written by database triggers in the same transaction as household changes and are visible only to their recipient. Household entries become inaccessible when membership ends. The website loads the latest 100 entries when it opens or refreshes, and opening one marks it read and follows its destination. The database keeps at most 200 entries per person. There is no email, push, scheduler, or real-time subscription for this first version.
 
 ## Deployed resources
 

@@ -37,8 +37,8 @@ const CARD_NAMES = {
   schedule: 'Weekly rhythm', 'meal-plan': 'Meal plan', 'shopping-list': 'Shopping list',
   pantry: 'Pantry', recipes: 'Recipes', feedback: 'Meal feedback', memories: 'Household memory',
 };
-const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' };
-const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', client: null, session: null, config: null, editor: null };
+const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings', notifications: 'Notifications' };
+const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', client: null, session: null, config: null, editor: null };
 function routeFromUrl() {
   const params = new URLSearchParams(location.search);
   const requestedView = params.get('view');
@@ -147,7 +147,13 @@ async function loadRecipeTags() {
 }
 
 async function refresh(message) {
-  const data = await api('/api/app/bootstrap');
+  const [data, notifications] = await Promise.all([
+    api('/api/app/bootstrap'),
+    api('/api/notifications').catch(() => null),
+  ]);
+  state.notifications = arr(notifications?.items);
+  state.notificationError = notifications === null;
+  updateNotificationCount();
   state.pendingInvites = arr(data.pendingInvites);
   if (data.needsInvitationReview) {
     location.replace('/invite');
@@ -169,6 +175,14 @@ async function refresh(message) {
   if (state.view === 'plan' && household().onboardingComplete !== false) await loadWeek(state.weekStart);
   else render();
   if (message) showToast(message);
+}
+
+function updateNotificationCount() {
+  const count = state.notifications.filter((item) => !item.read_at).length;
+  const badge = document.querySelector('#notification-count');
+  badge.hidden = count === 0;
+  badge.textContent = count > 99 ? '99+' : String(count);
+  document.querySelector('#notifications-button').setAttribute('aria-label', count ? `Notifications, ${count} unread` : 'Notifications');
 }
 
 async function loadWeek(weekStart) {
@@ -242,6 +256,17 @@ function renderOverview() {
   html += `<div class="section-head"><div><h2>At a glance</h2><p>The latest saved information from your household.</p></div>${action('Customize dashboard', 'settings')}</div>`;
   html += visible.length ? `<div class="card-grid dashboard-grid">${visible.map((id) => `<div data-dashboard-card="${id}">${cards[id]}</div>`).join('')}</div>` : empty('No dashboard cards shown', 'Open Settings to choose which cards to show.');
   return html;
+}
+
+function renderNotifications() {
+  if (state.notificationError) return empty('Notifications unavailable', 'Refresh the page to try again.');
+  if (!state.notifications.length) return empty('All caught up', 'Household activity will appear here.');
+  return `<section class="page-heading"><div><p class="eyebrow">Household activity</p><h2>Your notifications</h2></div></section>
+    <div class="stack">${state.notifications.map((item) => `<article class="card notification-item ${item.read_at ? '' : 'unread'}">
+      <div class="card-head"><h3>${esc(item.title)}</h3>${item.read_at ? '' : '<span class="notification-new">New</span>'}</div>
+      <p class="muted tiny">${esc(new Date(item.created_at).toLocaleString())}</p>
+      <div style="margin-top:14px">${action('Open', 'open-notification', item.id)}</div>
+    </article>`).join('')}</div>`;
 }
 
 function renderPlan() {
@@ -392,7 +417,7 @@ function render() {
   document.querySelector('#view-title').textContent = TITLES[state.view] || 'Overview';
   document.querySelector('#view-eyebrow').textContent = state.view === 'overview' ? 'Your household' : 'Meal Prep';
   document.querySelectorAll('[data-view]').forEach((button) => button.classList.toggle('active', button.dataset.view === state.view));
-  const views = { overview: renderOverview, plan: renderPlan, recipes: renderRecipes, pantry: renderPantry, shopping: renderShopping, reviews: renderReviews, settings: renderSettings };
+  const views = { overview: renderOverview, plan: renderPlan, recipes: renderRecipes, pantry: renderPantry, shopping: renderShopping, reviews: renderReviews, settings: renderSettings, notifications: renderNotifications };
   content.innerHTML = views[state.view]?.() || renderOverview();
 }
 
@@ -579,6 +604,20 @@ async function handleAction(actionName, id) {
   const pantry = arr(section('pantry'));
   const shopping = arr(section('shoppingList')?.items);
   const plan = arr(state.plan?.entries);
+  if (actionName === 'open-notification') {
+    const item = state.notifications.find((notification) => notification.id === id);
+    if (!item) return;
+    if (!item.read_at) {
+      const result = await api(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH' });
+      item.read_at = result.readAt;
+      updateNotificationCount();
+    }
+    if (item.household_id && item.household_id !== state.activeHouseholdId) {
+      await api(`/api/households/${encodeURIComponent(item.household_id)}/activate`, { method: 'POST' });
+    }
+    location.assign(item.target_path);
+    return;
+  }
   if (actionName === 'review-invite') { location.assign('/invite'); return; }
   if (actionName === 'leave-household') {
     if (!confirm('Leave this household? You will lose access to its shared data.')) return;
@@ -830,6 +869,7 @@ form.addEventListener('submit', async (event) => {
 });
 
 document.querySelector('#refresh-button').addEventListener('click', () => refresh('Up to date.').catch((error) => showToast(error.message)));
+document.querySelector('#notifications-button').addEventListener('click', () => view('notifications'));
 document.querySelector('#account-button').addEventListener('click', () => view('settings'));
 householdSelect.addEventListener('change', async () => {
   householdSelect.disabled = true;

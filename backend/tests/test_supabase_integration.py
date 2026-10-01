@@ -91,3 +91,77 @@ async def test_local_supabase_week_plan_and_rhythm_roundtrip():
                 assert removed.status_code in (200, 204), removed.text
             deleted = await client.delete(f"/auth/v1/admin/users/{user_id}", headers=admin_headers)
             assert deleted.status_code in (200, 204), deleted.text
+
+
+@pytest.mark.asyncio
+async def test_local_notification_inbox_respects_recipient_and_membership():
+    url = os.environ.get("MEAL_PREP_TEST_SUPABASE_URL")
+    anon_key = os.environ.get("MEAL_PREP_TEST_ANON_KEY")
+    service_key = os.environ.get("MEAL_PREP_TEST_SERVICE_ROLE_KEY")
+    if not all((url, anon_key, service_key)):
+        pytest.skip("local Supabase test credentials are not configured")
+
+    admin_headers = {"apikey": service_key, "Authorization": f"Bearer {service_key}"}
+    users = []
+    household_id = None
+    async with httpx.AsyncClient(base_url=url, timeout=20) as client:
+        try:
+            repositories = []
+            emails = []
+            for _ in range(2):
+                email = f"meal-prep-inbox-{uuid4()}@example.test"
+                password = str(uuid4())
+                created = await client.post("/auth/v1/admin/users", headers=admin_headers, json={
+                    "email": email, "password": password, "email_confirm": True,
+                })
+                assert created.status_code in (200, 201), created.text
+                users.append(created.json()["id"])
+                signed_in = await client.post(
+                    "/auth/v1/token", params={"grant_type": "password"},
+                    headers={"apikey": anon_key}, json={"email": email, "password": password},
+                )
+                assert signed_in.status_code == 200, signed_in.text
+                repositories.append(SupabaseRepository(
+                    Settings(supabase_url=url, supabase_anon_key=anon_key, auth_required=True),
+                    signed_in.json()["access_token"],
+                ))
+                emails.append(email)
+            owner, invitee = repositories
+            household_id = (await owner.get_household_context())["householdId"]
+
+            invitation = await owner.rpc("create_household_invitation", {"invitee_email": emails[1]})
+            inbox = await invitee.request("GET", "notifications")
+            assert len(inbox) == 1 and inbox[0]["kind"] == "invitation"
+            assert await owner.request("PATCH", "notifications",
+                params={"id": f"eq.{inbox[0]['id']}"}, json={"read_at": "2026-09-30T12:00:00Z"}) == []
+
+            await invitee.rpc("accept_household_invitation", {"invitation_id": invitation["id"]})
+            await owner.save_recipe({"title": "Shared soup", "servings": 4})
+            member_inbox = await invitee.request("GET", "notifications")
+            assert any(item["title"] == "Joined household" and item["read_at"] for item in member_inbox)
+            assert any(item["kind"] == "recipes" for item in member_inbox)
+            assert any(item["kind"] == "membership" for item in await owner.request("GET", "notifications"))
+
+            await owner.rpc("remove_household_member", {"member_id": users[1]})
+            former_member_inbox = await invitee.request("GET", "notifications")
+            assert not any(item["kind"] == "recipes" for item in former_member_inbox)
+            assert any(item["kind"] == "access_removed" for item in former_member_inbox)
+
+            bulk = await client.post("/rest/v1/notifications", headers={
+                **admin_headers, "Prefer": "return=minimal",
+            }, json=[{
+                "recipient_id": users[1], "kind": "test", "title": "Test activity",
+                "target_path": "/app?view=overview", "event_key": f"test:{uuid4()}",
+            } for _ in range(205)])
+            assert bulk.status_code in (200, 201), bulk.text
+            assert len(await invitee.request("GET", "notifications")) == 200
+        finally:
+            if household_id:
+                removed = await client.delete(
+                    "/rest/v1/households", params={"id": f"eq.{household_id}"},
+                    headers={**admin_headers, "Prefer": "return=representation"},
+                )
+                assert removed.status_code in (200, 204), removed.text
+            for user_id in users:
+                deleted = await client.delete(f"/auth/v1/admin/users/{user_id}", headers=admin_headers)
+                assert deleted.status_code in (200, 204), deleted.text
