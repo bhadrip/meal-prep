@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable, Protocol
 
 from .errors import ApplicationError, RepositoryError, StorageNotInstalledError
 from .pantry_photos import compact_photo, download_chatgpt_photo, normalize_observations
+from .pantry_categories import PANTRY_CATEGORIES, infer_pantry_category
 
 
 DASHBOARD_CARD_IDS = (
@@ -286,6 +287,14 @@ class RecipePantryService:
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]:
         if not str(item.get("name", "")).strip():
             raise ApplicationError("item.name is required")
+        category = item.get("category")
+        if category is not None and category not in PANTRY_CATEGORIES:
+            raise ApplicationError("Invalid pantry category")
+        if category is None:
+            existing = next((row for row in await self.repository.get_pantry() if row.get("id") == item.get("id")), None) if item.get("id") else None
+            item = {**item, "category": (existing or {}).get("category") or infer_pantry_category(
+                item["name"], item.get("storageLocation", item.get("storage_location", ""))
+            )}
         return await self.repository.update_pantry_item(item)
 
     async def record_pantry_use(
