@@ -348,13 +348,14 @@ class SupabaseRepository:
         except httpx.HTTPError:
             pass
 
-    async def get_pantry_photos(self, limit: int = 30) -> list[dict[str, Any]]:
+    async def get_pantry_photos(self, limit: int = 30, offset: int = 0) -> list[dict[str, Any]]:
         household_id = await self.household_id()
         rows = await self.request("GET", "pantry_photo_evidence", params={
             "select": "id,created_at,note,observations,image_bytes,image_width,image_height,status,applied_item_ids,object_path",
             "household_id": f"eq.{household_id}",
             "order": "created_at.desc",
             "limit": str(min(max(limit, 1), 100)),
+            "offset": str(max(offset, 0)),
         }) or []
         for row in rows:
             path = quote(row.pop("object_path"), safe="/")
@@ -838,8 +839,8 @@ class DemoRepository:
         self._pantry_photos.append(row)
         return deepcopy(row)
 
-    async def get_pantry_photos(self, limit: int = 30) -> list[dict[str, Any]]:
-        return deepcopy(self._pantry_photos[-limit:][::-1])
+    async def get_pantry_photos(self, limit: int = 30, offset: int = 0) -> list[dict[str, Any]]:
+        return deepcopy(self._pantry_photos[::-1][offset:offset + limit])
 
     async def apply_pantry_photo(
         self, evidence_id: str, observations: list[dict[str, Any]] | None = None,
