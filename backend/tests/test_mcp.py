@@ -1,11 +1,15 @@
+from copy import deepcopy
+
 from fastapi.testclient import TestClient
 import pytest
 
 from app.config import MCP_AUTH_SCOPES
+from app.infrastructure.repositories import DemoRepository, demo_repository
 from app.main import app
 
 
 HEADERS = {"Accept": "application/json, text/event-stream"}
+DEFAULT_DEMO_CONTEXT = deepcopy(DemoRepository._context)
 
 
 def test_oauth_requests_only_identity_and_refresh_scopes():
@@ -14,8 +18,11 @@ def test_oauth_requests_only_identity_and_refresh_scopes():
 
 @pytest.fixture(scope="module")
 def client():
+    DemoRepository._context = deepcopy(DEFAULT_DEMO_CONTEXT)
+    demo_repository.cache_clear()
     with TestClient(app) as value:
         yield value
+    demo_repository.cache_clear()
 
 
 def rpc(client: TestClient, method: str, params: dict, request_id: int = 1) -> dict:
