@@ -271,7 +271,7 @@ test('recipe tags can be saved, searched, and opened as exact filters', async ({
     await saveEditor(page);
     await content(page).getByRole('button', { name: '← All recipes' }).click();
   }
-  const partialTag = 'sickness';
+  const partialTag = tag.slice(0, -1);
   const searchResponse = page.waitForResponse((response) => response.url().includes('/api/recipe-library?') && new URL(response.url()).searchParams.get('query') === partialTag);
   await page.locator('#recipe-search').fill(partialTag);
   await expect(content(page).getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: new RegExp(tag) })).toBeVisible();
@@ -284,11 +284,13 @@ test('recipe tags can be saved, searched, and opened as exact filters', async ({
   await expect(content(page).locator('.recipe-card')).not.toContainText(dinner);
   await content(page).getByRole('button', { name: 'Clear tag' }).click();
   await page.locator('#recipe-search').fill('');
+  await expect(content(page).locator('#recipe-results')).toHaveAttribute('aria-busy', 'false');
   await content(page).getByRole('button', {name: 'Tags', exact: true}).click();
   await page.getByRole('searchbox', { name: 'Find a recipe tag' }).fill('guest');
   await content(page).getByRole('group', { name: 'Recipe tag filters' }).getByRole('button', { name: /guest-friendly/ }).click();
   await expect(content(page).locator('.recipe-card').filter({ hasText: dinner })).toHaveCount(1);
   await content(page).getByRole('button', { name: 'Clear tag' }).click();
+  await expect(content(page).locator('#recipe-results')).toHaveAttribute('aria-busy', 'false');
   await page.getByRole('searchbox', { name: 'Find a recipe tag' }).fill(`imagined-${Date.now()}`);
   await expect(content(page)).toContainText('No matching saved tags.');
   await expect(content(page).getByRole('group', { name: 'Recipe tag filters' }).getByRole('button', { name: /imagined/ })).toHaveCount(0);
