@@ -125,21 +125,17 @@ async function loadRecipe(id) {
 }
 
 async function refresh(message) {
-  if (state.client) {
-    const pending = await api('/api/invitations/mine');
-    state.pendingInvites = arr(pending.invitations);
-    if (!pending.hasHousehold && state.pendingInvites.length) {
-      location.replace('/invite');
-      return;
-    }
+  const data = await api('/api/app/bootstrap');
+  state.pendingInvites = arr(data.pendingInvites);
+  if (data.needsInvitationReview) {
+    location.replace('/invite');
+    return;
   }
-  const snapshot = await api('/api/app/snapshot');
-  state.snapshot = snapshot;
+  state.snapshot = data.snapshot;
   if (state.client) {
-    const [access, memberships] = await Promise.all([api('/api/household/access'), api('/api/households')]);
-    state.access = access;
-    state.households = arr(memberships.households);
-    state.activeHouseholdId = memberships.activeHouseholdId;
+    state.access = data.access;
+    state.households = arr(data.memberships?.households);
+    state.activeHouseholdId = data.memberships?.activeHouseholdId || null;
     householdPicker.hidden = false;
     householdSelect.innerHTML = state.households.map((item) => `<option value="${esc(item.id)}">${esc(item.name)} · ${esc(label(item.role))}</option>`).join('');
     householdSelect.value = state.activeHouseholdId || '';
@@ -180,6 +176,13 @@ function action(text, action, data = '', css = 'ghost') {
   return `<button class="button ${css} small" data-action="${esc(action)}" data-id="${esc(data)}">${esc(text)}</button>`;
 }
 
+function dashboardLayout() {
+  const saved = household().planningPreferences?.dashboard || {};
+  const order = [...new Set(arr(saved.cardOrder).filter((id) => CARD_IDS.includes(id)))];
+  CARD_IDS.forEach((id) => { if (!order.includes(id)) order.push(id); });
+  return { order, hidden: arr(saved.hiddenCards).filter((id) => CARD_IDS.includes(id)) };
+}
+
 function renderOverview() {
   const h = household();
   const prefs = h.planningPreferences || {};
@@ -188,27 +191,27 @@ function renderOverview() {
   const plan = section('mealPlan');
   const shopping = section('shoppingList');
   const pending = arr(shopping?.items).filter((item) => !item.purchased).length;
+  const memories = arr(section('memories'));
   const incomplete = h.onboardingComplete === false;
   const displayName = h.householdName && h.householdName !== 'My household' ? h.householdName : 'Your household';
   let html = `<section class="hero"><div class="hero-copy"><p class="eyebrow">${esc(incomplete ? 'Getting started' : displayName)}</p><h2>${incomplete ? 'Set up your kitchen.' : 'Your food week, in one place.'}</h2><p>${incomplete ? 'Add your household’s food rules and weekly preferences to get started.' : 'Review your plan, recipes, pantry, and shopping list from one workspace.'}</p><div style="margin-top:22px">${action(incomplete ? 'Set up household' : 'Open weekly plan', incomplete ? 'settings' : 'plan', '', 'secondary')}</div></div><div class="hero-stat"><strong>${esc(arr(plan?.entries).length)}</strong><span>meals and prep tasks in the latest plan</span></div></section>`;
   if (state.pendingInvites.length) html = `<div class="callout"><b>Household invitation waiting</b><p>You have an invitation to join ${esc(state.pendingInvites[0].householdName)}.</p>${action('Review invitation', 'review-invite')}</div>` + html;
-  html += `<div class="section-head"><div><h2>At a glance</h2><p>The latest saved information from your household.</p></div></div>`;
-  html += `<div class="card-grid">`;
-  html += card('Weekly plan', '▦', `<div class="metric">${arr(plan?.entries).length}</div><p class="muted tiny">planned meals and prep tasks</p>`, `<div style="margin-top:20px">${action('View plan', 'plan')}</div>`);
-  html += card('Shopping', '✓', `<div class="metric">${pending}</div><p class="muted tiny">items left to pick up</p>`, `<div style="margin-top:20px">${action('Open list', 'shopping')}</div>`);
-  html += card('Pantry', '□', `<div class="metric">${pantry.length}</div><p class="muted tiny">${pantry.length === 1 ? 'item' : 'items'} on hand</p>`, `<div style="margin-top:20px">${action('View pantry', 'pantry')}</div>`);
-  html += `</div>`;
-  html += `<div class="section-head"><div><h2>Your kitchen</h2><p>What this household is planning around.</p></div>${action('Edit preferences', 'settings')}</div>`;
-  html += `<div class="card-grid">`;
-  html += card('Food rules', '♡', h.dietaryRestrictions === null || h.dietaryRestrictions === undefined ? '<p class="muted tiny">No food rules recorded yet.</p>' : arr(h.dietaryRestrictions).length ? tags(h.dietaryRestrictions, 'orange') : '<p class="muted tiny">No dietary restrictions recorded.</p>');
-  html += card('Planning defaults', '⌁', `<div class="stack">${row('Household size', h.householdSize ? `${h.householdSize} people` : 'Not set')}${row('Weeknight cooking', prefs.weeknightMaxMinutes ? `${prefs.weeknightMaxMinutes} minutes maximum` : 'Not set')}${row('Lunch leftovers', prefs.leftoversForLunch === undefined ? 'Not set' : prefs.leftoversForLunch ? 'Yes' : 'No')}</div>`);
-  html += card('Preferred stores', '◇', arr(h.storePriority).length ? `<div class="stack">${arr(h.storePriority).sort((a, b) => a.priority - b.priority).map((store) => row(store.store, `Priority ${store.priority}`)).join('')}</div>` : '<p class="muted tiny">No stores recorded yet.</p>');
-  html += `</div>`;
-  html += `<div class="section-head"><div><h2>Quick access</h2><p>Pick up where you left off.</p></div></div><div class="card-grid">`;
-  html += card('Recent recipes', '◇', recipes.length ? `<div class="stack">${recipes.slice(0, 3).map((recipe) => row(recipe.title, `${recipe.total_minutes || '—'} min · ${recipe.servings || '—'} servings`)).join('')}</div>` : '<p class="muted tiny">No recipes saved yet.</p>', `<div style="margin-top:20px">${action('Browse recipes', 'recipes')}</div>`);
-  html += card('Meal feedback', '♡', sectionStatus('feedback') === 'unavailable' ? '<p class="muted tiny">Cooking notes are temporarily unavailable.</p>' : arr(section('feedback')).length ? `<div class="stack">${arr(section('feedback')).slice(0, 2).map((item) => row(item.occurrence?.title || 'Weekly note', item.note)).join('')}</div>` : '<p class="muted tiny">No meal feedback yet.</p>', `<div style="margin-top:20px">${action('View reviews', 'reviews')}</div>`);
-  html += card('Weekly rhythm', '◷', state.schedule ? `<div class="stack">${arr(state.schedule.days).slice(0, 3).map((day) => row(day.day, label(day.mode || 'Flexible'))).join('')}</div>` : '<p class="muted tiny">No weekly schedule saved.</p>', `<div style="margin-top:20px">${action('Open plan', 'plan')}</div>`);
-  html += `</div>`;
+  const cards = {
+    'food-rules': card('Food rules', '♡', h.dietaryRestrictions === null || h.dietaryRestrictions === undefined ? '<p class="muted tiny">No food rules recorded yet.</p>' : arr(h.dietaryRestrictions).length ? tags(h.dietaryRestrictions, 'orange') : '<p class="muted tiny">No dietary restrictions recorded.</p>'),
+    'planning-defaults': card('Planning defaults', '⌁', `<div class="stack">${row('Household size', h.householdSize ? `${h.householdSize} people` : 'Not set')}${row('Weeknight cooking', prefs.weeknightMaxMinutes ? `${prefs.weeknightMaxMinutes} minutes maximum` : 'Not set')}${row('Lunch leftovers', prefs.leftoversForLunch === undefined ? 'Not set' : prefs.leftoversForLunch ? 'Yes' : 'No')}</div>`),
+    stores: card('Preferred stores', '◇', arr(h.storePriority).length ? `<div class="stack">${arr(h.storePriority).sort((a, b) => a.priority - b.priority).map((store) => row(store.store, `Priority ${store.priority}`)).join('')}</div>` : '<p class="muted tiny">No stores recorded yet.</p>'),
+    schedule: card('Weekly rhythm', '◷', state.schedule ? `<div class="stack">${arr(state.schedule.days).slice(0, 3).map((day) => row(day.day, label(day.mode || 'Flexible'))).join('')}</div>` : '<p class="muted tiny">No weekly schedule saved.</p>', `<div style="margin-top:20px">${action('Open plan', 'plan')}</div>`),
+    'meal-plan': card('Weekly plan', '▦', `<div class="metric">${arr(plan?.entries).length}</div><p class="muted tiny">planned meals and prep tasks</p>`, `<div style="margin-top:20px">${action('View plan', 'plan')}</div>`),
+    'shopping-list': card('Shopping', '✓', `<div class="metric">${pending}</div><p class="muted tiny">items left to pick up</p>`, `<div style="margin-top:20px">${action('Open list', 'shopping')}</div>`),
+    pantry: card('Pantry', '□', `<div class="metric">${pantry.length}</div><p class="muted tiny">${pantry.length === 1 ? 'item' : 'items'} on hand</p>`, `<div style="margin-top:20px">${action('View pantry', 'pantry')}</div>`),
+    recipes: card('Recent recipes', '◇', recipes.length ? `<div class="stack">${recipes.slice(0, 3).map((recipe) => row(recipe.title, `${recipe.total_minutes || '—'} min · ${recipe.servings || '—'} servings`)).join('')}</div>` : '<p class="muted tiny">No recipes saved yet.</p>', `<div style="margin-top:20px">${action('Browse recipes', 'recipes')}</div>`),
+    feedback: card('Meal feedback', '♡', sectionStatus('feedback') === 'unavailable' ? '<p class="muted tiny">Cooking notes are temporarily unavailable.</p>' : arr(section('feedback')).length ? `<div class="stack">${arr(section('feedback')).slice(0, 2).map((item) => row(item.occurrence?.title || 'Weekly note', item.note)).join('')}</div>` : '<p class="muted tiny">No meal feedback yet.</p>', `<div style="margin-top:20px">${action('View reviews', 'reviews')}</div>`),
+    memories: card('Household memory', '✦', memories.length ? `<div class="stack">${memories.slice(0, 2).map((item) => row(item.content, label(item.status))).join('')}</div>` : '<p class="muted tiny">No saved memories yet.</p>', `<div style="margin-top:20px">${action('View memory', 'reviews')}</div>`),
+  };
+  const layout = dashboardLayout();
+  const visible = layout.order.filter((id) => !layout.hidden.includes(id));
+  html += `<div class="section-head"><div><h2>At a glance</h2><p>The latest saved information from your household.</p></div>${action('Customize dashboard', 'settings')}</div>`;
+  html += visible.length ? `<div class="card-grid dashboard-grid">${visible.map((id) => `<div data-dashboard-card="${id}">${cards[id]}</div>`).join('')}</div>` : empty('No dashboard cards shown', 'Open Settings to choose which cards to show.');
   return html;
 }
 
@@ -298,15 +301,12 @@ function renderSettings() {
   const h = household();
   const prefs = h.planningPreferences || {};
   const focus = arr(prefs.focusAreas);
-  const layout = prefs.dashboard || {};
-  const hidden = arr(layout.hiddenCards);
-  const order = [...new Set(arr(layout.cardOrder).filter((id) => CARD_IDS.includes(id)))];
-  CARD_IDS.forEach((id) => { if (!order.includes(id)) order.push(id); });
+  const { order, hidden } = dashboardLayout();
   const restrictions = h.dietaryRestrictions === null || h.dietaryRestrictions === undefined
     ? '' : arr(h.dietaryRestrictions).length ? h.dietaryRestrictions.join(', ') : 'none';
   const stores = arr(h.storePriority).sort((a, b) => a.priority - b.priority).map((item) => item.store).join(', ');
   const focusChoices = FOCUS.map((area) => `<label class="planning-choice"><input type="checkbox" name="focusAreas" value="${area}" ${focus.includes(area) ? 'checked' : ''} /><span>${esc(label(area))}</span></label>`).join('');
-  const cardRows = order.map((id, index) => `<div class="card-order-row"><label class="toggle-field"><span>${esc(CARD_NAMES[id])}</span><input type="checkbox" name="visibleCard" value="${id}" ${hidden.includes(id) ? '' : 'checked'} /></label><div class="card-order-buttons"><button class="icon-button" type="button" data-action="card-up" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} up" ${index === 0 ? 'disabled' : ''}>↑</button><button class="icon-button" type="button" data-action="card-down" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} down" ${index === order.length - 1 ? 'disabled' : ''}>↓</button></div></div>`).join('');
+  const cardRows = order.map((id, index) => `<div class="card-order-row" data-card-id="${id}"><label class="toggle-field"><span>${esc(CARD_NAMES[id])}</span><input type="checkbox" name="visibleCard" value="${id}" ${hidden.includes(id) ? '' : 'checked'} /></label><div class="card-order-buttons"><button class="icon-button" type="button" data-action="card-up" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} up" ${index === 0 ? 'disabled' : ''}>↑</button><button class="icon-button" type="button" data-action="card-down" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} down" ${index === order.length - 1 ? 'disabled' : ''}>↓</button></div></div>`).join('');
   const members = arr(state.access?.members);
   const invitations = arr(state.access?.invitations);
   const owner = state.access?.role === 'owner';
@@ -337,8 +337,8 @@ function renderSettings() {
       </form>
     </article>
     <article class="card"><div class="card-head"><h3>Dashboard cards</h3><span class="card-icon">▦</span></div>
-      <p class="muted tiny" style="margin-bottom:14px">Show, hide, and reorder cards in the MCP household dashboard.</p>
-      <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save visible cards</button></form>
+      <p class="muted tiny" style="margin-bottom:14px">Choose the cards and order shown on Overview and in the chat dashboard.</p>
+      <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save dashboard</button></form>
     </article>
   </div><div class="stack">
     ${householdsCard}
@@ -622,15 +622,19 @@ async function handleAction(actionName, id) {
   if (actionName === 'add-memory') return openEditor('memory');
   if (actionName === 'edit-memory') return openEditor('memory', arr(section('memories')).find((item) => item.id === id));
   if (actionName === 'card-up' || actionName === 'card-down') {
-    const saved = arr(household().planningPreferences?.dashboard?.cardOrder);
-    const order = [...new Set(saved.filter((cardId) => CARD_IDS.includes(cardId)))];
-    CARD_IDS.forEach((cardId) => { if (!order.includes(cardId)) order.push(cardId); });
-    const index = order.indexOf(id);
+    const form = content.querySelector('#dashboard-form');
+    const rows = [...form.querySelectorAll('[data-card-id]')];
+    const index = rows.findIndex((row) => row.dataset.cardId === id);
     const other = index + (actionName === 'card-up' ? -1 : 1);
-    if (index < 0 || other < 0 || other >= order.length) return;
-    [order[index], order[other]] = [order[other], order[index]];
-    await save('/api/dashboard-layout', 'PATCH', { cardOrder: order });
-    return refresh('Dashboard order saved.');
+    if (index < 0 || other < 0 || other >= rows.length) return;
+    if (actionName === 'card-up') rows[other].before(rows[index]);
+    else rows[other].after(rows[index]);
+    const updated = [...form.querySelectorAll('[data-card-id]')];
+    updated.forEach((row, position) => {
+      row.querySelector('[data-action="card-up"]').disabled = position === 0;
+      row.querySelector('[data-action="card-down"]').disabled = position === updated.length - 1;
+    });
+    return;
   }
   if (actionName === 'confirm-memory') {
     await save(`/api/memories/${encodeURIComponent(id)}`, 'PATCH', { action: 'confirm' });
@@ -652,7 +656,7 @@ document.addEventListener('click', async (event) => {
   button.disabled = true;
   try { await handleAction(button.dataset.action, button.dataset.id); }
   catch (error) { showToast(error.message || 'Something went wrong.'); }
-  finally { button.disabled = false; }
+  finally { if (button.dataset.action !== 'card-up' && button.dataset.action !== 'card-down') button.disabled = false; }
 });
 
 content.addEventListener('change', async (event) => {
@@ -722,9 +726,16 @@ content.addEventListener('submit', async (event) => {
       if (!stores.length) throw new Error('Enter at least one preferred store.');
       const prefs = household().planningPreferences || {};
       await save('/api/household', 'PATCH', { householdSize: Number(data.get('householdSize')), dietaryRestrictions: /^(none|no restrictions)$/i.test(restrictionText) ? [] : restrictionText.split(',').map((item) => item.trim()).filter(Boolean), storePriority: stores.map((store, index) => ({ store, priority: index + 1 })), planningPreferences: { ...prefs, weeknightMaxMinutes: Number(data.get('weeknightMaxMinutes')), leftoversForLunch: data.has('leftoversForLunch'), focusAreas: data.getAll('focusAreas') }, completeOnboarding: true });
-    } else {
+    } else if (event.target.id === 'dashboard-form') {
       const visible = data.getAll('visibleCard');
-      await save('/api/dashboard-layout', 'PATCH', { hiddenCards: CARD_IDS.filter((id) => !visible.includes(id)) });
+      const cardOrder = [...event.target.querySelectorAll('[data-card-id]')].map((row) => row.dataset.cardId);
+      const result = await save('/api/dashboard-layout', 'PATCH', {
+        cardOrder, hiddenCards: CARD_IDS.filter((id) => !visible.includes(id)),
+      });
+      state.snapshot.household = result.household;
+      render();
+      showToast('Dashboard saved.');
+      return;
     }
     await refresh('Settings saved.');
   } catch (error) { showToast(error.message); }

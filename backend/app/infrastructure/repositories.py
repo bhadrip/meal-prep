@@ -51,6 +51,7 @@ class SupabaseRepository:
         self.settings = settings
         self.access_token = access_token
         self.base_url = f"{settings.supabase_url.rstrip('/')}/rest/v1"
+        self._household_context: dict[str, Any] | None = None
 
     @property
     def headers(self) -> dict[str, str]:
@@ -100,24 +101,33 @@ class SupabaseRepository:
         return str(context["householdId"])
 
     async def get_household_context(self, *, create_if_missing: bool = True) -> dict[str, Any]:
+        if self._household_context is not None:
+            return deepcopy(self._household_context)
         value = await self.rpc("get_household_context")
         if value is None and create_if_missing:
             await self.bootstrap_household()
             value = await self.rpc("get_household_context")
         if not isinstance(value, dict):
             raise RepositoryError("No household is available for this user")
-        return value
+        self._household_context = value
+        return deepcopy(value)
 
     async def list_households(self) -> dict[str, Any]:
         return await self.rpc("list_my_households")
 
     async def switch_household(self, household_id: str) -> dict[str, Any]:
-        return await self.rpc("set_active_household", {"requested_household_id": household_id})
+        result = await self.rpc("set_active_household", {"requested_household_id": household_id})
+        self._household_context = None
+        return result
 
     async def create_household(self, name: str) -> dict[str, Any]:
-        return await self.rpc("create_my_household", {"requested_name": name})
+        result = await self.rpc("create_my_household", {"requested_name": name})
+        self._household_context = None
+        return result
 
-    async def update_household_preferences(self, patch: dict[str, Any]) -> dict[str, Any]:
+    async def update_household_preferences(
+        self, patch: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         allowed = {
             "household_size": "householdSize",
             "dietary_restrictions": "dietaryRestrictions",
@@ -128,13 +138,20 @@ class SupabaseRepository:
         row = {column: patch[key] for column, key in allowed.items() if key in patch}
         if not row:
             return await self.get_household_context()
-        household_id = await self.household_id()
-        await self.request(
+        household_id = str(context["householdId"]) if context is not None else await self.household_id()
+        rows = await self.request(
             "PATCH",
             "household_preferences",
             params={"household_id": f"eq.{household_id}"},
             json=row,
         )
+        if not rows:
+            raise RepositoryError("Household preferences were not saved")
+        if context is not None and set(row) == {"planning_preferences"}:
+            updated = {**context, "planningPreferences": rows[0]["planning_preferences"]}
+            self._household_context = updated
+            return updated
+        self._household_context = None
         return await self.get_household_context()
 
     async def search_recipes(self, query: str = "", limit: int = 10) -> list[dict[str, Any]]:
@@ -622,7 +639,9 @@ class DemoRepository:
     async def create_household(self, name: str) -> dict[str, Any]:
         raise RepositoryError("Creating households requires Supabase")
 
-    async def update_household_preferences(self, patch: dict[str, Any]) -> dict[str, Any]:
+    async def update_household_preferences(
+        self, patch: dict[str, Any], context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         self._context.update(deepcopy(patch))
         return deepcopy(self._context)
 

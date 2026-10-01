@@ -24,6 +24,20 @@ async function saveEditor(page) {
   await expect(page.locator('#toast')).toContainText('Saved to your household.');
 }
 
+test('home loads dashboard data in one startup request', async ({ page }) => {
+  const apiPaths = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith('/api/')) apiPaths.push(path);
+  });
+  await page.goto('/app');
+  await expect(content(page).locator('[data-dashboard-card]')).toHaveCount(10);
+  expect(apiPaths.filter((path) => path === '/api/app/bootstrap')).toHaveLength(1);
+  expect(apiPaths).not.toContain('/api/app/snapshot');
+  expect(apiPaths).not.toContain('/api/household/access');
+  expect(apiPaths).not.toContain('/api/households');
+});
+
 test('navigation, sidebar, refresh, account, and mobile navigation', async ({ page }) => {
   await open(page, 'overview');
   for (const [view, title] of Object.entries({ plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings', overview: 'Overview' })) {
@@ -50,7 +64,7 @@ test('overview shortcuts and editor validation and cancel', async ({ page }) => 
   await open(page, 'overview');
   for (const [button, title] of [
     ['View plan', 'Weekly plan'], ['Open list', 'Shopping'], ['View pantry', 'Pantry'],
-    ['Edit preferences', 'Settings'], ['Browse recipes', 'Recipes'], ['View reviews', 'Reviews'],
+    ['Customize dashboard', 'Settings'], ['Browse recipes', 'Recipes'], ['View reviews', 'Reviews'],
   ]) {
     await page.locator('.sidebar [data-view="overview"]').click();
     await content(page).getByRole('button', { name: button }).click();
@@ -95,9 +109,14 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
   await expect(page.locator('#dashboard-form .card-order-row').first()).toContainText('Food rules');
   await page.getByRole('button', { name: 'Move Food rules down' }).click();
   await page.locator('#dashboard-form [name="visibleCard"][value="pantry"]').uncheck();
-  await page.getByRole('button', { name: 'Save visible cards' }).click();
+  await page.getByRole('button', { name: 'Save dashboard' }).click();
   await expect(page.locator('#dashboard-form [name="visibleCard"][value="pantry"]')).not.toBeChecked();
+  await page.locator('.sidebar [data-view="overview"]').click();
+  await expect(content(page).locator('[data-dashboard-card]').first()).toHaveAttribute('data-dashboard-card', 'planning-defaults');
+  await expect(content(page).locator('[data-dashboard-card="pantry"]')).toHaveCount(0);
   await page.reload();
+  await expect(content(page).locator('[data-dashboard-card]').first()).toHaveAttribute('data-dashboard-card', 'planning-defaults');
+  await expect(content(page).locator('[data-dashboard-card="pantry"]')).toHaveCount(0);
   await page.locator('.sidebar [data-view="settings"]').click();
   await expect(page.locator('#dashboard-form .card-order-row').first()).toContainText('Planning defaults');
   await expect(page.locator('#dashboard-form [name="visibleCard"][value="pantry"]')).not.toBeChecked();

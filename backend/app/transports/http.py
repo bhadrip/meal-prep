@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -11,6 +12,7 @@ from ..application import MealPrepServices
 from ..auth import SupabaseTokenVerifier
 from ..config import get_settings
 from ..container import services_for_request
+from ..infrastructure.repositories import SupabaseRepository
 from ..sharing import read_shared_recipe, render_shared_recipe_page
 
 
@@ -98,6 +100,29 @@ async def health() -> dict:
 @router.get("/api/app/snapshot")
 async def app_snapshot(services: WebServices) -> dict:
     return await services.household.snapshot()
+
+
+@router.get("/api/app/bootstrap")
+async def app_bootstrap(services: WebServices) -> dict:
+    """Load the website's initial household data with one authentication check."""
+    repository = services.household.repository
+    if isinstance(repository, SupabaseRepository):
+        pending = await repository.rpc("pending_household_invitations")
+        invitations = pending.get("invitations") or []
+        if not pending.get("hasHousehold") and invitations:
+            return {"needsInvitationReview": True, "pendingInvites": invitations}
+        snapshot, access, memberships = await asyncio.gather(
+            services.household.snapshot(),
+            repository.rpc("household_access"),
+            repository.list_households(),
+        )
+        return {
+            "snapshot": snapshot,
+            "access": access,
+            "memberships": memberships,
+            "pendingInvites": invitations,
+        }
+    return {"snapshot": await services.household.snapshot(), "pendingInvites": []}
 
 
 @router.get("/api/household")
