@@ -51,9 +51,10 @@ h1, h2, h3 { color: var(--ink); }
 .eyebrow { margin-bottom: 7px; color: var(--copper); font-family: var(--font-label); font-size: .62rem; font-weight: 500; letter-spacing: .09em; text-transform: uppercase; }
 .topbar h1 { font-family: var(--font-display); font-size: 1.85rem; font-weight: 780; letter-spacing: -.055em; line-height: 1; }
 .top-actions { display: flex; align-items: center; gap: 9px; }
-.household-picker { display: grid; gap: 2px; color: var(--muted); font-size: .6rem; font-weight: 700; }
+.household-picker { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; color: var(--muted); font-size: .6rem; font-weight: 700; }
 .household-picker[hidden] { display: none; }
-.household-picker select { max-width: 220px; min-height: 42px; padding: 0 28px 0 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); font: inherit; font-size: .76rem; font-weight: 700; }
+.household-picker { max-width: 220px; min-width: 0; }
+.household-picker .choice-trigger { min-height: 42px; }
 .icon-button { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--primary); font-size: 1.15rem; }
 .icon-button:hover { border-color: #a7aec5; }
 .notification-button { position: relative; }
@@ -87,6 +88,32 @@ h1, h2, h3 { color: var(--ink); }
 .button.small { min-height: 33px; padding: 0 11px; font-size: .7rem; }
 .card-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
 .dashboard-grid > [data-dashboard-card] > .card { height: 100%; }
+.today-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin: 0 0 24px; }
+.today-heading h2 { font-family: var(--font-display); font-size: clamp(2rem,4vw,3.2rem); font-weight: 780; letter-spacing: -.055em; }
+.card.today-plan { border-color: #cbbcac; background: #eae0d3; }
+.today-plan > .card-head h3 { font-size: 1.1rem; }
+.today-meals { display: grid; gap: 14px; }
+.today-meal { display: flex; align-items: center; gap: 16px; padding: 16px 0; border-top: 1px solid #cbbcac; }
+.today-meal > div:first-of-type { flex: 1; min-width: 0; }
+.today-meal h3 { font-family: var(--font-display); font-size: 1.2rem; }
+.today-meal p { margin-top: 6px; line-height: 1.5; }
+.today-meal-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.home-attention-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin-top: 18px; }
+.home-shortcuts { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0; }
+.section-loading { display: flex; align-items: center; gap: 12px; min-height: 100px; color: var(--muted); font-size: .85rem; }
+.section-loading .loader { flex: 0 0 auto; width: 22px; height: 22px; }
+.section-error { display: grid; justify-items: start; gap: 14px; padding: 18px 0; color: var(--muted); }
+.household-dashboard { margin-top: 32px; border-top: 1px solid var(--line); }
+.household-dashboard summary { padding: 22px 0; cursor: pointer; font-weight: 700; }
+.household-dashboard summary span { margin-left: 10px; color: var(--muted); font-size: .75rem; font-weight: 400; }
+@media (max-width: 650px) {
+  .today-heading { align-items: start; flex-direction: column; }
+  .home-attention-grid { grid-template-columns: 1fr; }
+  .today-meal { align-items: start; flex-wrap: wrap; }
+  .today-meal > div:first-of-type { flex-basis: calc(100% - 110px); }
+  .today-plan > .card-head { align-items: start; flex-wrap: wrap; }
+  .household-dashboard summary span { display: block; margin: 6px 0 0; }
+}
 .card { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: 13px; background: var(--paper); box-shadow: 0 5px 18px rgba(39,37,46,.035); }
 .card.clickable { transition: transform .18s ease, box-shadow .18s ease; }
 .card.clickable:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
@@ -209,20 +236,6 @@ h1, h2, h3 { color: var(--ink); }
 .field.wide { grid-column: 1 / -1; }
 .field input:not([type="checkbox"]), .field select, .field textarea { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--ink); outline: none; }
 .field textarea { min-height: 92px; resize: vertical; }
-.choice-control { min-width: 0; }
-.choice-control input[type="hidden"] { display: none; }
-.choice-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--ink); font-size: .76rem; font-weight: 650; text-align: left; }
-.choice-trigger:hover, .choice-control.open .choice-trigger { border-color: #a7aec5; }
-.choice-trigger:focus-visible, .choice-option:focus-visible { outline: 2px solid var(--iris); outline-offset: 2px; }
-.choice-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.choice-chevron { flex: 0 0 auto; width: 8px; height: 8px; margin: -4px 3px 0 0; border-right: 1.5px solid var(--primary); border-bottom: 1.5px solid var(--primary); transform: rotate(45deg); transition: transform .16s ease; }
-.choice-control.open .choice-chevron { margin-top: 4px; transform: rotate(225deg); }
-.choice-menu { display: grid; gap: 2px; max-height: 205px; margin-top: 6px; padding: 5px; overflow-y: auto; border: 1px solid var(--line); border-radius: 11px; background: #fffdf9; box-shadow: 0 9px 24px rgba(39,37,46,.08); }
-.choice-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 35px; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font-size: .74rem; font-weight: 550; text-align: left; }
-.choice-option:hover, .choice-option:focus-visible { background: var(--primary-soft); }
-.choice-option[aria-selected="true"] { background: var(--copper-soft); color: #884b3a; font-weight: 700; }
-.choice-check { visibility: hidden; color: var(--copper); }
-.choice-option[aria-selected="true"] .choice-check { visibility: visible; }
 .planning-field { min-width: 0; margin: 0; padding: 0; border: 0; }
 .planning-field legend { margin-bottom: 8px; }
 .planning-areas { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
@@ -250,6 +263,12 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
 .toast { position: fixed; right: 26px; bottom: 26px; z-index: 50; max-width: 360px; padding: 13px 17px; border-radius: 9px; background: var(--primary); color: white; font-size: .75rem; font-weight: 600; box-shadow: var(--shadow); opacity: 0; transform: translateY(16px); pointer-events: none; transition: .22s ease; }
 .toast.show { opacity: 1; transform: translateY(0); }
 .mobile-nav { display: none; }
+@media (max-width: 600px) {
+  .topbar:has(.household-picker:not([hidden])) { flex-wrap: wrap; gap: 12px; }
+  .topbar:has(.household-picker:not([hidden])) .top-actions { width: 100%; }
+  .topbar .household-picker { flex: 1; max-width: none; }
+  .top-actions > button { flex-shrink: 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .shell { transition: none; }
@@ -268,7 +287,7 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
   .topbar { min-height: 76px; padding: 15px 18px; }
   .topbar h1 { font-size: 1.55rem; }
   .account-button { padding-right: 5px; }
-  .household-picker select { max-width: 135px; }
+  .household-picker { max-width: 135px; }
   #account-label, .mode-badge { display: none; }
   .content { padding: 22px 16px 100px; }
   .hero { min-height: auto; padding: 30px 24px; border-radius: 21px; }

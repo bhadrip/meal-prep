@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, HTMLResponse
@@ -100,13 +100,18 @@ async def health() -> dict:
 
 
 @router.get("/api/app/snapshot")
-async def app_snapshot(services: WebServices) -> dict:
-    return await services.household.snapshot()
+async def app_snapshot(
+    services: WebServices, sections: str | None = None, week_start: date | None = None,
+) -> dict:
+    return await services.household.snapshot(
+        sections=sections.split(",") if sections is not None else None,
+        week_start=week_start.isoformat() if week_start else None,
+    )
 
 
 @router.get("/api/app/bootstrap")
-async def app_bootstrap(services: WebServices) -> dict:
-    """Load the website's initial household data with one authentication check."""
+async def app_bootstrap(services: WebServices, include_sections: bool = True) -> dict:
+    """Allow a lightweight startup while preserving older browser clients."""
     repository = services.household.repository
     if isinstance(repository, SupabaseRepository):
         pending = await repository.rpc("pending_household_invitations")
@@ -114,7 +119,7 @@ async def app_bootstrap(services: WebServices) -> dict:
         if not pending.get("hasHousehold") and invitations:
             return {"needsInvitationReview": True, "pendingInvites": invitations}
         snapshot, access, memberships = await asyncio.gather(
-            services.household.snapshot(),
+            services.household.snapshot(sections=None if include_sections else []),
             repository.rpc("household_access"),
             repository.list_households(),
         )
@@ -124,7 +129,7 @@ async def app_bootstrap(services: WebServices) -> dict:
             "memberships": memberships,
             "pendingInvites": invitations,
         }
-    return {"snapshot": await services.household.snapshot(), "pendingInvites": []}
+    return {"snapshot": await services.household.snapshot(sections=None if include_sections else []), "pendingInvites": []}
 
 
 @router.get("/api/notifications")
