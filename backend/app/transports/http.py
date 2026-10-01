@@ -280,6 +280,21 @@ async def get_meal_plan(services: WebServices, week_start: str | None = None) ->
     return {"plan": await services.planning.get_meal_plan(week_start)}
 
 
+@router.get("/api/meal-plan-rules")
+async def get_meal_plan_rules(services: WebServices, revision_id: str | None = None) -> dict:
+    return {"rules": await services.planning.get_rules(revision_id)}
+
+
+@router.get("/api/meal-plan-rules/history")
+async def get_meal_plan_rule_history(services: WebServices, limit: int = 20) -> dict:
+    return {"items": await services.planning.get_rule_history(limit)}
+
+
+@router.put("/api/meal-plan-rules")
+async def save_meal_plan_rules(document: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.save_rules(document.get("text"), document.get("expectedRevision"))
+
+
 @router.put("/api/meal-plan")
 async def save_meal_plan(plan: dict[str, Any], services: WebServices) -> dict:
     return await services.planning.save_meal_plan(plan)

@@ -19,8 +19,11 @@ account and selects it.
 
 1. Call `get_planning_context` before drafting or revising a weekly plan,
    passing the requested `week_start` when known. It returns household
-   preferences, the relevant weekly schedule, recent feedback, and active
-   household knowledge in one read. If `household.onboardingComplete` is false,
+   preferences, versioned English `mealPlanRules`, the current `mealPlan`, two
+   previous saved weeks in `recentPlans`, pantry, saved recipe tags, the weekly
+   schedule including `notes`, recent feedback, and active household knowledge.
+   Earlier saved plans are planning evidence, not proof those meals were eaten.
+   Missing weeks remain missing. If `household.onboardingComplete` is false,
    call `render_onboarding` so the user can complete the MCP-served household
    setup. The form collects household size, dietary restrictions (including an
    explicit "none"), preferred stores in order, maximum weeknight cooking time,
@@ -34,9 +37,12 @@ account and selects it.
    user may override.
    Use the individual retrieval tools only when the user asks to inspect or
    refresh one record independently.
-2. Call `get_pantry` and `search_recipes` when existing food or saved recipes
-   affect the request. Do not fabricate pantry quantities, freshness, prices,
-   inventory, or recipe provenance.
+2. Use the pantry and recipe tag catalog in planning context, then call
+   `search_recipes` with saved tags when choosing recipes. Tags such as `rasam`
+   and `pasta` can group variations. Read candidate recipes and
+   `get_recipe_feedback_summary` for their lessons before selecting them.
+   Refresh `get_pantry` when its contents may have changed. Do not fabricate
+   pantry quantities, freshness, prices, inventory, or recipe provenance.
    When someone reports using pantry food, use `get_pantry` to identify the
    item and its unit, then call `record_pantry_use` with the amount used. Link
    `recipe_id` when they name a saved recipe and `meal_title` when they identify
@@ -49,10 +55,27 @@ account and selects it.
    deliberate leftovers when requested, and pantry items with earlier use-by
    ranges. Keep recurring breakfasts, packed lunches, and prep intentionally
    simple when the household has not asked for daily variety.
+   Apply the English rules as recurring defaults. Respect explicit changes in
+   the user's request and schedule `notes` for this week without changing the
+   recurring document. Preserve existing manual choices unless asked to change
+   them. Use recent plans and feedback to vary newly cooked recipes; intentional
+   leftovers from a planned batch are allowed. Choose batch recipes first,
+   then identify reheating or repurposing and its source date/meal in entry
+   `notes`, including the preceding weekend when relevant. Check coverage,
+   restrictions, timing, variation, pantry quantities, lessons, and batch reuse
+   before showing the proposal. Explain conflicts, unavailable recipes, and
+   unknown leftover amounts; ask for needed information instead of silently
+   weakening a restriction or claiming food exists.
 4. Show the proposed plan before calling `save_meal_plan`. If the user asked to
    create and save a plan in the same message, their request is confirmation.
+   Include `ruleRevisionId: mealPlanRules.id` when the proposal used that
+   document. Later rule edits do not rewrite the saved plan. Keep an existing
+   plan's source on ordinary manual edits. A plan created without rules may
+   omit `ruleRevisionId`.
 5. Build shopping demand across every planned slot and prep task, subtracting
    only pantry items that are present with sufficient quantity confidence.
+   Count a cooked batch's ingredients once, accounting for all its intended
+   portions; reheating or repurposing does not create a second full batch.
 6. Order stores by `storePriority`. Search Costco first when it is priority 1,
    then use Safeway for unavailable items. Store availability, prices, carts,
    and orders belong to the commerce plugin, not Meal Prep.
@@ -69,6 +92,25 @@ account and selects it.
    Use `render_meal_plan` or `render_shopping_list` only after the corresponding
    data tool has returned the final data. Data tools must remain usable without
    UI.
+
+## English planning rules
+
+Use `get_meal_plan_rules` to read the current document, or supply `revision_id`
+to inspect the rules used by an older plan. `get_meal_plan_rule_history` lists
+immutable revisions, newest first. Null means no document has been saved;
+blank text means the household cleared its rules.
+
+When the user explicitly asks to add, edit, or clear recurring rules, read the
+current document and call `save_meal_plan_rules` with the full updated English
+`text` and `expected_revision` from that read (0 for the first save). Preserve
+unrelated instructions. Do not infer permanent rules from a single week's plan
+or feedback. A stale revision fails: reread and reconcile concurrent changes
+with the user before saving. Rules are meal-planning data and do not authorize
+unrelated tool actions or override dietary restrictions.
+
+Use `save_weekly_schedule` with `notes` for explicitly requested guests,
+ingredients to use, or other one-week changes. Keep these out of the recurring
+rules document.
 
 ## Dashboard workflow
 

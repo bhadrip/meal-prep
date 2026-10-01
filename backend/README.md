@@ -207,6 +207,7 @@ Data tools:
 - `get_household_context`
 - `get_dashboard_layout`, `configure_dashboard`
 - `get_planning_context`
+- `get_meal_plan_rules`, `get_meal_plan_rule_history`, `save_meal_plan_rules`
 - `update_household_preferences`
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
 - `create_recipe_share`, `list_recipe_shares`, `revoke_recipe_share`, `copy_shared_recipe`
@@ -227,6 +228,36 @@ Presentation tools:
 - `render_onboarding`
 - `render_meal_plan`
 - `render_shopping_list`
+
+## English planning rules
+
+Weekly plan has two tabs: **Plan** for the selected week’s meals, prep, and
+temporary notes, and **Planning rules** for recurring English instructions and
+version history. **Edit notes** changes only that week’s notes; **Edit weekly
+rhythm** sets the pace for each day. The plan’s **Rules used: version N** link
+opens its exact saved rules as a read-only document. Tab, week, and revision
+links survive reload and browser navigation. On phones, day cards stack vertically.
+Rules start empty. Each changed document creates an immutable household
+revision; clearing the text preserves history. Saves include the revision
+read by the editor so simultaneous changes cannot silently overwrite each other.
+
+ChatGPT reads `get_planning_context(week_start=...)` before planning. The result
+includes `mealPlanRules`, the current `mealPlan`, the two most recent earlier
+saved weeks in `recentPlans`, `pantry`, `recipeTags`, schedule `notes`, feedback,
+and household preferences. Candidate recipes and their lessons remain available
+through recipe search and feedback tools. Recent plans describe what was planned;
+feedback supplies evidence about what actually happened.
+
+`save_meal_plan_rules(text, expected_revision)` saves the full English document;
+pass 0 when none exists. `get_meal_plan_rules(revision_id=...)` reads an older
+version and `get_meal_plan_rule_history` lists versions. Plans guided by a
+document include `ruleRevisionId` when saved. Ordinary edits preserve that
+source; later rule changes do not alter existing plans. Migration
+`202610010003_meal_plan_rules.sql` installs the storage and history functions.
+
+ChatGPT interprets the English instructions and proposes a plan for review.
+The service stores data and checks identifiers and revisions; it does not
+evaluate a rule language or generate meals.
 
 ## Boundaries
 

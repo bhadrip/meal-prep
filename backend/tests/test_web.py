@@ -55,13 +55,13 @@ def test_lightweight_bootstrap_skips_dashboard_reads(monkeypatch):
         get_pantry=AsyncMock(side_effect=AssertionError("Pantry blocks startup")),
         search_recipes=AsyncMock(), get_weekly_schedule=AsyncMock(),
         get_feedback=AsyncMock(), get_household_memory=AsyncMock(),
-        get_meal_plan=AsyncMock(), get_shopping_list=AsyncMock(),
+        get_meal_plan=AsyncMock(), get_shopping_list=AsyncMock(), get_meal_plan_rules=AsyncMock(),
     )
     monkeypatch.setattr(http, "services_for_request", lambda: SimpleNamespace(household=HouseholdService(repository)))
     response = TestClient(app).get("/api/app/bootstrap?include_sections=false")
     assert response.status_code == 200
     assert response.json()["snapshot"] == {"household": {"householdId": "home-1"}, "sections": {}}
-    for name in ("get_pantry", "search_recipes", "get_weekly_schedule", "get_feedback", "get_household_memory", "get_meal_plan", "get_shopping_list"):
+    for name in ("get_pantry", "search_recipes", "get_weekly_schedule", "get_feedback", "get_household_memory", "get_meal_plan", "get_shopping_list", "get_meal_plan_rules"):
         getattr(repository, name).assert_not_awaited()
     repository.get_household_context.side_effect = RepositoryError("private database failure")
     failed = TestClient(app).get("/api/app/bootstrap?include_sections=false")
@@ -77,7 +77,7 @@ def test_selective_snapshot_scopes_reads_and_isolates_section_failure(monkeypatc
         search_recipes=AsyncMock(), get_weekly_schedule=AsyncMock(),
         get_feedback=AsyncMock(), get_household_memory=AsyncMock(),
         get_meal_plan=AsyncMock(return_value={"weekStart": "2026-09-28", "entries": [{"date": "2026-10-01", "meal": "Soup"}]}),
-        get_shopping_list=AsyncMock(),
+        get_shopping_list=AsyncMock(), get_meal_plan_rules=AsyncMock(),
     )
     monkeypatch.setattr(http, "services_for_request", lambda: SimpleNamespace(household=HouseholdService(repository)))
     client = TestClient(app)
@@ -88,13 +88,20 @@ def test_selective_snapshot_scopes_reads_and_isolates_section_failure(monkeypatc
     assert sections["mealPlan"]["value"]["entries"][0]["meal"] == "Soup"
     assert sections["pantry"] == {"status": "unavailable", "value": None}
     repository.get_meal_plan.assert_awaited_once_with("2026-09-28")
-    for name in ("search_recipes", "get_weekly_schedule", "get_feedback", "get_household_memory", "get_shopping_list"):
+    for name in ("search_recipes", "get_weekly_schedule", "get_feedback", "get_household_memory", "get_shopping_list", "get_meal_plan_rules"):
         getattr(repository, name).assert_not_awaited()
     repository.get_meal_plan.reset_mock()
     repository.get_household_context.reset_mock()
     assert client.get("/api/app/snapshot?sections=invalid").status_code == 422
     repository.get_household_context.assert_not_awaited()
     assert client.get("/api/app/snapshot?sections=mealPlan&week_start=2026-02-30").status_code == 422
+    repository.get_meal_plan.assert_not_awaited()
+    repository.get_meal_plan_rules.return_value = {"revision": 1, "text": "Keep Tuesdays quick."}
+    rules = client.get("/api/app/snapshot?sections=mealPlanRules").json()["sections"]
+    assert rules == {"mealPlanRules": {"status": "ready", "value": {"revision": 1, "text": "Keep Tuesdays quick."}}}
+    repository.get_meal_plan_rules.side_effect = RepositoryError("private rules failure")
+    unavailable = client.get("/api/app/snapshot?sections=mealPlanRules").json()["sections"]
+    assert unavailable == {"mealPlanRules": {"status": "unavailable", "value": None}}
     repository.get_meal_plan.assert_not_awaited()
 
 

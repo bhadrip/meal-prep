@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 import re
 from typing import Any, Awaitable, Callable, Protocol
+from uuid import UUID
 
 from .errors import ApplicationError, RepositoryError, StorageNotInstalledError
 from .pantry_photos import compact_photo, download_chatgpt_photo, normalize_observations
@@ -59,6 +60,10 @@ class MealPrepRepository(Protocol):
     async def apply_pantry_photo(self, evidence_id: str, observations: list[dict[str, Any]] | None = None) -> dict[str, Any]: ...
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]: ...
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None: ...
+    async def get_recent_meal_plans(self, before_week: str, limit: int = 2) -> list[dict[str, Any]]: ...
+    async def get_meal_plan_rules(self, revision_id: str | None = None) -> dict[str, Any] | None: ...
+    async def get_meal_plan_rule_history(self, limit: int = 20) -> list[dict[str, Any]]: ...
+    async def save_meal_plan_rules(self, text: str, expected_revision: int) -> dict[str, Any]: ...
     async def save_shopping_list(self, shopping_list: dict[str, Any]) -> dict[str, Any]: ...
     async def get_shopping_list(self, list_id: str | None = None) -> dict[str, Any] | None: ...
     async def add_shopping_item(self, item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]: ...
@@ -220,6 +225,7 @@ class HouseholdService:
             "feedback": lambda: self.repository.get_feedback(limit=25),
             "memories": self.repository.get_household_memory,
             "mealPlan": lambda: self.repository.get_meal_plan(week_start),
+            "mealPlanRules": self.repository.get_meal_plan_rules,
             "shoppingList": self.repository.get_shopping_list,
         }
         if sections is not None:
@@ -376,13 +382,59 @@ class PlanningService:
         self.repository = repository
 
     async def get_context(self, week_start: str | None = None) -> dict[str, Any]:
-        return {
-            "household": await self.repository.get_household_context(),
-            "schedule": await self.repository.get_weekly_schedule(week_start),
-            "feedback": await self.repository.get_feedback(limit=25),
-            "memories": await self.repository.get_household_memory(),
-            "requestedWeekStart": week_start,
+        if week_start:
+            self._week(week_start)
+        household = await self.repository.get_household_context()
+        plan = await self.repository.get_meal_plan(week_start)
+        before_week = week_start or (plan or {}).get("weekStart")
+        if not before_week:
+            today = date.today()
+            before_week = (today - timedelta(days=today.weekday())).isoformat()
+        loaders = {
+            "schedule": self.repository.get_weekly_schedule(week_start),
+            "feedback": self.repository.get_feedback(limit=25),
+            "memories": self.repository.get_household_memory(),
+            "mealPlanRules": self.repository.get_meal_plan_rules(),
+            "recentPlans": self.repository.get_recent_meal_plans(before_week, limit=2),
+            "pantry": self.repository.get_pantry(),
+            "recipeTags": self.repository.list_recipe_tags(),
         }
+        values = await asyncio.gather(*loaders.values())
+        return {"household": household, "mealPlan": plan, **dict(zip(loaders, values)),
+                "requestedWeekStart": week_start}
+
+    @staticmethod
+    def _week(value: str) -> date:
+        try:
+            week = date.fromisoformat(value)
+        except (TypeError, ValueError) as exc:
+            raise ApplicationError("weekStart must be an ISO date (YYYY-MM-DD)") from exc
+        if week.isoformat() != value or week.weekday() != 0:
+            raise ApplicationError("weekStart must be a Monday in YYYY-MM-DD format")
+        return week
+
+    async def get_rules(self, revision_id: str | None = None) -> dict[str, Any] | None:
+        if revision_id is not None:
+            try:
+                UUID(revision_id)
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise ApplicationError("Invalid meal plan rule revision ID") from exc
+        rules = await self.repository.get_meal_plan_rules(revision_id)
+        if revision_id and rules is None:
+            raise ApplicationError("Meal plan rule revision was not found")
+        return rules
+
+    async def get_rule_history(self, limit: int = 20) -> list[dict[str, Any]]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ApplicationError("limit must be between 1 and 100")
+        return await self.repository.get_meal_plan_rule_history(limit)
+
+    async def save_rules(self, text: str, expected_revision: int) -> dict[str, Any]:
+        if not isinstance(text, str) or len(text) > 10000:
+            raise ApplicationError("Rules must be English text of at most 10000 characters")
+        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 0:
+            raise ApplicationError("expectedRevision must be a nonnegative integer")
+        return await self.repository.save_meal_plan_rules(text.strip(), expected_revision)
 
     async def get_schedule(self, week_start: str | None = None) -> dict[str, Any] | None:
         return await self.repository.get_weekly_schedule(week_start)
@@ -390,6 +442,10 @@ class PlanningService:
     async def save_schedule(self, schedule: dict[str, Any]) -> dict[str, Any]:
         if not schedule.get("weekStart") or len(schedule.get("days", [])) != 7:
             raise ApplicationError("schedule.weekStart and seven schedule.days are required")
+        self._week(schedule["weekStart"])
+        notes = schedule.get("notes", "")
+        if not isinstance(notes, str) or len(notes) > 3000:
+            raise ApplicationError("Week notes must be text of at most 3000 characters")
         return await self.repository.save_weekly_schedule(schedule)
 
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None:
@@ -401,6 +457,8 @@ class PlanningService:
         missing_slot = [entry for entry in plan["entries"] if not entry.get("slot")]
         if missing_slot:
             raise ApplicationError("Every plan entry must include a meal slot")
+        if plan.get("ruleRevisionId"):
+            await self.get_rules(plan["ruleRevisionId"])
         return await self.repository.save_meal_plan(plan)
 
 

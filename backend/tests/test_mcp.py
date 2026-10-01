@@ -123,6 +123,9 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "get_weekly_schedule",
         "save_weekly_schedule",
         "get_planning_context",
+        "get_meal_plan_rules",
+        "save_meal_plan_rules",
+        "get_meal_plan_rule_history",
         "get_feedback",
         "save_feedback",
         "get_what_worked",
@@ -346,6 +349,27 @@ def test_planning_context_returns_all_durable_inputs(client: TestClient):
     assert any(item["status"] == "confirmed" for item in context["memories"])
 
 
+def test_mcp_english_rules_history_and_plan_provenance(client: TestClient):
+    def call(name, arguments):
+        return rpc(client, "tools/call", {"name": name, "arguments": arguments})
+
+    current = call("get_meal_plan_rules", {})["structuredContent"]["rules"]
+    first = call("save_meal_plan_rules", {"text": "Saturday pasta; Monday uses its leftovers.",
+        "expected_revision": current["revision"] if current else 0})["structuredContent"]
+    saved = call("save_meal_plan", {"plan": {"weekStart": "2030-02-04", "ruleRevisionId": first["id"],
+        "entries": [{"date": "2030-02-04", "slot": "dinner", "meal": "Pasta leftovers"}]}})["structuredContent"]
+    assert saved["ruleRevision"]["text"] == first["text"]
+    second = call("save_meal_plan_rules", {"text": "Saturday stir-fry.", "expected_revision": first["revision"]})["structuredContent"]
+    stale = call("save_meal_plan_rules", {"text": "Stale changes", "expected_revision": first["revision"]})
+    assert stale["isError"] is True and "changed" in str(stale["content"])
+    history = call("get_meal_plan_rule_history", {})["structuredContent"]["items"]
+    assert history[:2] == [second, first]
+    context = call("get_planning_context", {"week_start": "2030-02-11"})["structuredContent"]
+    assert context["mealPlanRules"] == second
+    assert context["recentPlans"][0]["ruleRevision"] == first
+    assert call("get_meal_plan_rules", {"revision_id": first["id"]})["structuredContent"]["rules"] == first
+
+
 def test_demo_household_context_and_plan_render_are_structured(client: TestClient):
     context = rpc(
         client,
@@ -376,7 +400,7 @@ def test_household_snapshot_collects_chatgpt_ui_data_without_flattening_it_to_te
     assert rendered["kind"] == "household_snapshot"
     assert rendered["household"]["householdSize"] == 4
     assert set(rendered["sections"]) == {
-        "pantry", "recipes", "schedule", "feedback", "memories", "mealPlan", "shoppingList"
+        "pantry", "recipes", "schedule", "feedback", "memories", "mealPlan", "shoppingList", "mealPlanRules"
     }
     assert rendered["sections"]["pantry"]["status"] in {"ready", "empty", "unavailable"}
 

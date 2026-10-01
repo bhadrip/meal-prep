@@ -9,6 +9,10 @@ class RepositoryError(ApplicationError):
     """A persistence failure translated into a stable application error."""
 
 
+class RevisionConflictError(ApplicationError):
+    """The document changed after the caller read it."""
+
+
 class StorageNotInstalledError(RepositoryError):
     """A specific optional store is missing from the database schema."""
 
