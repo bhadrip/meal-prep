@@ -96,6 +96,9 @@ def test_pantry_evidence_api_pages_saved_photos_and_rejects_invalid_limits():
     assert client.get("/api/pantry/evidence?limit=0").status_code == 422
     assert client.get("/api/pantry/evidence?offset=-1").status_code == 422
     demo_repository.cache_clear()
+    empty = client.get("/api/pantry/evidence")
+    assert empty.status_code == 200
+    assert empty.json() == {"items": [], "count": 0, "hasMore": False, "nextOffset": 0}
 
 
 def test_pantry_evidence_api_requires_a_session(monkeypatch):

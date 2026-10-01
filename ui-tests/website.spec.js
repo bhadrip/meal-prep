@@ -353,7 +353,7 @@ test('pantry categories and search narrow items and save corrections', async ({ 
   await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
 });
 
-test('pantry photo evidence can be reviewed, retried, and paged from Pantry', async ({ page }) => {
+test('pantry photo history opens inline, retries, and pages saved uploads', async ({ page }) => {
   const requests = [];
   let firstAttempt = true;
   await page.route('**/api/pantry/evidence?*', async (route) => {
@@ -374,14 +374,19 @@ test('pantry photo evidence can be reviewed, retried, and paged from Pantry', as
     body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLxSQAAAABJRU5ErkJggg==', 'base64'),
   }));
   await open(page, 'pantry');
-  await content(page).getByRole('button', { name: 'Photo evidence' }).click();
+  await expect(content(page).locator('.pantry-sections')).toHaveCount(0);
+  await expect(content(page).getByRole('button', { name: 'Photo history' })).toBeVisible();
+  await expect(content(page).locator('#pantry-photo-panel')).toHaveCount(0);
+  await content(page).getByRole('button', { name: 'Photo history' }).click();
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
+  await expect(content(page).locator('.pantry-filters')).toBeVisible();
   await expect(content(page).getByRole('alert')).toContainText('Photos are temporarily unavailable.');
   await content(page).getByRole('button', { name: 'Try again' }).click();
   await expect(content(page).locator('.pantry-photo-card')).toHaveCount(1);
   await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Milk — 1 carton');
   await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Added to pantry');
   await expect(content(page).locator('.pantry-photo-card img')).toHaveJSProperty('naturalWidth', 1);
-  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toHaveCount(0);
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
   await content(page).getByRole('button', { name: 'Load older photos' }).click();
   await expect(content(page).locator('.pantry-photo-card')).toHaveCount(2);
   await expect(content(page).locator('.pantry-photo-card').last()).toContainText('Rice — 2 bags');
@@ -390,8 +395,24 @@ test('pantry photo evidence can be reviewed, retried, and paged from Pantry', as
   await page.reload();
   await expect(content(page).locator('.pantry-photo-card')).toHaveCount(1);
   await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Milk — 1 carton');
-  await content(page).getByRole('button', { name: 'Items' }).click();
+  await content(page).getByRole('button', { name: 'Hide photo history' }).click();
+  await expect(content(page).locator('#pantry-photo-panel')).toHaveCount(0);
   await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
+});
+
+test('empty photo history stays a small disclosure within Pantry', async ({ page }) => {
+  await page.route('**/api/pantry/evidence?*', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [], count: 0, hasMore: false, nextOffset: 0 }),
+  }));
+  await open(page, 'pantry');
+  await expect(content(page).getByText('No photos have been saved yet.')).toHaveCount(0);
+  await content(page).getByRole('button', { name: 'Photo history' }).click();
+  await expect(content(page).getByText(/No photos have been saved yet/)).toBeVisible();
+  await expect(content(page).locator('.table-card .table-row').first()).toBeVisible();
+  await content(page).getByRole('button', { name: 'Hide photo history' }).click();
+  await expect(content(page).getByText(/No photos have been saved yet/)).toHaveCount(0);
+  await expect(content(page).locator('.table-card .table-row').first()).toBeVisible();
 });
 
 test('pantry use records a meal and shows the remaining quantity', async ({ page }) => {

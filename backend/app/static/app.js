@@ -340,7 +340,7 @@ function safePhotoUrl(value) {
 
 function renderPantryPhotos() {
   const photos = state.pantryPhotos;
-  let html = '<p class="muted tiny pantry-photo-intro">These compact photos and item notes were saved from ChatGPT pantry updates.</p>';
+  let html = '<p class="muted tiny pantry-photo-intro">Compact copies of photos saved with ChatGPT pantry updates.</p>';
   if (photos.length) {
     html += `<div class="pantry-photo-list">${photos.map((photo) => {
       const imageUrl = safePhotoUrl(photo.image_url);
@@ -351,7 +351,7 @@ function renderPantryPhotos() {
       return `<article class="card pantry-photo-card"><div class="pantry-photo-preview">${imageUrl ? `<img src="${esc(imageUrl)}" alt="Pantry photo saved ${esc(dateLabel)}" loading="lazy" />` : '<span>Photo preview unavailable</span>'}</div><div class="pantry-photo-details"><div class="pantry-photo-heading"><h3>${esc(dateLabel)}</h3><span class="pill">${status}</span></div><p class="muted tiny">${esc(Math.round((Number(photo.image_bytes) || 0) / 1024))} KB saved</p>${photo.note ? `<p>${esc(photo.note)}</p>` : ''}<h4>Items recorded</h4><ul>${observations.map((item) => `<li>${esc(item.name)}${item.quantity != null ? ` — ${esc(item.quantity)} ${esc(item.unit || '')}` : ''}</li>`).join('') || '<li>No items recorded.</li>'}</ul></div></article>`;
     }).join('')}</div>`;
   } else if (state.pantryPhotosLoading) html += '<div class="loading pantry-photo-loading" role="status"><div class="loader"></div><span>Loading pantry photos…</span></div>';
-  else if (!state.pantryPhotosError) html += empty('No pantry photos saved yet', 'Photos used for ChatGPT pantry updates will appear here.');
+  else if (!state.pantryPhotosError) html += '<p class="muted tiny pantry-photo-empty">No photos have been saved yet. Photos included with future ChatGPT pantry updates will appear here.</p>';
   if (state.pantryPhotosError) html += `<div class="callout" role="alert"><b>Could not load pantry photos</b><p>${esc(state.pantryPhotosError)}</p>${action('Try again', photos.length ? 'load-older-pantry-photos' : 'load-pantry-photos')}</div>`;
   if (photos.length && state.pantryPhotosHasMore && !state.pantryPhotosError) html += `<div class="pantry-photo-more">${state.pantryPhotosLoading ? '<p class="muted tiny" role="status">Loading older photos…</p>' : action('Load older photos', 'load-older-pantry-photos')}</div>`;
   return html;
@@ -383,16 +383,15 @@ async function loadPantryPhotos(append = false) {
 }
 
 function renderPantry() {
-  const tabs = `<div class="pantry-sections" role="group" aria-label="Pantry sections"><button type="button" data-pantry-section="items" aria-pressed="${state.pantrySection === 'items'}">Items</button><button type="button" data-pantry-section="photos" aria-pressed="${state.pantrySection === 'photos'}">Photo evidence</button></div>`;
-  if (state.pantrySection === 'photos') return tabs + renderPantryPhotos();
   const items = arr(section('pantry'));
   const query = state.pantrySearch.trim().toLocaleLowerCase();
   const matches = items.filter((item) => (state.pantryCategory === 'all' || (item.category || 'uncategorized') === state.pantryCategory) && item.name.toLocaleLowerCase().includes(query));
-  let html = `<div class="toolbar"><div><p class="muted tiny">Find what is on hand. Dates are entered by you.</p><input class="search" id="pantry-search" type="search" placeholder="Search pantry items" value="${esc(state.pantrySearch)}" aria-label="Search pantry items" /></div>${action('Add pantry item', 'add-pantry', '', 'primary')}</div>`;
-  if (sectionStatus('pantry') === 'unavailable') return tabs + html + empty('Pantry unavailable', 'Try refreshing this page.');
+  let html = `<div class="toolbar pantry-toolbar"><div><p class="muted tiny">Find what is on hand. Dates are entered by you.</p><input class="search" id="pantry-search" type="search" placeholder="Search pantry items" value="${esc(state.pantrySearch)}" aria-label="Search pantry items" /></div><div class="pantry-toolbar-actions"><button type="button" class="pantry-photo-trigger" data-pantry-section="${state.pantrySection === 'photos' ? 'items' : 'photos'}" aria-expanded="${state.pantrySection === 'photos'}" aria-controls="pantry-photo-panel">${state.pantrySection === 'photos' ? 'Hide photo history' : 'Photo history'}</button>${action('Add pantry item', 'add-pantry', '', 'primary')}</div></div>`;
+  if (state.pantrySection === 'photos') html += `<section id="pantry-photo-panel" class="pantry-photo-panel" aria-label="Photo history"><h2>Photo history</h2>${renderPantryPhotos()}</section>`;
+  if (sectionStatus('pantry') === 'unavailable') return html + empty('Pantry unavailable', 'Try refreshing this page.');
   html += `<div class="pantry-filters" role="group" aria-label="Pantry categories">${PANTRY_CATEGORIES.map(([value, title]) => `<button type="button" class="pantry-filter ${state.pantryCategory === value ? 'active' : ''}" data-pantry-category="${value}" aria-pressed="${state.pantryCategory === value}">${title} <span>${value === 'all' ? items.length : items.filter((item) => (item.category || 'uncategorized') === value).length}</span></button>`).join('')}</div>`;
   html += `<p class="muted tiny pantry-result-count" role="status">Showing ${matches.length} of ${items.length} items</p>`;
-  if (!matches.length) return tabs + html + empty(items.length ? 'No matching items' : 'Your pantry is empty', items.length ? 'Try another search or category.' : 'Add food you want to keep track of.');
+  if (!matches.length) return html + empty(items.length ? 'No matching items' : 'Your pantry is empty', items.length ? 'Try another search or category.' : 'Add food you want to keep track of.');
   html += `<div class="card table-card"><div class="table-row header"><span>Item</span><span>Remaining</span><span>Location</span><span>Use by</span><span></span></div>${matches.map((item) => {
     const quantity = item.quantity === null || item.quantity === undefined ? null : Number(item.quantity);
     const reference = Number(item.reference_quantity);
@@ -400,7 +399,7 @@ function renderPantry() {
     const meter = fraction === null ? '' : `<div class="pantry-stock" role="meter" aria-label="${esc(item.name)} remaining compared with tracked amount" aria-valuenow="${fraction}" aria-valuemin="0" aria-valuemax="100"><span style="width:${fraction}%"></span></div>`;
     return `<div class="table-row"><strong>${esc(item.name)}<small class="pantry-item-category">${esc(PANTRY_CATEGORIES.find(([value]) => value === (item.category || 'uncategorized'))?.[1] || 'Uncategorized')}</small></strong><div class="pantry-quantity"><span class="tiny">${quantity === null ? 'Amount unknown' : `${esc(quantity)} ${esc(item.unit || '')} left`}</span>${meter}</div><span class="tiny">${esc(label(pick(item, 'storage_location', 'storageLocation') || 'pantry'))}</span><span class="tiny">${esc(pick(item, 'use_by_date', 'useByDate') || '—')}</span><div class="pantry-actions">${quantity !== null && quantity > 0 ? action('Use', 'use-pantry', item.id, 'primary') : ''}${action('Edit', 'edit-pantry', item.id)}</div></div>`;
   }).join('')}</div>`;
-  return tabs + html;
+  return html;
 }
 
 function renderShopping() {
