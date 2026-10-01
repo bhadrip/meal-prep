@@ -7,10 +7,12 @@ from datetime import UTC, date, datetime, timedelta
 import re
 from typing import Any, Awaitable, Callable, Protocol
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from .errors import ApplicationError, RepositoryError, StorageNotInstalledError
 from .pantry_photos import compact_photo, download_chatgpt_photo, normalize_observations
 from .pantry_categories import PANTRY_CATEGORIES, infer_pantry_category
+from .pantry_freshness import pantry_freshness
 
 
 DASHBOARD_CARD_IDS = (
@@ -222,7 +224,7 @@ class HouseholdService:
             return {"status": "empty" if empty else "ready", "value": value}
 
         loaders = {
-            "pantry": self.repository.get_pantry,
+            "pantry": RecipePantryService(self.repository).get_pantry,
             "recipes": lambda: self.repository.search_recipes(query="", limit=25),
             "schedule": lambda: self.repository.get_weekly_schedule(week_start),
             "feedback": lambda: self.repository.get_feedback(limit=25),
@@ -345,16 +347,48 @@ class RecipePantryService:
         return {"recipeId": await self.repository.copy_shared_recipe(token)}
 
     async def get_pantry(self) -> list[dict[str, Any]]:
-        return await self.repository.get_pantry()
+        return [{**item, "freshness": pantry_freshness(item)} for item in await self.repository.get_pantry()]
 
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        # Partial edits retain dates, provenance and the tracked stock baseline.
+        existing = None
+        if item.get("id"):
+            existing = next((row for row in await self.repository.get_pantry() if row.get("id") == item["id"]), None)
+        if item.get("id") and existing is None:
+            raise ApplicationError("Pantry item was not found")
+        merged = {**(existing or {}), **item}
+        defaults = {"storageLocation": "pantry", "quantityConfidence": "estimated"}
+        for camel, snake in (("storageLocation", "storage_location"), ("quantityConfidence", "quantity_confidence"),
+                            ("useByDate", "use_by_date"), ("acquiredAt", "acquired_at"), ("freshnessBasis", "freshness_basis")):
+            if camel not in item:
+                previous = (existing or {}).get(camel, (existing or {}).get(snake, defaults.get(camel)))
+                merged[camel] = item.get(snake, previous)
+        item = merged
         if not str(item.get("name", "")).strip():
             raise ApplicationError("item.name is required")
+        if item.get("quantity") is not None:
+            from decimal import Decimal, InvalidOperation
+            try:
+                amount = Decimal(str(item["quantity"]))
+            except (InvalidOperation, ValueError):
+                raise ApplicationError("quantity must be a nonnegative number") from None
+            if not amount.is_finite() or amount < 0 or amount.as_tuple().exponent < -3:
+                raise ApplicationError("quantity must be nonnegative with at most 3 decimal places")
+            item["quantity"] = float(amount)
+            if existing and existing.get("quantity") == 0 and amount > 0:
+                item["reference_quantity"] = float(amount)
+        for key in ("acquiredAt", "useByDate"):
+            if item.get(key):
+                try:
+                    date.fromisoformat(item[key])
+                except (ValueError, TypeError):
+                    raise ApplicationError(f"{key} must be a valid date") from None
+        if item.get("acquiredAt") and date.fromisoformat(item["acquiredAt"]) > datetime.now(ZoneInfo("America/Los_Angeles")).date():
+            raise ApplicationError("Purchase date cannot be in the future")
         category = item.get("category")
         if category is not None and category not in PANTRY_CATEGORIES:
             raise ApplicationError("Invalid pantry category")
         if category is None:
-            existing = next((row for row in await self.repository.get_pantry() if row.get("id") == item.get("id")), None) if item.get("id") else None
             item = {**item, "category": (existing or {}).get("category") or infer_pantry_category(
                 item["name"], item.get("storageLocation", item.get("storage_location", ""))
             )}
@@ -432,7 +466,7 @@ class PlanningService:
             "memories": self.repository.get_household_memory(),
             "mealPlanRules": self.repository.get_meal_plan_rules(),
             "recentPlans": self.repository.get_recent_meal_plans(before_week, limit=2),
-            "pantry": self.repository.get_pantry(),
+            "pantry": RecipePantryService(self.repository).get_pantry(),
             "recipeTags": self.repository.list_recipe_tags(),
         }
         values = await asyncio.gather(*loaders.values())

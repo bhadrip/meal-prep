@@ -161,3 +161,30 @@ async def test_household_lookup_is_reused_within_one_request(monkeypatch):
     assert await repository.household_id() == "active-id"
     assert "dashboard" not in (await repository.get_household_context())["planningPreferences"]
     assert calls == ["get_household_context"]
+
+
+@pytest.mark.asyncio
+async def test_pantry_partial_edit_preserves_database_dates_and_scope(monkeypatch):
+    from app.application.services import RecipePantryService
+    from app.application.errors import ApplicationError
+    repository = SupabaseRepository(Settings(supabase_url="https://example.supabase.co", supabase_anon_key="test", _env_file=None), "token")
+    monkeypatch.setattr(repository, "household_id", AsyncMock(return_value="active-household"))
+    stored = {"id": "item-1", "name": "Mushrooms", "quantity": 1, "unit": "box", "category": "vegetables",
+              "storage_location": "fridge", "quantity_confidence": "exact", "acquired_at": "2026-09-24",
+              "freshness_basis": "Receipt", "use_by_date": None, "reference_quantity": 2, "provenance": {"receipt": "one"}}
+    request = AsyncMock(return_value=[stored])
+    monkeypatch.setattr(repository, "request", request)
+    service = RecipePantryService(repository)
+    await service.update_pantry_item({"id": "item-1", "quantity": 0.5})
+    payload = request.call_args.kwargs["json"]
+    assert payload["quantity"] == 0.5
+    assert payload["household_id"] == "active-household"
+    assert payload["acquired_at"] == "2026-09-24"
+    assert payload["freshness_basis"] == "Receipt"
+    assert payload["reference_quantity"] == 2
+    assert payload["storage_location"] == "fridge"
+    assert payload["provenance"] == {"receipt": "one"}
+    request.reset_mock()
+    with pytest.raises(ApplicationError, match="quantity must"):
+        await service.update_pantry_item({"id": "item-1", "quantity": -2})
+    assert all(call.args[0] == "GET" for call in request.call_args_list)

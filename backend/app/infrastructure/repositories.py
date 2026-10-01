@@ -273,9 +273,12 @@ class SupabaseRepository:
             "category": item.get("category") or infer_pantry_category(item["name"], item.get("storageLocation", "pantry")),
             "quantity_confidence": item.get("quantityConfidence", "estimated"),
             "use_by_date": item.get("useByDate"),
+            "acquired_at": item.get("acquiredAt"),
             "freshness_basis": item.get("freshnessBasis"),
             "provenance": item.get("provenance", {}),
         }
+        if item.get("reference_quantity") is not None:
+            row["reference_quantity"] = item["reference_quantity"]
         rows = await self.request(
             "POST", "pantry_items", params={"on_conflict": "id"}, json=row
         )
