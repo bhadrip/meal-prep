@@ -132,6 +132,15 @@ async def test_local_notification_inbox_respects_recipient_and_membership():
             former_member_inbox = await invitee.request("GET", "notifications")
             assert not any(item["kind"] == "recipes" for item in former_member_inbox)
             assert any(item["kind"] == "access_removed" for item in former_member_inbox)
+
+            bulk = await client.post("/rest/v1/notifications", headers={
+                **admin_headers, "Prefer": "return=minimal",
+            }, json=[{
+                "recipient_id": users[1], "kind": "test", "title": "Test activity",
+                "target_path": "/app?view=overview", "event_key": f"test:{uuid4()}",
+            } for _ in range(205)])
+            assert bulk.status_code in (200, 201), bulk.text
+            assert len(await invitee.request("GET", "notifications")) == 200
         finally:
             if household_id:
                 removed = await client.delete(

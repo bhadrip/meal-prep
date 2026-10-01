@@ -12,7 +12,7 @@ The Chromium suite exercises every currently visible website form and action. Ea
 | Shopping | Store grouping, list rename, item create/edit/remove, purchased and unpurchased states | Shopping list read/write and purchase updates |
 | Reviews | Weekly and meal review create/read; memory create/confirm/update/forget | Feedback, what-worked, and memory routes |
 | Settings | Household setup, dashboard card order in both directions, visibility on Overview and after reload; invitation create/revoke, member remove, household create/switch/leave | Household, invitation, dashboard, and failed preference write checks |
-| Notifications | Mobile unread badge, inbox, opening an activity destination, and read state after navigation | Caller scoped list and read endpoints; inaccessible notification returns 404; local Supabase invitation, recipe, membership, and removed-member visibility |
+| Notifications | Mobile unread badge, inbox, opening an activity destination, household switch, and read state after navigation | Caller scoped list and read endpoints; inaccessible notification returns 404; local Supabase invitation, recipe, membership, removed-member visibility, and 200-entry history cap |
 | Sign-in | Demo screen, code request success/error, email change, invalid/valid code, sign-out | Shared bearer-token validation dependency |
 | OAuth consent | Missing request, signed-out redirect, scope display, approval, denial, unsupported callback | OAuth metadata and MCP HTTP tests |
 | Embedded MCP App | Dashboard, onboarding, plan, recipes, feedback, shopping, pantry use; empty and unavailable states; shopping progress; recipe search/detail/share/copy/revoke | MCP tool and resource tests, including pantry-use tool discovery |

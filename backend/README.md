@@ -32,7 +32,7 @@ app/
 
 The website has no model integration. Users edit their data directly there. The service never calls a model to make domain writes. ChatGPT can create a plan through MCP, while Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
 
-Inbox entries are written by database triggers in the same transaction as household changes and are visible only to their recipient. Household entries become inaccessible when membership ends. The website loads the latest 100 entries when it opens or refreshes, and opening one marks it read and follows its destination. There is no email, push, scheduler, or real-time subscription for this first version.
+Inbox entries are written by database triggers in the same transaction as household changes and are visible only to their recipient. Household entries become inaccessible when membership ends. The website loads the latest 100 entries when it opens or refreshes, and opening one marks it read and follows its destination. The database keeps at most 200 entries per person. There is no email, push, scheduler, or real-time subscription for this first version.
 
 ## Deployed resources
 

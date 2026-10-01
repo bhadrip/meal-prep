@@ -16,7 +16,26 @@ create table public.notifications (
 );
 
 create index notifications_recipient_recent_idx
-  on public.notifications (recipient_id, created_at desc);
+  on public.notifications (recipient_id, created_at desc, id desc);
+
+-- Keep storage bounded without a scheduled worker. The website shows 100 entries;
+-- retain another 100 so a busy household does not immediately lose older items.
+create function public.trim_notification_history()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.notifications
+  where recipient_id = new.recipient_id and id in (
+    select id from public.notifications
+    where recipient_id = new.recipient_id
+    order by created_at desc, id desc
+    offset 200
+  );
+  return new;
+end;
+$$;
+create trigger trim_notification_history after insert on public.notifications
+  for each row execute function public.trim_notification_history();
+revoke all on function public.trim_notification_history() from public;
 
 alter table public.notifications enable row level security;
 create function public.can_read_notification(target_household_id uuid)
