@@ -24,18 +24,22 @@ async function saveEditor(page) {
   await expect(page.locator('#toast')).toContainText('Saved to your household.');
 }
 
-test('home loads dashboard data in one startup request', async ({ page }) => {
+test('home loads only its three sections and defers the household dashboard', async ({ page }) => {
   const apiPaths = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
     if (path.startsWith('/api/')) apiPaths.push(path);
   });
   await page.goto('/app');
-  await expect(content(page).locator('[data-dashboard-card]')).toHaveCount(10);
+  await expect(content(page).locator('[data-home-section]')).toHaveCount(3);
+  await expect(content(page).locator('.section-loading')).toHaveCount(0);
   expect(apiPaths.filter((path) => path === '/api/app/bootstrap')).toHaveLength(1);
-  expect(apiPaths).not.toContain('/api/app/snapshot');
+  expect(apiPaths.filter((path) => path === '/api/app/snapshot')).toHaveLength(3);
   expect(apiPaths).not.toContain('/api/household/access');
   expect(apiPaths).not.toContain('/api/households');
+  await page.locator('#household-dashboard summary').click();
+  await expect(content(page).locator('[data-dashboard-card]')).toHaveCount(10);
+  await expect(content(page).locator('[data-dashboard-card="recipes"]')).toContainText('Paneer');
 });
 
 test('navigation, sidebar, refresh, account, and mobile navigation', async ({ page }) => {
@@ -63,7 +67,7 @@ test('navigation, sidebar, refresh, account, and mobile navigation', async ({ pa
 test('overview shortcuts and editor validation and cancel', async ({ page }) => {
   await open(page, 'overview');
   for (const [button, title] of [
-    ['View plan', 'Weekly plan'], ['Open list', 'Shopping'], ['View pantry', 'Pantry'],
+    ['Open weekly plan', 'Weekly plan'], ['Open list', 'Shopping'], ['View pantry', 'Pantry'],
     ['Customize dashboard', 'Settings'], ['Browse recipes', 'Recipes'], ['View reviews', 'Reviews'],
   ]) {
     await page.locator('.sidebar [data-view="overview"]').click();
@@ -99,6 +103,7 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
   await expect(form.locator('[name="householdSize"]')).toHaveValue('3');
   await expect(form.locator('[name="stores"]')).toHaveValue('Safeway, Costco');
   await page.locator('.sidebar [data-view="overview"]').click();
+  await page.locator('#household-dashboard summary').click();
   await expect(content(page)).toContainText('3 people');
   await expect(content(page)).toContainText('25 minutes maximum');
   await expect(content(page)).toContainText('No dietary restrictions recorded.');
@@ -115,6 +120,7 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
   await expect(content(page).locator('[data-dashboard-card]').first()).toHaveAttribute('data-dashboard-card', 'planning-defaults');
   await expect(content(page).locator('[data-dashboard-card="pantry"]')).toHaveCount(0);
   await page.reload();
+  await page.locator('#household-dashboard summary').click();
   await expect(content(page).locator('[data-dashboard-card]').first()).toHaveAttribute('data-dashboard-card', 'planning-defaults');
   await expect(content(page).locator('[data-dashboard-card="pantry"]')).toHaveCount(0);
   await page.locator('.sidebar [data-view="settings"]').click();
@@ -353,6 +359,68 @@ test('pantry categories and search narrow items and save corrections', async ({ 
   await page.locator('.sidebar [data-view="pantry"]').click();
   await content(page).locator('[data-pantry-category="snacks"]').click();
   await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
+});
+
+test('pantry photo history opens inline, retries, and pages saved uploads', async ({ page }) => {
+  const requests = [];
+  let firstAttempt = true;
+  await page.route('**/api/pantry/evidence?*', async (route) => {
+    const offset = Number(new URL(route.request().url()).searchParams.get('offset'));
+    requests.push(offset);
+    if (firstAttempt) {
+      firstAttempt = false;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Photos are temporarily unavailable.' }) });
+      return;
+    }
+    const photo = offset === 0
+      ? { id: 'photo-1', created_at: '2026-09-30T12:00:00Z', image_url: 'https://example.test/pantry-photo.webp', image_bytes: 4096, status: 'applied', note: 'Fridge shelf', observations: [{ name: 'Milk', quantity: 1, unit: 'carton' }] }
+      : { id: 'photo-2', created_at: '2026-09-29T12:00:00Z', image_url: null, image_bytes: 2048, status: 'captured', note: 'Pantry shelf', observations: [{ name: 'Rice', quantity: 2, unit: 'bags' }] };
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [photo], count: 1, hasMore: offset === 0, nextOffset: offset + 1 }) });
+  });
+  await page.route('https://example.test/pantry-photo.webp', (route) => route.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLxSQAAAABJRU5ErkJggg==', 'base64'),
+  }));
+  await open(page, 'pantry');
+  await expect(content(page).locator('.pantry-sections')).toHaveCount(0);
+  await expect(content(page).getByRole('button', { name: 'Photo history' })).toBeVisible();
+  await expect(content(page).locator('#pantry-photo-panel')).toHaveCount(0);
+  await content(page).getByRole('button', { name: 'Photo history' }).click();
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
+  await expect(content(page).locator('.pantry-filters')).toBeVisible();
+  await expect(content(page).getByRole('alert')).toContainText('Photos are temporarily unavailable.');
+  await content(page).getByRole('button', { name: 'Try again' }).click();
+  await expect(content(page).locator('.pantry-photo-card')).toHaveCount(1);
+  await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Milk — 1 carton');
+  await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Added to pantry');
+  await expect(content(page).locator('.pantry-photo-card img')).toHaveJSProperty('naturalWidth', 1);
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
+  await content(page).getByRole('button', { name: 'Load older photos' }).click();
+  await expect(content(page).locator('.pantry-photo-card')).toHaveCount(2);
+  await expect(content(page).locator('.pantry-photo-card').last()).toContainText('Rice — 2 bags');
+  await expect(content(page).locator('.pantry-photo-card').last()).toContainText('Saved for review');
+  expect(requests).toEqual([0, 0, 1]);
+  await page.reload();
+  await expect(content(page).locator('.pantry-photo-card')).toHaveCount(1);
+  await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Milk — 1 carton');
+  await content(page).getByRole('button', { name: 'Hide photo history' }).click();
+  await expect(content(page).locator('#pantry-photo-panel')).toHaveCount(0);
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
+});
+
+test('empty photo history stays a small disclosure within Pantry', async ({ page }) => {
+  await page.route('**/api/pantry/evidence?*', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [], count: 0, hasMore: false, nextOffset: 0 }),
+  }));
+  await open(page, 'pantry');
+  await expect(content(page).getByText('No photos have been saved yet.')).toHaveCount(0);
+  await content(page).getByRole('button', { name: 'Photo history' }).click();
+  await expect(content(page).getByText(/No photos have been saved yet/)).toBeVisible();
+  await expect(content(page).locator('.table-card .table-row').first()).toBeVisible();
+  await content(page).getByRole('button', { name: 'Hide photo history' }).click();
+  await expect(content(page).getByText(/No photos have been saved yet/)).toHaveCount(0);
+  await expect(content(page).locator('.table-card .table-row').first()).toBeVisible();
 });
 
 test('pantry use records a meal and shows the remaining quantity', async ({ page }) => {

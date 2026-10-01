@@ -166,7 +166,7 @@ test('signed-in recipe links retain filters and start Explore collapsed on first
   page.on('request',request=>{if(new URL(request.url()).pathname==='/api/recipe-graph')graphRequests.push(request.url());});
   await page.route('**/api/auth/config',route=>route.fulfill({json:{supabaseUrl:'https://example.supabase.co',supabaseAnonKey:'public-test-key',authRequired:true}}));
   await page.route('**/static/vendor/supabase.js',route=>route.fulfill({contentType:'application/javascript',body:`window.supabase={createClient:()=>({auth:{getSession:async()=>({data:{session:{access_token:'test-token',user:{email:'cook@example.com'}}},error:null})}})};`}));
-  await page.route('**/api/app/bootstrap',async route=>{
+  await page.route('**/api/app/bootstrap**',async route=>{
     const data=await(await route.fetch()).json();
     await route.fulfill({json:{...data,access:{role:'owner',members:[],invitations:[]},memberships:{households:[{id:'home-1',name:'Home',role:'owner'}],activeHouseholdId:'home-1'}}});
   });

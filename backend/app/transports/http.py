@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, HTMLResponse
@@ -100,13 +100,18 @@ async def health() -> dict:
 
 
 @router.get("/api/app/snapshot")
-async def app_snapshot(services: WebServices) -> dict:
-    return await services.household.snapshot()
+async def app_snapshot(
+    services: WebServices, sections: str | None = None, week_start: date | None = None,
+) -> dict:
+    return await services.household.snapshot(
+        sections=sections.split(",") if sections is not None else None,
+        week_start=week_start.isoformat() if week_start else None,
+    )
 
 
 @router.get("/api/app/bootstrap")
-async def app_bootstrap(services: WebServices) -> dict:
-    """Load the website's initial household data with one authentication check."""
+async def app_bootstrap(services: WebServices, include_sections: bool = True) -> dict:
+    """Allow a lightweight startup while preserving older browser clients."""
     repository = services.household.repository
     if isinstance(repository, SupabaseRepository):
         pending = await repository.rpc("pending_household_invitations")
@@ -114,7 +119,7 @@ async def app_bootstrap(services: WebServices) -> dict:
         if not pending.get("hasHousehold") and invitations:
             return {"needsInvitationReview": True, "pendingInvites": invitations}
         snapshot, access, memberships = await asyncio.gather(
-            services.household.snapshot(),
+            services.household.snapshot(sections=None if include_sections else []),
             repository.rpc("household_access"),
             repository.list_households(),
         )
@@ -124,7 +129,7 @@ async def app_bootstrap(services: WebServices) -> dict:
             "memberships": memberships,
             "pendingInvites": invitations,
         }
-    return {"snapshot": await services.household.snapshot(), "pendingInvites": []}
+    return {"snapshot": await services.household.snapshot(sections=None if include_sections else []), "pendingInvites": []}
 
 
 @router.get("/api/notifications")
@@ -275,6 +280,22 @@ async def get_pantry(services: WebServices) -> dict:
     return {"items": items, "count": len(items)}
 
 
+@router.get("/api/pantry/evidence")
+async def get_pantry_evidence(
+    services: WebServices,
+    limit: Annotated[int, Query(ge=1, le=50)] = 30,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict:
+    photos = await services.food.get_pantry_photos(limit + 1, offset)
+    items = photos[:limit]
+    return {
+        "items": items,
+        "count": len(items),
+        "hasMore": len(photos) > limit,
+        "nextOffset": offset + len(items),
+    }
+
+
 @router.put("/api/pantry")
 async def update_pantry_item(item: dict[str, Any], services: WebServices) -> dict:
     return await services.food.update_pantry_item(item)
@@ -290,6 +311,21 @@ async def record_pantry_use(use: dict[str, Any], services: WebServices) -> dict:
 @router.get("/api/meal-plan")
 async def get_meal_plan(services: WebServices, week_start: str | None = None) -> dict:
     return {"plan": await services.planning.get_meal_plan(week_start)}
+
+
+@router.get("/api/meal-plan-rules")
+async def get_meal_plan_rules(services: WebServices, revision_id: str | None = None) -> dict:
+    return {"rules": await services.planning.get_rules(revision_id)}
+
+
+@router.get("/api/meal-plan-rules/history")
+async def get_meal_plan_rule_history(services: WebServices, limit: int = 20) -> dict:
+    return {"items": await services.planning.get_rule_history(limit)}
+
+
+@router.put("/api/meal-plan-rules")
+async def save_meal_plan_rules(document: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.save_rules(document.get("text"), document.get("expectedRevision"))
 
 
 @router.put("/api/meal-plan")

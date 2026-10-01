@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -7,7 +8,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.application.errors import RepositoryError, StorageNotInstalledError
-from app.application.services import RecipePantryService
+from app.application.services import HouseholdService, RecipePantryService
 from app.config import Settings
 from app.infrastructure.repositories import SupabaseRepository, demo_repository
 from app.main import app
@@ -44,6 +45,64 @@ async def test_bootstrap_reviews_invitation_before_loading_household(monkeypatch
     assert result["snapshot"]["household"]["householdId"] == "active-id"
     assert result["access"]["role"] == "owner"
     assert result["memberships"]["activeHouseholdId"] == "active-id"
+    snapshot.assert_awaited_once_with(sections=None)
+
+
+def test_lightweight_bootstrap_skips_dashboard_reads(monkeypatch):
+    monkeypatch.setattr(http, "get_settings", lambda: Settings(supabase_url="", supabase_anon_key="", _env_file=None))
+    repository = SimpleNamespace(
+        get_household_context=AsyncMock(return_value={"householdId": "home-1"}),
+        get_pantry=AsyncMock(side_effect=AssertionError("Pantry blocks startup")),
+        search_recipes=AsyncMock(), get_weekly_schedule=AsyncMock(),
+        get_feedback=AsyncMock(), get_household_memory=AsyncMock(),
+        get_meal_plan=AsyncMock(), get_shopping_list=AsyncMock(), get_meal_plan_rules=AsyncMock(),
+    )
+    monkeypatch.setattr(http, "services_for_request", lambda: SimpleNamespace(household=HouseholdService(repository)))
+    response = TestClient(app).get("/api/app/bootstrap?include_sections=false")
+    assert response.status_code == 200
+    assert response.json()["snapshot"] == {"household": {"householdId": "home-1"}, "sections": {}}
+    for name in ("get_pantry", "search_recipes", "get_weekly_schedule", "get_feedback", "get_household_memory", "get_meal_plan", "get_shopping_list", "get_meal_plan_rules"):
+        getattr(repository, name).assert_not_awaited()
+    repository.get_household_context.side_effect = RepositoryError("private database failure")
+    failed = TestClient(app).get("/api/app/bootstrap?include_sections=false")
+    assert failed.status_code == 503
+    assert "private database failure" not in failed.text
+
+
+def test_selective_snapshot_scopes_reads_and_isolates_section_failure(monkeypatch):
+    monkeypatch.setattr(http, "get_settings", lambda: Settings(supabase_url="", supabase_anon_key="", _env_file=None))
+    repository = SimpleNamespace(
+        get_household_context=AsyncMock(return_value={"householdId": "home-1"}),
+        get_pantry=AsyncMock(side_effect=RepositoryError("private pantry failure")),
+        search_recipes=AsyncMock(), get_weekly_schedule=AsyncMock(),
+        get_feedback=AsyncMock(), get_household_memory=AsyncMock(),
+        get_meal_plan=AsyncMock(return_value={"weekStart": "2026-09-28", "entries": [{"date": "2026-10-01", "meal": "Soup"}]}),
+        get_shopping_list=AsyncMock(), get_meal_plan_rules=AsyncMock(),
+    )
+    monkeypatch.setattr(http, "services_for_request", lambda: SimpleNamespace(household=HouseholdService(repository)))
+    client = TestClient(app)
+    response = client.get("/api/app/snapshot?sections=mealPlan,pantry&week_start=2026-09-28")
+    assert response.status_code == 200
+    sections = response.json()["sections"]
+    assert set(sections) == {"mealPlan", "pantry"}
+    assert sections["mealPlan"]["value"]["entries"][0]["meal"] == "Soup"
+    assert sections["pantry"] == {"status": "unavailable", "value": None}
+    repository.get_meal_plan.assert_awaited_once_with("2026-09-28")
+    for name in ("search_recipes", "get_weekly_schedule", "get_feedback", "get_household_memory", "get_shopping_list", "get_meal_plan_rules"):
+        getattr(repository, name).assert_not_awaited()
+    repository.get_meal_plan.reset_mock()
+    repository.get_household_context.reset_mock()
+    assert client.get("/api/app/snapshot?sections=invalid").status_code == 422
+    repository.get_household_context.assert_not_awaited()
+    assert client.get("/api/app/snapshot?sections=mealPlan&week_start=2026-02-30").status_code == 422
+    repository.get_meal_plan.assert_not_awaited()
+    repository.get_meal_plan_rules.return_value = {"revision": 1, "text": "Keep Tuesdays quick."}
+    rules = client.get("/api/app/snapshot?sections=mealPlanRules").json()["sections"]
+    assert rules == {"mealPlanRules": {"status": "ready", "value": {"revision": 1, "text": "Keep Tuesdays quick."}}}
+    repository.get_meal_plan_rules.side_effect = RepositoryError("private rules failure")
+    unavailable = client.get("/api/app/snapshot?sections=mealPlanRules").json()["sections"]
+    assert unavailable == {"mealPlanRules": {"status": "unavailable", "value": None}}
+    repository.get_meal_plan.assert_not_awaited()
 
 
 def test_website_uses_plugin_logo_and_self_hosted_type():
@@ -71,6 +130,42 @@ def test_website_uses_plugin_logo_and_self_hosted_type():
 
     plugin_logo = Path(__file__).resolve().parents[2] / "plugin/assets/meal-prep-icon.svg"
     assert client.get("/static/meal-prep-icon.svg").text == plugin_logo.read_text()
+
+
+def test_pantry_evidence_api_pages_saved_photos_and_rejects_invalid_limits():
+    demo_repository.cache_clear()
+    repository = demo_repository()
+    repository._pantry_photos = []
+    for name in ("Milk", "Eggs", "Spinach"):
+        asyncio.run(repository.save_pantry_photo(
+            image=b"webp", width=20, height=20, file_id=f"file-{name}",
+            note=f"Photo of {name}", observations=[{"name": name}],
+            apply_to_pantry=False,
+        ))
+    client = TestClient(app)
+    first = client.get("/api/pantry/evidence?limit=2")
+    assert first.status_code == 200
+    assert [item["observations"][0]["name"] for item in first.json()["items"]] == ["Spinach", "Eggs"]
+    assert first.json()["hasMore"] is True
+    assert first.json()["nextOffset"] == 2
+    last = client.get("/api/pantry/evidence?limit=2&offset=2")
+    assert [item["observations"][0]["name"] for item in last.json()["items"]] == ["Milk"]
+    assert last.json()["hasMore"] is False
+    assert client.get("/api/pantry/evidence?limit=0").status_code == 422
+    assert client.get("/api/pantry/evidence?offset=-1").status_code == 422
+    demo_repository.cache_clear()
+    empty = client.get("/api/pantry/evidence")
+    assert empty.status_code == 200
+    assert empty.json() == {"items": [], "count": 0, "hasMore": False, "nextOffset": 0}
+
+
+def test_pantry_evidence_api_requires_a_session(monkeypatch):
+    monkeypatch.setattr(http, "get_settings", lambda: Settings(
+        supabase_url="https://example.supabase.co", supabase_anon_key="test",
+        auth_required=True, _env_file=None,
+    ))
+    assert TestClient(app).get("/api/pantry/evidence").status_code == 401
+    assert TestClient(app).get("/api/app/snapshot?sections=pantry").status_code == 401
 
 
 def test_retired_weekly_review_api_is_not_exposed():

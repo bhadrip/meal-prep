@@ -59,3 +59,38 @@ def test_household_selection_api_uses_checked_database_functions():
         ("create_my_household", {"requested_name": "Second home"}),
         ("set_active_household", {"requested_household_id": "00000000-0000-0000-0000-000000000042"}),
     ]
+
+
+def test_household_dropdown_selection_persists_and_rejects_unavailable_membership():
+    first = "00000000-0000-0000-0000-000000000042"
+    second = "00000000-0000-0000-0000-000000000043"
+
+    class Repository:
+        active = first
+
+        async def rpc(self, name, payload=None):
+            if name == "set_active_household":
+                selected = payload["requested_household_id"]
+                if selected not in (first, second):
+                    raise RepositoryError("Household is not available")
+                self.active = selected
+            return {"activeHouseholdId": self.active, "households": [{"id": first}, {"id": second}]}
+
+    repository = Repository()
+
+    async def repository_override():
+        return repository
+
+    app.dependency_overrides[invitation_repository] = repository_override
+    try:
+        client = TestClient(app)
+        assert client.get("/api/households").json()["activeHouseholdId"] == first
+        assert client.post(f"/api/households/{second}/activate").status_code == 200
+        assert client.get("/api/households").json()["activeHouseholdId"] == second
+        rejected = client.post("/api/households/00000000-0000-0000-0000-000000000044/activate")
+        assert rejected.status_code == 404
+        assert client.get("/api/households").json()["activeHouseholdId"] == second
+        assert client.post("/api/households/invalid/activate").status_code == 422
+        assert repository.active == second
+    finally:
+        app.dependency_overrides.clear()

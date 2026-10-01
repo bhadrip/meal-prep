@@ -9,6 +9,7 @@ import pytest
 from app.application.errors import RepositoryError
 from app.application.services import RecipePantryService
 from app.config import Settings
+from app.application.errors import RepositoryError, RevisionConflictError
 from app.infrastructure.repositories import SupabaseRepository
 
 
@@ -31,6 +32,7 @@ async def test_local_supabase_week_plan_and_rhythm_roundtrip():
         user_id = created.json()["id"]
         household_id = None
         extra_household_id = None
+        second_household_id = None
         try:
             signed_in = await client.post(
                 "/auth/v1/token", params={"grant_type": "password"},
@@ -110,11 +112,22 @@ async def test_local_supabase_week_plan_and_rhythm_roundtrip():
 
             first_week = "2030-02-04"
             second_week = "2030-02-11"
+            assert await repository.get_meal_plan_rules() is None
+            first_rules = await repository.save_meal_plan_rules("Saturday pasta; reuse it Monday.", 0)
+            second_rules = await repository.save_meal_plan_rules("Saturday stir-fry.", 1)
+            assert (await repository.get_meal_plan_rules(first_rules["id"]))["text"] == first_rules["text"]
+            assert await repository.get_meal_plan_rule_history() == [second_rules, first_rules]
+            with pytest.raises(RevisionConflictError):
+                await repository.save_meal_plan_rules("A stale edit", 1)
+            with pytest.raises(RepositoryError):
+                await repository.request("PATCH", "meal_plan_rule_revisions", params={"id": f"eq.{first_rules['id']}"}, json={"text": "Overwrite history"})
             first = await repository.save_meal_plan({
                 "weekStart": first_week, "status": "draft",
+                "ruleRevisionId": first_rules["id"],
                 "entries": [{"date": first_week, "slot": "dinner", "meal": "Lentil bowls"}],
             })
             assert first["entries"][0]["meal"] == "Lentil bowls"
+            assert first["ruleRevision"] == first_rules
             second = await repository.save_meal_plan({
                 "weekStart": second_week, "status": "draft",
                 "entries": [{"date": second_week, "slot": "breakfast", "meal": "Oatmeal"}],
@@ -129,20 +142,38 @@ async def test_local_supabase_week_plan_and_rhythm_roundtrip():
             })
             assert edited["entries"][0]["meal"] == "Yogurt bowls"
             assert (await repository.get_meal_plan(first_week))["entries"][0]["meal"] == "Lentil bowls"
+            first_edit = await repository.save_meal_plan({"id": first["id"], "weekStart": first_week,
+                "entries": [{"date": first_week, "slot": "dinner", "meal": "Changed by hand"}]})
+            assert first_edit["ruleRevision"] == first_rules
+            assert [plan["weekStart"] for plan in await repository.get_recent_meal_plans("2030-02-18")] == [second_week, first_week]
 
             days = [{"day": day, "mode": "quick"} for day in (
                 "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
             )]
-            assert (await repository.save_weekly_schedule({"weekStart": second_week, "days": days}))["days"] == days
+            assert (await repository.save_weekly_schedule({"weekStart": second_week, "days": days, "notes": "Guests Saturday."}))["days"] == days
             days[0]["mode"] = "busy"
             assert (await repository.save_weekly_schedule({"weekStart": second_week, "days": days}))["days"][0]["mode"] == "busy"
+            assert (await repository.get_weekly_schedule(second_week))["notes"] == "Guests Saturday."
+
+            # Reads and writes use the selected household, even for known IDs.
+            memberships = await repository.create_household("Another kitchen")
+            second_household_id = memberships["activeHouseholdId"]
+            assert await repository.get_meal_plan_rules(first_rules["id"]) is None
+            assert await repository.get_meal_plan_rule_history() == []
+            assert await repository.get_recent_meal_plans("2030-02-18") == []
+            with pytest.raises(RepositoryError):
+                await repository.save_meal_plan({"weekStart": first_week, "ruleRevisionId": first_rules["id"], "entries": []})
+            other_rules = await repository.save_meal_plan_rules("Sunday pulav.", 0)
+            other_plan = await repository.save_meal_plan({"weekStart": first_week, "ruleRevisionId": other_rules["id"], "entries": []})
+            assert other_plan["ruleRevision"] == other_rules
+            await repository.switch_household(household_id)
+            assert (await repository.get_meal_plan(first_week))["ruleRevision"] == first_rules
         finally:
-            if extra_household_id:
-                removed = await client.delete("/rest/v1/households", params={"id": f"eq.{extra_household_id}"}, headers=admin_headers)
-                assert removed.status_code in (200, 204), removed.text
-            if household_id:
+            for cleanup_id in (extra_household_id, second_household_id, household_id):
+                if not cleanup_id:
+                    continue
                 removed = await client.delete(
-                    "/rest/v1/households", params={"id": f"eq.{household_id}"},
+                    "/rest/v1/households", params={"id": f"eq.{cleanup_id}"},
                     headers={**admin_headers, "Prefer": "return=representation"},
                 )
                 assert removed.status_code in (200, 204), removed.text

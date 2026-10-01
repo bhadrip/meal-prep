@@ -7,7 +7,8 @@ const toastBox = document.querySelector('#toast');
 const shell = document.querySelector('.shell');
 const sidebarToggle = document.querySelector('#sidebar-toggle');
 const householdPicker = document.querySelector('#household-picker');
-const householdSelect = document.querySelector('#household-select');
+const householdChoice = document.querySelector('#household-choice');
+let householdSelect;
 
 function setSidebarCollapsed(collapsed) {
   shell.classList.toggle('sidebar-collapsed', collapsed);
@@ -39,7 +40,10 @@ const CARD_NAMES = {
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings', notifications: 'Notifications' };
 let recipeBrowser = null;
-const state = { browserUi: {}, view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, weekStart: null, recipe: null, recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, pantrySearch: '', pantryCategory: 'all', client: null, session: null, config: null, editor: null };
+const state = { browserUi: {}, view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, mealPlanRules: null, ruleHistory: null, planTab: 'plan', ruleRevisionId: null, rulePreview: null, rulePreviewError: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', pantrySection: 'items', pantryPhotos: [], pantryPhotosHasMore: false, pantryPhotosLoading: false, pantryPhotosError: null, pantryPhotosRequest: 0, client: null, session: null, config: null, editor: null };
+const VIEW_SECTIONS = { overview: ['mealPlan', 'shoppingList', 'pantry'], plan: ['mealPlan', 'schedule'], recipes: ['recipes'], pantry: ['pantry'], shopping: ['shoppingList'], reviews: ['feedback', 'memories'], settings: [], notifications: [] };
+const SECTION_NAMES = { mealPlan: 'meals and prep', shoppingList: 'shopping list', pantry: 'pantry', schedule: 'weekly rhythm', mealPlanRules: 'planning rules', recipes: 'recipes', feedback: 'reviews', memories: 'household memory' };
+Object.assign(state, { dataGeneration: 0, sectionRequests: new Map(), sectionWeeks: {}, dashboardExpanded: false, notificationsLoading: true });
 function routeFromUrl() {
   const params = new URLSearchParams(location.search);
   const requestedView = params.get('view');
@@ -49,14 +53,17 @@ function routeFromUrl() {
   return {
     view,
     weekStart: view === 'plan' && validWeek ? week : null,
+    planTab: view === 'plan' && params.get('tab') === 'rules' ? 'rules' : 'plan',
+    ruleRevisionId: view === 'plan' && params.get('tab') === 'rules' ? params.get('revision') : null,
     recipeId: view === 'recipes' ? params.get('recipe') : null,
     browserUi: {query: params.get('query') || '', filters: Object.fromEntries(['cuisine','goal','meal','diet','tag'].map(key => [key, params.getAll(key)]).filter(([,values]) => values.length)), maxMinutes: Number(params.get('max_minutes')) || null, exploreOpen: false},
+    pantrySection: view === 'pantry' && params.get('section') === 'photos' ? 'photos' : 'items',
   };
 }
 
 function writeRoute(mode = 'push') {
   const url = new URL(location.href);
-  ['view', 'week', 'recipe', 'mode', 'query', 'cuisine', 'goal', 'meal', 'diet', 'tag', 'max_minutes'].forEach((key) => url.searchParams.delete(key));
+  ['view', 'week', 'recipe', 'tab', 'revision', 'section', 'mode', 'query', 'cuisine', 'goal', 'meal', 'diet', 'tag', 'max_minutes'].forEach((key) => url.searchParams.delete(key));
   if (state.view !== 'overview') url.searchParams.set('view', state.view);
   if (state.view === 'plan' && state.weekStart) url.searchParams.set('week', state.weekStart);
   if (state.view === 'recipes') {
@@ -64,7 +71,12 @@ function writeRoute(mode = 'push') {
     for (const [kind, values] of Object.entries(state.browserUi.filters || {})) values.forEach(value => url.searchParams.append(kind, value));
     if (state.browserUi.maxMinutes) url.searchParams.set('max_minutes', state.browserUi.maxMinutes);
   }
+  if (state.view === 'plan' && state.planTab === 'rules') {
+    url.searchParams.set('tab', 'rules');
+    if (state.ruleRevisionId) url.searchParams.set('revision', state.ruleRevisionId);
+  }
   if (state.view === 'recipes' && state.recipe?.id) url.searchParams.set('recipe', state.recipe.id);
+  if (state.view === 'pantry' && state.pantrySection === 'photos') url.searchParams.set('section', 'photos');
   history[mode === 'replace' ? 'replaceState' : 'pushState'](null, '', url);
 }
 
@@ -110,7 +122,7 @@ async function api(path, options = {}) {
     }
     headers.Authorization = `Bearer ${data.session.access_token}`;
   }
-  const response = await fetch(path, { ...options, headers });
+  const response = await fetch(path, { signal: AbortSignal.timeout(30000), ...options, headers });
   if (response.status === 401) {
     location.assign(loginPath());
     throw new Error('Your session has expired.');
@@ -133,13 +145,14 @@ async function loadRecipe(id) {
 }
 
 async function refresh(message) {
-  const [data, notifications] = await Promise.all([
-    api('/api/app/bootstrap'),
-    api('/api/notifications').catch(() => null),
-  ]);
-  state.notifications = arr(notifications?.items);
-  state.notificationError = notifications === null;
-  updateNotificationCount();
+  const generation = ++state.dataGeneration;
+  state.sectionRequests.clear();
+  state.sectionWeeks = {};
+  const previousHouseholdId = state.activeHouseholdId;
+  // Notifications update independently and never hold the kitchen screen open.
+  loadNotifications(generation);
+  const data = await api('/api/app/bootstrap?include_sections=false');
+  if (generation !== state.dataGeneration) return;
   state.pendingInvites = arr(data.pendingInvites);
   if (data.needsInvitationReview) {
     location.replace('/invite');
@@ -156,16 +169,99 @@ async function refresh(message) {
     }
     state.activeHouseholdId = nextHouseholdId;
     householdPicker.hidden = false;
-    householdSelect.innerHTML = state.households.map((item) => `<option value="${esc(item.id)}">${esc(item.name)} · ${esc(label(item.role))}</option>`).join('');
-    householdSelect.value = state.activeHouseholdId || '';
+    householdChoice.innerHTML = MealPrepChoices.markup({ name: 'householdId', inputId: 'household-select', labelId: 'household-choice-label', value: state.activeHouseholdId, choices: state.households.map((item) => ({ value: item.id, label: `${item.name} · ${label(item.role)}` })) });
+    householdSelect = document.querySelector('#household-select');
+  }
+  if (previousHouseholdId !== state.activeHouseholdId) {
+    state.pantryPhotosRequest += 1;
+    state.pantryPhotos = [];
+    state.pantryPhotosHasMore = false;
+    state.pantryPhotosLoading = false;
+    state.pantryPhotosError = null;
   }
   state.plan = section('mealPlan');
   state.schedule = section('schedule');
-
-  if (!state.weekStart) state.weekStart = state.plan?.weekStart || state.schedule?.week_start || monday();
-  if (state.view === 'plan' && household().onboardingComplete !== false) await loadWeek(state.weekStart);
-  else render();
+  state.mealPlanRules = section('mealPlanRules');
+  state.ruleHistory = null;
+  if (!state.weekStart) state.weekStart = monday();
+  if (household().onboardingComplete === false && !state.pendingInvites.length) {
+    view('settings', 'replace');
+    return;
+  }
+  render();
+  await Promise.all([loadViewData(), ...(state.view === 'plan' && state.ruleRevisionId ? [loadRulePreview(state.ruleRevisionId)] : [])]);
+  render();
+  if (state.view === 'pantry' && state.pantrySection === 'photos') await loadPantryPhotos();
   if (message) showToast(message);
+}
+
+async function loadNotifications(generation) {
+  state.notificationsLoading = true;
+  try {
+    const data = await api('/api/notifications');
+    if (generation !== state.dataGeneration) return;
+    state.notifications = arr(data.items);
+    state.notificationError = false;
+  } catch {
+    if (generation !== state.dataGeneration) return;
+    state.notificationError = true;
+  }
+  if (generation !== state.dataGeneration) return;
+  state.notificationsLoading = false;
+  updateNotificationCount();
+  if (state.view === 'notifications') render();
+}
+
+function viewSections() {
+  const names = [...(VIEW_SECTIONS[state.view] || [])];
+  if (state.view === 'plan' && !state.ruleRevisionId) names.push('mealPlanRules');
+  if (state.view === 'overview' && state.dashboardExpanded) names.push('schedule', 'recipes', 'feedback', 'memories');
+  return names;
+}
+
+async function loadSection(name, force = false) {
+  if (!state.snapshot) return;
+  const generation = state.dataGeneration;
+  const week = ['mealPlan', 'schedule'].includes(name) ? (state.view === 'overview' ? monday() : state.weekStart || monday()) : null;
+  const key = `${name}:${week || ''}`;
+  if (state.sectionRequests.has(key)) {
+    if (state.sectionWeeks[name] !== week) state.snapshot.sections[name] = { status: 'loading', value: null };
+    state.sectionWeeks[name] = week;
+    return state.sectionRequests.get(key);
+  }
+  if (!force && sectionStatus(name) && sectionStatus(name) !== 'loading' && state.sectionWeeks[name] === week) return;
+  state.snapshot.sections[name] = { status: 'loading', value: null };
+  state.sectionWeeks[name] = week;
+  const params = new URLSearchParams({ sections: name });
+  if (week) params.set('week_start', week);
+  const request = (async () => {
+    let result;
+    try {
+      const data = await api(`/api/app/snapshot?${params}`);
+      // The active household can also change through MCP or another browser tab.
+      if (data.household?.householdId !== household().householdId) throw new Error('Household changed. Refresh to continue.');
+      result = data.sections[name];
+      if (!result) throw new Error('Section missing from response.');
+    } catch {
+      result = { status: 'unavailable', value: null };
+    }
+    if (generation !== state.dataGeneration) return;
+    state.sectionRequests.delete(key);
+    if (state.sectionWeeks[name] !== week) return;
+    state.snapshot.sections[name] = result;
+    if (name === 'mealPlan') state.plan = result.value;
+    if (name === 'schedule') state.schedule = result.value;
+    if (name === 'mealPlanRules') state.mealPlanRules = result.value;
+    if (viewSections().includes(name)) render();
+  })();
+  state.sectionRequests.set(key, request);
+  return request;
+}
+
+async function loadViewData(force = false) {
+  const tasks = viewSections().map((name) => loadSection(name, force));
+  render();
+  await Promise.all(tasks);
 }
 
 function updateNotificationCount() {
@@ -178,14 +274,33 @@ function updateNotificationCount() {
 
 async function loadWeek(weekStart) {
   const selectedWeek = monday(`${weekStart}T12:00:00`);
-  const [plan, schedule] = await Promise.all([
-    api(`/api/meal-plan?week_start=${encodeURIComponent(selectedWeek)}`),
-    api(`/api/schedule?week_start=${encodeURIComponent(selectedWeek)}`),
-  ]);
   state.weekStart = selectedWeek;
-  state.plan = plan.plan;
-  state.schedule = schedule.schedule;
+  await loadViewData();
+}
+
+async function loadRulePreview(revisionId) {
+  state.rulePreview = null;
+  state.rulePreviewError = null;
+  const householdId = state.activeHouseholdId;
+  try {
+    const result = await api(`/api/meal-plan-rules?revision_id=${encodeURIComponent(revisionId)}`);
+    if (state.ruleRevisionId === revisionId && state.activeHouseholdId === householdId) state.rulePreview = result.rules;
+  } catch (error) {
+    if (state.ruleRevisionId === revisionId && state.activeHouseholdId === householdId) state.rulePreviewError = error.message;
+  }
+}
+
+async function openPlanTab(tab, revisionId = null) {
+  state.planTab = tab;
+  state.ruleRevisionId = tab === 'rules' ? revisionId : null;
+  state.rulePreview = null;
+  state.rulePreviewError = null;
+  writeRoute();
   render();
+  content.querySelector(`#planning-tab-${tab}`)?.focus({ preventScroll: true });
+  await Promise.all([loadViewData(), ...(state.ruleRevisionId ? [loadRulePreview(state.ruleRevisionId)] : [])]);
+  render();
+  content.querySelector(`#planning-tab-${state.planTab}`)?.focus({ preventScroll: true });
 }
 
 function empty(title, message) {
@@ -215,6 +330,38 @@ function dashboardLayout() {
   return { order, hidden: arr(saved.hiddenCards).filter((id) => CARD_IDS.includes(id)) };
 }
 
+function sectionContent(name, body) {
+  const status = sectionStatus(name);
+  if (!status || status === 'loading') return `<div class="section-loading" role="status"><span class="loader"></span>Loading ${esc(SECTION_NAMES[name])}…</div>`;
+  if (status === 'unavailable') return `<div class="section-error"><p>Could not load ${esc(SECTION_NAMES[name])}.</p>${action('Try again', 'retry-section', name)}</div>`;
+  return body;
+}
+
+function renderToday() {
+  const today = dateForDay(monday(), (new Date().getDay() + 6) % 7);
+  const dayName = DAYS[(new Date().getDay() + 6) % 7];
+  const plan = section('mealPlan');
+  const meals = arr(plan?.entries).filter((entry) => entry.date === today || (!entry.date && entry.day === dayName))
+    .sort((a, b) => SLOTS.indexOf(a.slot || 'dinner') - SLOTS.indexOf(b.slot || 'dinner'));
+  const groceries = arr(section('shoppingList')?.items).filter((item) => !item.purchased);
+  const soonDate = dateForDay(today, 3);
+  const useSoon = arr(section('pantry')).filter((item) => {
+    const date = pick(item, 'use_by_date', 'useByDate');
+    return date && date <= soonDate && (item.quantity === null || item.quantity === undefined || Number(item.quantity) > 0);
+  }).sort((a, b) => String(pick(a, 'use_by_date', 'useByDate')).localeCompare(String(pick(b, 'use_by_date', 'useByDate'))));
+  const mealBody = meals.length ? `<div class="today-meals">${meals.map((entry) => `<div class="today-meal"><span class="pill">${esc(label(entry.slot || 'dinner'))}</span><div><h3>${esc(entry.meal || entry.title)}</h3>${entry.notes ? `<p class="muted tiny">${esc(entry.notes)}</p>` : ''}</div><div class="today-meal-actions">${entry.recipeId ? action('View recipe', 'today-recipe', entry.recipeId) : ''}${action('Edit', 'edit-meal', entry.id || `${entry.day}:${entry.slot}`)}</div></div>`).join('')}</div>` : '<p class="muted">No meals or prep planned for today. Add one to get started.</p>';
+  const mealReady = ['ready', 'empty'].includes(sectionStatus('mealPlan'));
+  const shoppingBody = groceries.length ? `<p class="muted tiny">${groceries.length} ${groceries.length === 1 ? 'item' : 'items'} left to pick up</p><div class="stack">${groceries.slice(0, 5).map((item) => `<label class="check-row"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}${item.store ? ` · ${esc(item.store)}` : ''}</small></span></label>`).join('')}</div>` : '<p class="muted">Nothing left on your shopping list.</p>';
+  const pantryBody = useSoon.length ? `<p class="muted tiny">Recorded use-by dates within the next three days, or earlier.</p><div class="stack">${useSoon.slice(0, 5).map((item) => {
+    const date = pick(item, 'use_by_date', 'useByDate');
+    return row(item.name, `${date < today ? 'Past recorded date' : date === today ? 'Use-by today' : `Use-by ${date}`} · ${item.quantity ?? 'Amount unknown'} ${item.unit || ''}`, action('Review', 'edit-pantry', item.id));
+  }).join('')}</div>` : '<p class="muted">No pantry items with a recorded use-by date in the next three days.</p>';
+  return `<section class="today-heading"><div><p class="eyebrow">${esc(household().householdName || 'Your kitchen')} · ${esc(new Date(`${today}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }))}</p><h2>What’s on today?</h2></div>${action('Open weekly plan', 'plan', '', 'primary')}</section>
+    <article class="card today-plan" data-home-section="mealPlan"><div class="card-head"><h3>Today’s meals & prep</h3>${mealReady ? action('Add a meal for today', 'add-meal', today) : ''}</div>${sectionContent('mealPlan', mealBody)}</article>
+    <div class="home-attention-grid"><article class="card" data-home-section="shoppingList"><div class="card-head"><h3>Still to shop</h3>${action('Open list', 'shopping')}</div>${sectionContent('shoppingList', shoppingBody)}</article><article class="card" data-home-section="pantry"><div class="card-head"><h3>Use soon</h3>${action('View pantry', 'pantry')}</div>${sectionContent('pantry', pantryBody)}</article></div>
+    <div class="home-shortcuts">${action('Browse recipes', 'recipes')}${action('View reviews', 'reviews')}${action('Customize dashboard', 'settings')}</div>`;
+}
+
 function renderOverview() {
   const h = household();
   const prefs = h.planningPreferences || {};
@@ -225,9 +372,10 @@ function renderOverview() {
   const pending = arr(shopping?.items).filter((item) => !item.purchased).length;
   const memories = arr(section('memories'));
   const incomplete = h.onboardingComplete === false;
-  const displayName = h.householdName && h.householdName !== 'My household' ? h.householdName : 'Your household';
-  let html = `<section class="hero"><div class="hero-copy"><p class="eyebrow">${esc(incomplete ? 'Getting started' : displayName)}</p><h2>${incomplete ? 'Set up your kitchen.' : 'Your food week, in one place.'}</h2><p>${incomplete ? 'Add your household’s food rules and weekly preferences to get started.' : 'Review your plan, recipes, pantry, and shopping list from one workspace.'}</p><div style="margin-top:22px">${action(incomplete ? 'Set up household' : 'Open weekly plan', incomplete ? 'settings' : 'plan', '', 'secondary')}</div></div><div class="hero-stat"><strong>${esc(arr(plan?.entries).length)}</strong><span>meals and prep tasks in the latest plan</span></div></section>`;
+  let html = incomplete ? `<div class="callout"><b>Set up your kitchen.</b><p>Add your household’s food rules and weekly preferences to get started.</p>${action('Set up household', 'settings')}</div>` : renderToday();
   if (state.pendingInvites.length) html = `<div class="callout"><b>Household invitation waiting</b><p>You have an invitation to join ${esc(state.pendingInvites[0].householdName)}.</p>${action('Review invitation', 'review-invite')}</div>` + html;
+  html += `<details id="household-dashboard" class="household-dashboard" ${state.dashboardExpanded ? 'open' : ''}><summary>More from your household <span>Saved preferences, recipes & notes</span></summary>`;
+  if (!state.dashboardExpanded) return html + '</details>';
   const cards = {
     'food-rules': card('Food rules', '♡', h.dietaryRestrictions === null || h.dietaryRestrictions === undefined ? '<p class="muted tiny">No food rules recorded yet.</p>' : arr(h.dietaryRestrictions).length ? tags(h.dietaryRestrictions, 'orange') : '<p class="muted tiny">No dietary restrictions recorded.</p>'),
     'planning-defaults': card('Planning defaults', '⌁', `<div class="stack">${row('Household size', h.householdSize ? `${h.householdSize} people` : 'Not set')}${row('Weeknight cooking', prefs.weeknightMaxMinutes ? `${prefs.weeknightMaxMinutes} minutes maximum` : 'Not set')}${row('Lunch leftovers', prefs.leftoversForLunch === undefined ? 'Not set' : prefs.leftoversForLunch ? 'Yes' : 'No')}</div>`),
@@ -242,12 +390,17 @@ function renderOverview() {
   };
   const layout = dashboardLayout();
   const visible = layout.order.filter((id) => !layout.hidden.includes(id));
-  html += `<div class="section-head"><div><h2>At a glance</h2><p>The latest saved information from your household.</p></div>${action('Customize dashboard', 'settings')}</div>`;
-  html += visible.length ? `<div class="card-grid dashboard-grid">${visible.map((id) => `<div data-dashboard-card="${id}">${cards[id]}</div>`).join('')}</div>` : empty('No dashboard cards shown', 'Open Settings to choose which cards to show.');
-  return html;
+  const cardSections = { schedule: 'schedule', 'meal-plan': 'mealPlan', 'shopping-list': 'shoppingList', pantry: 'pantry', recipes: 'recipes', feedback: 'feedback', memories: 'memories' };
+  html += visible.length ? `<div class="card-grid dashboard-grid">${visible.map((id) => {
+    const name = cardSections[id];
+    const body = name && (!sectionStatus(name) || ['loading', 'unavailable'].includes(sectionStatus(name))) ? card(CARD_NAMES[id], '·', sectionContent(name, '')) : cards[id];
+    return `<div data-dashboard-card="${id}">${body}</div>`;
+  }).join('')}</div>` : empty('No dashboard cards shown', 'Open Settings to choose which cards to show.');
+  return html + '</details>';
 }
 
 function renderNotifications() {
+  if (state.notificationsLoading) return '<div class="section-loading" role="status">Loading notifications…</div>';
   if (state.notificationError) return empty('Notifications unavailable', 'Refresh the page to try again.');
   if (!state.notifications.length) return empty('All caught up', 'Household activity will appear here.');
   return `<section class="page-heading"><div><p class="eyebrow">Household activity</p><h2>Your notifications</h2></div></section>
@@ -258,20 +411,41 @@ function renderNotifications() {
     </article>`).join('')}</div>`;
 }
 
+function renderPlanningRules() {
+  if (state.ruleRevisionId) {
+    const revision = state.rulePreview;
+    const usedForPlan = revision?.id === state.plan?.ruleRevisionId;
+    return `<div class="planning-rules-page"><div class="section-head"><div><h2>Saved rule version</h2><p>${usedForPlan ? `Used for the week of ${esc(state.weekStart)}.` : 'Saved recurring instructions.'}</p></div>${action('View current rules', 'plan-tab', 'rules')}</div>
+      ${state.rulePreviewError ? empty('Could not load this version', state.rulePreviewError) : revision ? `<article class="card" id="planning-rule-preview"><div class="card-head"><h3>Planning rules · version ${esc(revision.revision)}</h3><span class="muted tiny">Read only</span></div><p class="planning-text">${esc(revision.text || 'No recurring rules in this version.')}</p></article>` : empty('Loading this version', 'Opening the saved rules…')}</div>`;
+  }
+  if (!sectionStatus('mealPlanRules') || ['loading', 'unavailable'].includes(sectionStatus('mealPlanRules'))) return sectionContent('mealPlanRules', '');
+  const rules = state.mealPlanRules;
+  const ruleBody = rules
+    ? `<p class="muted tiny rule-version">Current · Version ${esc(rules.revision)}</p><p class="planning-text">${esc(rules.text || 'No recurring rules in this version.')}</p>`
+    : '<p class="muted planning-text">Describe your usual week in English: favourite meals, weekend prep, and how you use leftovers.</p>';
+  const history = state.ruleHistory === null ? '' : `<section id="planning-rule-history" aria-label="Rule history"><h3>Saved versions</h3>${state.ruleHistory.length ? state.ruleHistory.map((revision) => row(`Version ${revision.revision}${revision.id === rules?.id ? ' · Current' : ''}`, new Date(revision.createdAt).toLocaleString(), action(`View version ${revision.revision}`, 'view-rule-revision', revision.id))).join('') : '<p class="muted tiny">No versions saved yet.</p>'}</section>`;
+  return `<div class="planning-rules-page"><div class="section-head"><div><h2>Your usual week</h2><p>Recurring instructions for any week. Add one-time changes in the Plan tab’s weekly notes.</p></div></div>
+    ${card('Planning rules', '▦', ruleBody, `<div class="rule-actions">${action('Edit planning rules', 'edit-planning-rules', '', 'primary')}${action('View rule history', 'view-rule-history')}</div>`)}${history}</div>`;
+}
+
 function renderPlan() {
+  const tabs = `<div class="planning-tabs" role="tablist" aria-label="Weekly plan sections">${[['plan', 'Plan'], ['rules', 'Planning rules']].map(([id, name]) => `<button type="button" role="tab" id="planning-tab-${id}" aria-selected="${state.planTab === id}" aria-controls="planning-panel" tabindex="${state.planTab === id ? '0' : '-1'}" data-action="plan-tab" data-id="${id}">${name}</button>`).join('')}</div>`;
+  if (state.planTab === 'rules') return `${tabs}<section id="planning-panel" role="tabpanel" aria-labelledby="planning-tab-rules">${renderPlanningRules()}</section>`;
   const plan = state.plan;
   const schedule = state.schedule;
-  let html = `<div class="toolbar"><label class="field">Week of<input id="week-picker" type="date" value="${esc(state.weekStart)}" /></label><div style="display:flex;gap:8px;flex-wrap:wrap">${action('Edit weekly rhythm', 'edit-schedule')}${action('Add meal or prep', 'add-meal', '', 'primary')}</div></div>`;
-  if (!plan && !schedule) html += empty('This week is open', 'Add a meal or set your weekly rhythm to begin.');
+  const count = arr(plan?.entries).length;
+  let html = `<div class="toolbar plan-toolbar"><label class="field">Week of<input id="week-picker" type="date" value="${esc(state.weekStart)}" /></label><div class="plan-actions">${action('Edit weekly rhythm', 'edit-schedule')}${action('Add meal or prep', 'add-meal', '', 'primary')}</div></div>
+    <div class="plan-summary"><p>${esc(label(plan?.status || 'Draft'))} · ${count} ${count === 1 ? 'meal or prep task' : 'meals and prep tasks'}</p>${plan?.ruleRevision ? `<button type="button" class="text-button" id="plan-rule-source" data-action="view-rule-revision" data-id="${esc(plan.ruleRevision.id)}">Rules used: version ${esc(plan.ruleRevision.revision)}</button>` : ''}</div>
+    <div class="week-notes-row"><details id="week-notes"><summary>Notes for this week${schedule?.notes ? '<span class="notes-indicator">Added</span>' : ''}</summary><p class="planning-text">${esc(schedule?.notes || 'Add guests, ingredients to use, or other changes for this week.')}</p></details>${action('Edit notes', 'edit-week-notes')}</div>`;
+  if (!plan && !schedule) html += '<p class="muted tiny open-week">This week is open. Add a meal or set your weekly rhythm to begin.</p>';
   html += `<div class="week-grid">${DAYS.map((day, index) => {
     const date = dateForDay(state.weekStart, index);
     const rhythm = arr(schedule?.days).find((entry) => entry.day === day);
     const entries = arr(plan?.entries).filter((entry) => entry.date === date || (!entry.date && entry.day === day));
-    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(date)} · ${esc(rhythm?.mode || 'Flexible')}</span>${entries.length ? entries.map((entry) => `<div class="meal"><small>${esc(label(entry.slot || 'dinner'))}</small><strong>${esc(entry.meal || entry.title)}</strong><div style="margin-top:7px">${action('Edit', 'edit-meal', entry.id || `${day}:${entry.slot}`)} ${action('Remove', 'remove-meal', entry.id || `${day}:${entry.slot}`)}</div></div>`).join('') : '<p class="muted tiny">Nothing planned</p>'}<button class="button ghost small day-add" data-action="add-meal" data-id="${esc(date)}" aria-label="Add meal to ${day}">+ Add meal</button></div>`;
+    const displayDate = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(displayDate)} · ${esc(rhythm?.mode || 'Flexible')}</span>${entries.length ? entries.map((entry) => `<div class="meal"><small>${esc(label(entry.slot || 'dinner'))}</small><strong>${esc(entry.meal || entry.title)}</strong><div class="meal-actions">${action('Edit', 'edit-meal', entry.id || `${day}:${entry.slot}`)}${action('Remove', 'remove-meal', entry.id || `${day}:${entry.slot}`)}</div></div>`).join('') : '<p class="muted tiny">Nothing planned</p>'}<button class="button ghost small day-add" data-action="add-meal" data-id="${esc(date)}" aria-label="Add meal to ${day}">+ Add meal</button></div>`;
   }).join('')}</div>`;
-  html += `<div class="section-head"><div><h2>Plan details</h2><p>Manual changes save to the same household plan used in MCP.</p></div></div>`;
-  html += `<div class="card-grid">${card('Status', '▦', `<p class="metric">${esc(label(plan?.status || 'Draft'))}</p><p class="muted tiny">${plan ? `Week of ${esc(plan.weekStart)}` : 'No plan saved for this week'}</p>`)}${card('Meals and prep', '◇', `<p class="metric">${arr(plan?.entries).length}</p><p class="muted tiny">Entries in this week</p>`)}${card('Weekly rhythm', '◷', `<p class="metric">${arr(schedule?.days).length}/7</p><p class="muted tiny">Days with saved context</p>`)}</div>`;
-  return html;
+  return `${tabs}<section id="planning-panel" role="tabpanel" aria-labelledby="planning-tab-plan">${html}</section>`;
 }
 
 function recipeCategories(recipe) {
@@ -300,11 +474,63 @@ function renderRecipes() {
   return `<div class="toolbar"><span></span>${action('Add recipe', 'add-recipe', '', 'primary')}</div><div id="recipe-browser"></div>`;
 }
 
+function safePhotoUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.href : '';
+  } catch { return ''; }
+}
+
+function renderPantryPhotos() {
+  const photos = state.pantryPhotos;
+  let html = '<p class="muted tiny pantry-photo-intro">Compact copies of photos saved with ChatGPT pantry updates.</p>';
+  if (photos.length) {
+    html += `<div class="pantry-photo-list">${photos.map((photo) => {
+      const imageUrl = safePhotoUrl(photo.image_url);
+      const observations = arr(photo.observations);
+      const date = new Date(photo.created_at);
+      const dateLabel = Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleString();
+      const status = photo.status === 'applied' ? 'Added to pantry' : 'Saved for review';
+      return `<article class="card pantry-photo-card"><div class="pantry-photo-preview">${imageUrl ? `<img src="${esc(imageUrl)}" alt="Pantry photo saved ${esc(dateLabel)}" loading="lazy" />` : '<span>Photo preview unavailable</span>'}</div><div class="pantry-photo-details"><div class="pantry-photo-heading"><h3>${esc(dateLabel)}</h3><span class="pill">${status}</span></div><p class="muted tiny">${esc(Math.round((Number(photo.image_bytes) || 0) / 1024))} KB saved</p>${photo.note ? `<p>${esc(photo.note)}</p>` : ''}<h4>Items recorded</h4><ul>${observations.map((item) => `<li>${esc(item.name)}${item.quantity != null ? ` — ${esc(item.quantity)} ${esc(item.unit || '')}` : ''}</li>`).join('') || '<li>No items recorded.</li>'}</ul></div></article>`;
+    }).join('')}</div>`;
+  } else if (state.pantryPhotosLoading) html += '<div class="loading pantry-photo-loading" role="status"><div class="loader"></div><span>Loading pantry photos…</span></div>';
+  else if (!state.pantryPhotosError) html += '<p class="muted tiny pantry-photo-empty">No photos have been saved yet. Photos included with future ChatGPT pantry updates will appear here.</p>';
+  if (state.pantryPhotosError) html += `<div class="callout" role="alert"><b>Could not load pantry photos</b><p>${esc(state.pantryPhotosError)}</p>${action('Try again', photos.length ? 'load-older-pantry-photos' : 'load-pantry-photos')}</div>`;
+  if (photos.length && state.pantryPhotosHasMore && !state.pantryPhotosError) html += `<div class="pantry-photo-more">${state.pantryPhotosLoading ? '<p class="muted tiny" role="status">Loading older photos…</p>' : action('Load older photos', 'load-older-pantry-photos')}</div>`;
+  return html;
+}
+
+async function loadPantryPhotos(append = false) {
+  if (state.pantryPhotosLoading) return;
+  const request = ++state.pantryPhotosRequest;
+  const householdId = state.activeHouseholdId;
+  const offset = append ? state.pantryPhotos.length : 0;
+  state.pantryPhotosLoading = true;
+  state.pantryPhotosError = null;
+  if (!append) state.pantryPhotos = [];
+  if (state.view === 'pantry' && state.pantrySection === 'photos') render();
+  try {
+    const data = await api(`/api/pantry/evidence?limit=30&offset=${offset}`);
+    if (request !== state.pantryPhotosRequest || householdId !== state.activeHouseholdId) return;
+    state.pantryPhotos = append ? [...state.pantryPhotos, ...arr(data.items)] : arr(data.items);
+    state.pantryPhotosHasMore = !!data.hasMore;
+  } catch (error) {
+    if (request !== state.pantryPhotosRequest || householdId !== state.activeHouseholdId) return;
+    state.pantryPhotosError = error.message || 'Please try again.';
+  } finally {
+    if (request === state.pantryPhotosRequest) {
+      state.pantryPhotosLoading = false;
+      if (state.view === 'pantry' && state.pantrySection === 'photos') render();
+    }
+  }
+}
+
 function renderPantry() {
   const items = arr(section('pantry'));
   const query = state.pantrySearch.trim().toLocaleLowerCase();
   const matches = items.filter((item) => (state.pantryCategory === 'all' || (item.category || 'uncategorized') === state.pantryCategory) && item.name.toLocaleLowerCase().includes(query));
-  let html = `<div class="toolbar"><div><p class="muted tiny">Find what is on hand. Dates are entered by you.</p><input class="search" id="pantry-search" type="search" placeholder="Search pantry items" value="${esc(state.pantrySearch)}" aria-label="Search pantry items" /></div>${action('Add pantry item', 'add-pantry', '', 'primary')}</div>`;
+  let html = `<div class="toolbar pantry-toolbar"><div><p class="muted tiny">Find what is on hand. Dates are entered by you.</p><input class="search" id="pantry-search" type="search" placeholder="Search pantry items" value="${esc(state.pantrySearch)}" aria-label="Search pantry items" /></div><div class="pantry-toolbar-actions"><button type="button" class="pantry-photo-trigger" data-pantry-section="${state.pantrySection === 'photos' ? 'items' : 'photos'}" aria-expanded="${state.pantrySection === 'photos'}" aria-controls="pantry-photo-panel">${state.pantrySection === 'photos' ? 'Hide photo history' : 'Photo history'}</button>${action('Add pantry item', 'add-pantry', '', 'primary')}</div></div>`;
+  if (state.pantrySection === 'photos') html += `<section id="pantry-photo-panel" class="pantry-photo-panel" aria-label="Photo history"><h2>Photo history</h2>${renderPantryPhotos()}</section>`;
   if (sectionStatus('pantry') === 'unavailable') return html + empty('Pantry unavailable', 'Try refreshing this page.');
   html += `<div class="pantry-filters" role="group" aria-label="Pantry categories">${PANTRY_CATEGORIES.map(([value, title]) => `<button type="button" class="pantry-filter ${state.pantryCategory === value ? 'active' : ''}" data-pantry-category="${value}" aria-pressed="${state.pantryCategory === value}">${title} <span>${value === 'all' ? items.length : items.filter((item) => (item.category || 'uncategorized') === value).length}</span></button>`).join('')}</div>`;
   html += `<p class="muted tiny pantry-result-count" role="status">Showing ${matches.length} of ${items.length} items</p>`;
@@ -383,7 +609,7 @@ function renderSettings() {
       </form>
     </article>
     <article class="card"><div class="card-head"><h3>Dashboard cards</h3><span class="card-icon">▦</span></div>
-      <p class="muted tiny" style="margin-bottom:14px">Choose the cards and order shown on Overview and in the chat dashboard.</p>
+      <p class="muted tiny" style="margin-bottom:14px">Choose the cards and order under “More from your household” and in the chat dashboard.</p>
       <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save dashboard</button></form>
     </article>
   </div><div class="stack">
@@ -398,6 +624,16 @@ function render() {
   document.querySelector('#view-title').textContent = TITLES[state.view] || 'Overview';
   document.querySelector('#view-eyebrow').textContent = state.view === 'overview' ? 'Your household' : 'Meal Prep';
   document.querySelectorAll('[data-view]').forEach((button) => button.classList.toggle('active', button.dataset.view === state.view));
+  if (!state.snapshot) return;
+  const required = VIEW_SECTIONS[state.view] || [];
+  if (state.view !== 'overview' && required.some((name) => !sectionStatus(name) || sectionStatus(name) === 'loading')) {
+    content.innerHTML = `<div class="section-loading" role="status"><span class="loader"></span>Loading ${esc(TITLES[state.view].toLowerCase())}…</div>`;
+    return;
+  }
+  if (state.view !== 'overview' && required.some((name) => sectionStatus(name) === 'unavailable')) {
+    content.innerHTML = empty(`Could not load ${TITLES[state.view].toLowerCase()}`, 'Please try again.') + action('Try again', 'retry-view');
+    return;
+  }
   const views = { overview: renderOverview, plan: renderPlan, recipes: renderRecipes, pantry: renderPantry, shopping: renderShopping, reviews: renderReviews, settings: renderSettings, notifications: renderNotifications };
   content.innerHTML = views[state.view]?.() || renderOverview();
   const browserRoot = content.querySelector('#recipe-browser');
@@ -421,94 +657,41 @@ function recipeSearchParams(ui) {
 }
 
 function view(name, historyMode = 'push') {
+  if (name === 'pantry' && state.view !== 'pantry') state.pantrySection = 'items';
+  if (name === 'overview') state.weekStart = monday();
   state.view = name;
+  state.planTab = 'plan';
+  state.ruleRevisionId = null;
+  state.rulePreview = null;
+  state.rulePreviewError = null;
   state.recipe = null;
   state.shareUrl = null;
   state.shareId = null;
   writeRoute(historyMode);
-  render();
-
+  loadViewData().catch((error) => showToast(error.message));
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function openPantrySection(section) {
+  if (section !== 'items' && section !== 'photos') return;
+  state.pantrySection = section;
+  writeRoute();
+  render();
+  if (section === 'photos') loadPantryPhotos();
 }
 
 function field(name, title, value = '', options = {}) {
   if (options.choices) {
     const choices = options.choices.map((choice) => typeof choice === 'string' ? { value: choice, label: label(choice) } : choice);
-    const selected = choices.find((choice) => choice.value === value) || choices[0];
     const fieldId = `choice-${name}`;
     return `<div class="field ${options.wide ? 'wide' : ''}"><span id="${esc(fieldId)}-label">${esc(title)}</span>
-      <div class="choice-control" data-choice-control>
-        <input type="hidden" name="${esc(name)}" value="${esc(selected.value)}" />
-        <button class="choice-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="${esc(fieldId)}-label ${esc(fieldId)}-value">
-          <span id="${esc(fieldId)}-value" class="choice-value">${esc(selected.label)}</span><span class="choice-chevron" aria-hidden="true"></span>
-        </button>
-        <div class="choice-menu" role="listbox" aria-labelledby="${esc(fieldId)}-label" hidden>${choices.map((choice) => `<button class="choice-option" type="button" role="option" aria-selected="${choice.value === selected.value}" data-choice-value="${esc(choice.value)}"><span class="choice-option-label">${esc(choice.label)}</span><span class="choice-check" aria-hidden="true">✓</span></button>`).join('')}</div>
-      </div></div>`;
+      ${MealPrepChoices.markup({ name, value, choices, labelId: `${fieldId}-label` })}</div>`;
   }
   const input = options.type === 'textarea'
     ? `<textarea name="${esc(name)}" ${options.required ? 'required' : ''} placeholder="${esc(options.placeholder || '')}">${esc(value)}</textarea>`
     : `<input name="${esc(name)}" type="${esc(options.type || 'text')}" value="${esc(value)}" ${options.required ? 'required' : ''} ${options.min !== undefined ? `min="${options.min}"` : ''} ${options.max !== undefined ? `max="${options.max}"` : ''} ${options.step !== undefined ? `step="${options.step}"` : ''} placeholder="${esc(options.placeholder || '')}" />`;
   return `<label class="field ${options.wide ? 'wide' : ''}">${esc(title)}${input}</label>`;
 }
-
-function closeChoice(control, focusTrigger = false) {
-  control.querySelector('.choice-menu').hidden = true;
-  control.querySelector('.choice-trigger').setAttribute('aria-expanded', 'false');
-  control.classList.remove('open');
-  if (focusTrigger) control.querySelector('.choice-trigger').focus();
-}
-
-function openChoice(control, focusSelected = false) {
-  fields.querySelectorAll('[data-choice-control].open').forEach((other) => { if (other !== control) closeChoice(other); });
-  control.querySelector('.choice-menu').hidden = false;
-  control.querySelector('.choice-trigger').setAttribute('aria-expanded', 'true');
-  control.classList.add('open');
-  if (focusSelected) control.querySelector('[aria-selected="true"]')?.focus();
-}
-
-fields.addEventListener('click', (event) => {
-  const option = event.target.closest('.choice-option');
-  if (option) {
-    const control = option.closest('[data-choice-control]');
-    control.querySelector('input[type="hidden"]').value = option.dataset.choiceValue;
-    control.querySelector('.choice-value').textContent = option.querySelector('.choice-option-label').textContent;
-    control.querySelectorAll('.choice-option').forEach((candidate) => candidate.setAttribute('aria-selected', String(candidate === option)));
-    closeChoice(control, true);
-    return;
-  }
-  const trigger = event.target.closest('.choice-trigger');
-  if (!trigger) return;
-  const control = trigger.closest('[data-choice-control]');
-  if (control.classList.contains('open')) closeChoice(control);
-  else openChoice(control);
-});
-
-fields.addEventListener('keydown', (event) => {
-  const control = event.target.closest('[data-choice-control]');
-  if (!control) return;
-  const options = [...control.querySelectorAll('.choice-option')];
-  if (event.key === 'Escape' && control.classList.contains('open')) {
-    event.preventDefault();
-    event.stopPropagation();
-    closeChoice(control, true);
-  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    event.preventDefault();
-    if (!control.classList.contains('open')) openChoice(control);
-    const index = options.indexOf(document.activeElement);
-    const selectedIndex = options.findIndex((option) => option.getAttribute('aria-selected') === 'true');
-    const next = index < 0 ? selectedIndex : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
-    options[next]?.focus();
-  } else if (event.key === 'Home' || event.key === 'End') {
-    if (!control.classList.contains('open')) return;
-    event.preventDefault();
-    options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
-  }
-});
-
-document.addEventListener('click', (event) => {
-  if (event.target.closest('[data-choice-control]')) return;
-  fields.querySelectorAll('[data-choice-control].open').forEach((control) => closeChoice(control));
-});
 
 function openEditor(kind, item = null, selectedDate = null) {
   state.editor = { kind, item };
@@ -532,7 +715,13 @@ function openEditor(kind, item = null, selectedDate = null) {
     markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0.001, step: 'any' }) + field('unit', 'Unit', item?.unit) + field('store', 'Where do you generally buy this? (optional)', item?.store || '', { placeholder: 'Costco, Trader Joe’s…', wide: true }) + (item ? field('listName', 'List name', section('shoppingList')?.name || 'Weekly groceries', { wide: true }) : '');
   } else if (kind === 'schedule') {
     title = 'Weekly rhythm';
-    markup = field('weekStart', 'Week of', state.weekStart, { type: 'date', required: true, wide: true }) + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('');
+    markup = `<p class="muted tiny wide">Week of ${esc(state.weekStart)} · Set the pace for each day.</p>` + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('');
+  } else if (kind === 'week-notes') {
+    title = 'Notes for this week';
+    markup = `<p class="muted tiny wide">Week of ${esc(state.weekStart)} · Changes that apply only to this week.</p>` + field('notes', 'Guests, ingredients to use, or other changes', item?.notes || '', { type: 'textarea', wide: true, placeholder: 'Guests on Saturday; use the spinach left from last week.' });
+  } else if (kind === 'planning-rules') {
+    title = 'Planning rules';
+    markup = '<p class="muted tiny wide">Describe recurring meals, weekend prep, and leftovers in your own words. Each change saves a new version. Leave blank to clear the rules.</p>' + field('text', 'Your usual week', item?.text || '', { type: 'textarea', wide: true, placeholder: 'Saturday dinner is pasta. Bulk cook ambta baaji for Tuesday and Thursday. Rotate newly cooked recipes; leftovers are welcome.' });
   } else if (kind === 'weekly-review') {
     title = 'Review this week';
     markup = field('weekStart', 'Week of', state.weekStart || monday(), { type: 'date', required: true }) + field('feedbackType', 'How did it go?', 'worked_well', { choices: [{ value: 'worked_well', label: 'Worked well' }, { value: 'problem', label: 'Did not work' }, { value: 'change_next_time', label: 'Change next time' }] }) + field('note', 'What happened?', '', { type: 'textarea', required: true, wide: true, placeholder: 'For example, prepping vegetables on Sunday saved time.' }) + field('nextTime', 'Lesson learned or change for next time (optional)', '', { type: 'textarea', wide: true });
@@ -583,7 +772,11 @@ async function submitEditor(data) {
       await save('/api/shopping-list/items', 'POST', { item: updated, listId: list?.id || null });
     }
   } else if (kind === 'schedule') {
-    await save('/api/schedule', 'PUT', { weekStart: value('weekStart'), days: DAYS.map((day) => ({ day, mode: value(day) })), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
+    await save('/api/schedule', 'PUT', { weekStart: state.weekStart, days: DAYS.map((day) => ({ day, mode: value(day) })), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
+  } else if (kind === 'week-notes') {
+    await save('/api/schedule', 'PUT', { weekStart: state.weekStart, days: item?.days || DAYS.map((day) => ({ day, mode: 'flexible' })), notes: value('notes'), isNormalWeek: item?.is_normal_week ?? true, rememberRhythm: item?.remember_rhythm ?? true });
+  } else if (kind === 'planning-rules') {
+    await save('/api/meal-plan-rules', 'PUT', { text: value('text'), expectedRevision: item?.revision || 0 });
   } else if (kind === 'weekly-review') {
     await save('/api/feedback', 'POST', { weekStart: monday(`${value('weekStart')}T12:00:00`), feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: ['weekly-check-in'] });
   } else if (kind === 'feedback') {
@@ -599,6 +792,16 @@ async function submitEditor(data) {
 }
 
 async function handleAction(actionName, id) {
+  if (actionName === 'retry-section') { const request = loadSection(id, true); render(); return request; }
+  if (actionName === 'retry-view') return loadViewData(true);
+  if (actionName === 'today-recipe') {
+    state.view = 'recipes';
+    await loadRecipe(id);
+    writeRoute();
+    return render();
+  }
+  // Editors that link recipes fetch the library only when it is needed.
+  if (['add-meal', 'edit-meal', 'use-pantry', 'add-feedback'].includes(actionName)) await loadSection('recipes');
   const recipes = arr(section('recipes'));
   const pantry = arr(section('pantry'));
   const shopping = arr(section('shoppingList')?.items);
@@ -693,6 +896,8 @@ async function handleAction(actionName, id) {
     return refresh('Recipe archived.');
   }
   if (actionName === 'add-pantry') return openEditor('pantry');
+  if (actionName === 'load-pantry-photos') return loadPantryPhotos();
+  if (actionName === 'load-older-pantry-photos') return loadPantryPhotos(true);
   if (actionName === 'edit-pantry') return openEditor('pantry', pantry.find((item) => item.id === id));
   if (actionName === 'use-pantry') return openEditor('pantry-use', pantry.find((item) => item.id === id));
   if (actionName === 'add-meal') return openEditor('meal', null, id || state.weekStart);
@@ -715,6 +920,18 @@ async function handleAction(actionName, id) {
     return refresh('Grocery item removed.');
   }
   if (actionName === 'edit-schedule') return openEditor('schedule');
+  if (actionName === 'edit-week-notes') return openEditor('week-notes', state.schedule);
+  if (actionName === 'plan-tab') return openPlanTab(id);
+  if (actionName === 'view-rule-revision') return openPlanTab('rules', id);
+  if (actionName === 'edit-planning-rules') {
+    const result = await api('/api/meal-plan-rules');
+    state.mealPlanRules = result.rules;
+    return openEditor('planning-rules', result.rules);
+  }
+  if (actionName === 'view-rule-history') {
+    state.ruleHistory = arr((await api('/api/meal-plan-rules/history')).items);
+    return render();
+  }
   if (actionName === 'review-week') return openEditor('weekly-review');
   if (actionName === 'add-feedback') return openEditor('feedback', recipes.find((item) => item.id === id));
   if (actionName === 'add-memory') return openEditor('memory');
@@ -745,6 +962,8 @@ async function handleAction(actionName, id) {
 }
 
 document.addEventListener('click', async (event) => {
+  const pantrySection = event.target.closest('[data-pantry-section]');
+  if (pantrySection) return openPantrySection(pantrySection.dataset.pantrySection);
   const pantryFilter = event.target.closest('[data-pantry-category]');
   if (pantryFilter) { state.pantryCategory = pantryFilter.dataset.pantryCategory; render(); return; }
   const nav = event.target.closest('[data-view]');
@@ -757,6 +976,20 @@ document.addEventListener('click', async (event) => {
   try { await handleAction(button.dataset.action, button.dataset.id); }
   catch (error) { showToast(error.message || 'Something went wrong.'); }
   finally { if (button.dataset.action !== 'card-up' && button.dataset.action !== 'card-down') button.disabled = false; }
+});
+
+content.addEventListener('toggle', (event) => {
+  if (event.target.id !== 'household-dashboard' || state.dashboardExpanded === event.target.open) return;
+  state.dashboardExpanded = event.target.open;
+  if (state.dashboardExpanded) loadViewData().catch((error) => showToast(error.message));
+}, true);
+
+content.addEventListener('keydown', (event) => {
+  const tab = event.target.closest('[role="tab"]');
+  if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 'plan' : event.key === 'End' ? 'rules' : tab.dataset.id === 'plan' ? 'rules' : 'plan';
+  openPlanTab(next);
 });
 
 content.addEventListener('change', async (event) => {
@@ -841,21 +1074,25 @@ form.addEventListener('submit', async (event) => {
 document.querySelector('#refresh-button').addEventListener('click', () => refresh('Up to date.').catch((error) => showToast(error.message)));
 document.querySelector('#notifications-button').addEventListener('click', () => view('notifications'));
 document.querySelector('#account-button').addEventListener('click', () => view('settings'));
-householdSelect.addEventListener('change', async () => {
-  householdSelect.disabled = true;
+householdChoice.addEventListener('change', async () => {
+  MealPrepChoices.setDisabled(householdChoice.querySelector('[data-choice-control]'), true);
   try {
     await api(`/api/households/${encodeURIComponent(householdSelect.value)}/activate`, { method: 'POST' });
     recipeBrowser?.destroy(); recipeBrowser = null; state.browserUi = {};
     state.weekStart = null;
+    state.planTab = 'plan';
+    state.ruleRevisionId = null;
+    state.rulePreview = null;
+    state.rulePreviewError = null;
     state.recipe = null;
     state.shareUrl = null;
     state.shareId = null;
     writeRoute('replace');
     await refresh('Household switched.');
   } catch (error) {
-    householdSelect.value = state.activeHouseholdId || '';
+    MealPrepChoices.setValue(householdChoice.querySelector('[data-choice-control]'), state.activeHouseholdId || '');
     showToast(error.message);
-  } finally { householdSelect.disabled = false; }
+  } finally { MealPrepChoices.setDisabled(householdChoice.querySelector('[data-choice-control]'), false); }
 });
 
 async function start() {
@@ -864,6 +1101,9 @@ async function start() {
   recipeBrowser?.destroy(); recipeBrowser = null;
   state.browserUi = route.browserUi;
   state.weekStart = route.weekStart;
+  state.planTab = route.planTab;
+  state.ruleRevisionId = route.ruleRevisionId;
+  state.pantrySection = route.pantrySection;
   state.config = await fetch('/api/auth/config').then((response) => response.json());
   if (state.config.supabaseUrl && state.config.supabaseAnonKey) {
     if (!window.supabase?.createClient) throw new Error('Sign in is unavailable. Check your connection and reload.');
@@ -891,16 +1131,22 @@ window.addEventListener('popstate', async () => {
   state.view = route.view;
   recipeBrowser?.destroy(); recipeBrowser = null;
   state.browserUi = route.browserUi;
+  state.planTab = route.planTab;
+  state.ruleRevisionId = route.ruleRevisionId;
+  state.rulePreview = null;
+  state.rulePreviewError = null;
+  state.pantrySection = route.pantrySection;
   state.recipe = null;
   state.shareUrl = null;
   state.shareId = null;
   state.plan = section('mealPlan');
   state.schedule = section('schedule');
-  state.weekStart = route.weekStart || state.plan?.weekStart || state.schedule?.week_start || monday();
-  render();
+  state.weekStart = route.weekStart || monday();
   try {
-    if (route.weekStart) await loadWeek(route.weekStart);
+    await Promise.all([loadViewData(), ...(route.ruleRevisionId ? [loadRulePreview(route.ruleRevisionId)] : [])]);
+    render();
     if (route.recipeId) { await loadRecipe(route.recipeId); render(); }
+    if (route.view === 'pantry' && route.pantrySection === 'photos') await loadPantryPhotos();
   } catch (error) { showToast(error.message || 'Could not open this page.'); }
 });
 

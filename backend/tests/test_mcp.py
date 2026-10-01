@@ -1,3 +1,4 @@
+import re
 from copy import deepcopy
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,33 @@ from app.main import app
 
 HEADERS = {"Accept": "application/json, text/event-stream"}
 DEFAULT_DEMO_CONTEXT = deepcopy(DemoRepository._context)
+
+
+def test_mcp_recipe_dropdown_selection_records_use_and_rejects_missing_recipe(client):
+    def call(name, arguments, request_id):
+        return rpc(client, "tools/call", {"name": name, "arguments": arguments}, request_id)
+
+    recipe = call("save_recipe", {"recipe": {"title": "Dropdown test soup"}}, 910)["structuredContent"]
+    item = call("update_pantry_item", {"item": {"name": "Dropdown test lentils", "quantity": 1, "unit": "cup"}}, 911)["structuredContent"]
+    saved = call("record_pantry_use", {"item_id": item["id"], "quantity": 0.25, "recipe_id": recipe["id"]}, 912)["structuredContent"]
+    assert saved["recipeId"] == recipe["id"]
+    assert saved["recipeTitle"] == "Dropdown test soup"
+    assert saved["quantityRemaining"] == 0.75
+    rejected = call("record_pantry_use", {"item_id": item["id"], "quantity": 0.25, "recipe_id": "missing-recipe"}, 913)
+    assert rejected["isError"] is True
+    assert "Recipe was not found" in str(rejected["content"])
+    pantry = call("get_pantry", {}, 914)["structuredContent"]["items"]
+    assert next(row for row in pantry if row["id"] == item["id"])["quantity"] == 0.75
+
+
+def test_mcp_dropdown_assets_are_embedded_for_hosts_without_static_asset_access(client):
+    for uri in ("ui://meal-prep/onboarding-v2.html", "ui://meal-prep/household-dashboard-v4.html"):
+        html = rpc(client, "resources/read", {"uri": uri})["contents"][0]["text"]
+        assert '/static/choices.js' not in html
+        assert '/static/choices.css' not in html
+        markup = re.sub(r'<script\b[^>]*>.*?</script>', '', html, flags=re.S)
+        assert '<select' not in markup
+        assert 'window.MealPrepChoices =' in html
 
 
 def test_oauth_requests_only_identity_and_refresh_scopes():
@@ -97,6 +125,9 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "get_weekly_schedule",
         "save_weekly_schedule",
         "get_planning_context",
+        "get_meal_plan_rules",
+        "save_meal_plan_rules",
+        "get_meal_plan_rule_history",
         "get_feedback",
         "save_feedback",
         "get_what_worked",
@@ -321,6 +352,27 @@ def test_planning_context_returns_all_durable_inputs(client: TestClient):
     assert any(item["status"] == "confirmed" for item in context["memories"])
 
 
+def test_mcp_english_rules_history_and_plan_provenance(client: TestClient):
+    def call(name, arguments):
+        return rpc(client, "tools/call", {"name": name, "arguments": arguments})
+
+    current = call("get_meal_plan_rules", {})["structuredContent"]["rules"]
+    first = call("save_meal_plan_rules", {"text": "Saturday pasta; Monday uses its leftovers.",
+        "expected_revision": current["revision"] if current else 0})["structuredContent"]
+    saved = call("save_meal_plan", {"plan": {"weekStart": "2030-02-04", "ruleRevisionId": first["id"],
+        "entries": [{"date": "2030-02-04", "slot": "dinner", "meal": "Pasta leftovers"}]}})["structuredContent"]
+    assert saved["ruleRevision"]["text"] == first["text"]
+    second = call("save_meal_plan_rules", {"text": "Saturday stir-fry.", "expected_revision": first["revision"]})["structuredContent"]
+    stale = call("save_meal_plan_rules", {"text": "Stale changes", "expected_revision": first["revision"]})
+    assert stale["isError"] is True and "changed" in str(stale["content"])
+    history = call("get_meal_plan_rule_history", {})["structuredContent"]["items"]
+    assert history[:2] == [second, first]
+    context = call("get_planning_context", {"week_start": "2030-02-11"})["structuredContent"]
+    assert context["mealPlanRules"] == second
+    assert context["recentPlans"][0]["ruleRevision"] == first
+    assert call("get_meal_plan_rules", {"revision_id": first["id"]})["structuredContent"]["rules"] == first
+
+
 def test_demo_household_context_and_plan_render_are_structured(client: TestClient):
     context = rpc(
         client,
@@ -351,7 +403,7 @@ def test_household_snapshot_collects_chatgpt_ui_data_without_flattening_it_to_te
     assert rendered["kind"] == "household_snapshot"
     assert rendered["household"]["householdSize"] == 4
     assert set(rendered["sections"]) == {
-        "pantry", "recipes", "schedule", "feedback", "memories", "mealPlan", "shoppingList"
+        "pantry", "recipes", "schedule", "feedback", "memories", "mealPlan", "shoppingList", "mealPlanRules"
     }
     assert rendered["sections"]["pantry"]["status"] in {"ready", "empty", "unavailable"}
 
@@ -366,7 +418,7 @@ def test_recipe_library_is_served_as_a_visual_mcp_app(client: TestClient):
 
     assert rendered["kind"] == "recipe_library"
     assert rendered["count"] == len(rendered["recipes"])
-    assert rendered["recipes"][0]["title"] == "Paneer rice bowls"
+    assert any(recipe["title"] == "Paneer rice bowls" for recipe in rendered["recipes"])
 
     contents = rpc(
         client,

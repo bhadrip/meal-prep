@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/choices.css?v=1" />
+    <script src="/static/choices.js?v=1" defer></script>
     <style>
       :root {
         color-scheme: light dark;
@@ -360,7 +362,7 @@
         }).join('');
         const active = items.find((item) => String(item.id) === activePantryItemId);
         const recipes = asArray(sectionValue('recipes'));
-        const form = active ? `<form id="pantry-use-form" class="pantry-use-form"><strong>Use ${escapeHtml(active.name)}</strong><div class="pantry-use-fields"><label>Amount used (${escapeHtml(active.unit || 'units')})<input name="quantity" type="number" min="0.001" max="${escapeHtml(active.quantity)}" step="0.001" required autofocus></label><label>Recipe (optional)<select name="recipeId"><option value="">No recipe</option>${recipes.map((recipe) => `<option value="${escapeHtml(recipe.id)}">${escapeHtml(recipe.title)}</option>`).join('')}</select></label><label>Meal (optional)<input name="mealTitle" maxlength="180" placeholder="e.g. Tuesday dinner"></label></div><div class="pantry-use-actions"><button type="submit">Record use</button><button type="button" class="cancel" data-pantry-cancel>Cancel</button></div><p class="form-error" role="alert" hidden></p></form>` : '';
+        const form = active ? `<form id="pantry-use-form" class="pantry-use-form"><strong>Use ${escapeHtml(active.name)}</strong><div class="pantry-use-fields"><label>Amount used (${escapeHtml(active.unit || 'units')})<input name="quantity" type="number" min="0.001" max="${escapeHtml(active.quantity)}" step="0.001" required autofocus></label><div class="field"><span id="pantry-recipe-label">Recipe (optional)</span>${MealPrepChoices.markup({ name: 'recipeId', labelId: 'pantry-recipe-label', choices: [{ value: '', label: 'No recipe' }, ...recipes.map((recipe) => ({ value: recipe.id, label: recipe.title }))] })}</div><label>Meal (optional)<input name="mealTitle" maxlength="180" placeholder="e.g. Tuesday dinner"></label></div><div class="pantry-use-actions"><button type="submit">Record use</button><button type="button" class="cancel" data-pantry-cancel>Cancel</button></div><p class="form-error" role="alert" hidden></p></form>` : '';
         const body = `${browse}${pantryNotice ? `<p class="pantry-notice" role="status">${escapeHtml(pantryNotice)}</p>` : ''}${rows ? `<div class="compact-list">${rows}</div>` : `<div class="card-empty">${items.length ? 'No matching items.' : 'No pantry items saved yet.'}</div>`}${form}`;
         return cardShell('pantry', 'Pantry', 'P', body, `${items.length} item${items.length === 1 ? '' : 's'}`, true);
       }
@@ -587,9 +589,7 @@
                   <label class="field">People in the household<input name="householdSize" type="number" min="1" max="30" required value="${escapeHtml(household.householdSize || '')}"></label>
                   <label class="field">Dietary restrictions<input name="dietaryRestrictions" type="text" value="${escapeHtml(restrictions)}" placeholder="Enter none, or separate with commas" required></label>
                   <label class="field">Preferred stores, in order<input name="stores" type="text" value="${escapeHtml(stores)}" placeholder="Costco, Safeway" required></label>
-                  <label class="field">Maximum weeknight cooking time<select name="weeknightMaxMinutes">
-                    ${[15,20,25,30,45,60].map((minutes) => `<option value="${minutes}"${Number(preferences.weeknightMaxMinutes || 30) === minutes ? ' selected' : ''}>${minutes} minutes</option>`).join('')}
-                  </select></label>
+                  <div class="field"><span id="cooking-time-label">Maximum weeknight cooking time</span>${MealPrepChoices.markup({ name: 'weeknightMaxMinutes', labelId: 'cooking-time-label', value: preferences.weeknightMaxMinutes || 30, choices: [15,20,25,30,45,60].map((minutes) => ({ value: minutes, label: `${minutes} minutes` })) })}</div>
                 </div>
               </fieldset>
               <fieldset>
