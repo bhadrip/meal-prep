@@ -184,6 +184,13 @@ async def search_recipes(query: str = "", limit: int = 10, tag: str = "") -> dic
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_recipe_tags() -> dict[str, Any]:
+    """List existing tags and recipe counts for the active household; use these for tag suggestions."""
+    items = await services_for_request().food.list_recipe_tags()
+    return {"items": items, "count": len(items)}
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_recipe(recipe_id: str) -> dict[str, Any]:
     """Get one recipe by its UUID."""
     return await services_for_request().food.get_recipe(recipe_id)
@@ -415,8 +422,10 @@ async def render_household_snapshot() -> dict[str, Any]:
 )
 async def render_recipe_library(query: str = "", limit: int = 50, tag: str = "") -> dict[str, Any]:
     """Render saved recipes as a visual library; filter by a tag when requested."""
-    recipes = await services_for_request().food.search_recipes(query=query, limit=limit, tag=tag)
-    return {"kind": "recipe_library", "recipes": recipes, "query": query, "tag": tag, "count": len(recipes)}
+    service = services_for_request().food
+    recipes = await service.search_recipes(query=query, limit=limit, tag=tag)
+    tags = await service.list_recipe_tags()
+    return {"kind": "recipe_library", "recipes": recipes, "tags": tags, "query": query, "tag": tag, "count": len(recipes)}
 
 
 @mcp.tool(

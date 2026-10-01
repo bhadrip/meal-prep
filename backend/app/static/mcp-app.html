@@ -138,6 +138,8 @@
       .recipe-tag { padding:3px 6px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:.6rem; font-weight:700; }
       button.recipe-tag { color:var(--accent); padding:5px 8px; }
       button.recipe-tag.active { background:var(--accent); color:white; }
+      .recipe-tag-suggestions { display:flex; align-items:center; flex-wrap:wrap; gap:5px; }
+      .recipe-tag-suggestions > span { color:var(--muted); font-size:.67rem; }
       .recipe-detail { display:grid; gap:14px; }
       .recipe-back { justify-self:start; display:flex; align-items:center; gap:6px; padding:7px 10px; background:transparent; border:1px solid var(--line); color:CanvasText; font-size:.7rem; }
       .recipe-hero { display:grid; grid-template-columns:64px minmax(0,1fr); gap:13px; align-items:center; padding:14px; border:1px solid var(--line); border-radius:16px; background:var(--surface); }
@@ -248,6 +250,9 @@
       let requestId = 0;
       let householdSnapshot = null;
       let recipeLibrary = [];
+      let availableRecipeTags = [];
+      let recipeSearchTimer = null;
+      let recipeSearchSequence = 0;
       let activeRecipeTag = '';
       let shoppingList = null;
       let activePantryItemId = null;
@@ -396,10 +401,11 @@
       function renderRecipeLibrary(recipes, options = {}) {
         recipeLibrary = recipes;
         const title = options.title || 'Your recipes';
-        const allTags = [...new Set(recipes.flatMap((recipe) => asArray(recipe.tags)))].sort();
+        const allTags = availableRecipeTags.length ? availableRecipeTags : [...new Set(recipes.flatMap((recipe) => asArray(recipe.tags)))].sort();
         return `<section class="recipe-library">
           <div class="recipe-library-head"><div><h1>${escapeHtml(title)}</h1><p><span id="recipe-count">${recipes.length}</span> saved recipe${recipes.length === 1 ? '' : 's'} · select one to see the full recipe</p></div>
-          <label class="recipe-search"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" placeholder="Search recipes" aria-label="Search recipes"></label></div>
+          <label class="recipe-search"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" placeholder="Search recipes or tags" aria-label="Search recipes" value="${escapeHtml(options.query || '')}"></label></div>
+          <div id="recipe-tag-suggestions" class="recipe-tag-suggestions" role="group" aria-label="Suggested recipe tags"></div>
           ${allTags.length ? `<div class="recipe-tags" aria-label="Filter recipes by tag"><button class="recipe-tag ${activeRecipeTag ? '' : 'active'}" data-filter-recipe-tag="">All recipes</button>${allTags.map((tag) => `<button class="recipe-tag ${tag === activeRecipeTag ? 'active' : ''}" data-filter-recipe-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}</div>` : ''}
           <div id="recipe-results">${recipes.length ? renderRecipeCards(recipes) : '<div class="callout"><strong>No saved recipes yet</strong><p>Recipes you save will appear here as visual cards with ingredients and instructions.</p></div>'}</div>
         </section>`;
@@ -614,8 +620,11 @@
         }
         else if (data.kind === 'onboarding') root.innerHTML = renderOnboarding(data.household);
         else if (data.kind === 'recipe_library') {
+          clearTimeout(recipeSearchTimer);
+          recipeSearchSequence += 1;
           activeRecipeTag = data.tag || '';
-          root.innerHTML = renderRecipeLibrary(asArray(data.recipes));
+          availableRecipeTags = asArray(data.tags).map((item) => typeof item === 'string' ? item : item.tag).filter(Boolean);
+          root.innerHTML = renderRecipeLibrary(asArray(data.recipes), { query: data.query });
           updateRecipeResults();
         }
         else if (data.kind === 'feedback') {
@@ -660,6 +669,7 @@
           if (!root.querySelector('#recipe-results')) root.innerHTML = renderRecipeLibrary(recipeLibrary);
           root.querySelectorAll('[data-filter-recipe-tag]').forEach((button) => button.classList.toggle('active', button.dataset.filterRecipeTag === activeRecipeTag));
           updateRecipeResults();
+          await fetchRecipeResults();
           return;
         }
         const filter = event.target.closest('[data-pantry-category]');
@@ -742,6 +752,9 @@
 
       function updateRecipeResults() {
         const query = root.querySelector('#recipe-search')?.value.trim().toLowerCase() || '';
+        const suggested = availableRecipeTags.filter((tag) => query && tag.toLowerCase().includes(query)).slice(0, 6);
+        const suggestionBox = root.querySelector('#recipe-tag-suggestions');
+        if (suggestionBox) suggestionBox.innerHTML = suggested.length ? `<span>Matching saved tags</span>${suggested.map((tag) => `<button class="recipe-tag" data-filter-recipe-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}` : '';
         const matches = recipeLibrary.filter((recipe) => (!activeRecipeTag || asArray(recipe.tags).some((tag) => tag.toLowerCase() === activeRecipeTag.toLowerCase())) && [recipe.title, recipe.description, ...asArray(recipe.tags)].some((value) => String(value || '').toLowerCase().includes(query)));
         const results = root.querySelector('#recipe-results');
         const count = root.querySelector('#recipe-count');
@@ -749,9 +762,23 @@
         if (count) count.textContent = String(matches.length);
       }
 
+      async function fetchRecipeResults() {
+        const query = root.querySelector('#recipe-search')?.value.trim() || '';
+        const tag = activeRecipeTag;
+        const sequence = ++recipeSearchSequence;
+        try {
+          const result = await rpc('tools/call', { name: 'search_recipes', arguments: { query, tag, limit: 25 } });
+          if (sequence !== recipeSearchSequence || tag !== activeRecipeTag || query !== (root.querySelector('#recipe-search')?.value.trim() || '')) return;
+          recipeLibrary = asArray((result?.structuredContent || result)?.items);
+          updateRecipeResults();
+        } catch { /* Keep the currently visible results if search is unavailable. */ }
+      }
+
       root.addEventListener('input', (event) => {
         if (!event.target.matches('#recipe-search')) return;
         updateRecipeResults();
+        clearTimeout(recipeSearchTimer);
+        recipeSearchTimer = setTimeout(fetchRecipeResults, 250);
       });
 
       root.addEventListener('change', async (event) => {

@@ -23,7 +23,13 @@ async def test_recipe_tags_are_normalized_and_filter_exactly():
     assert sick["tags"] == ["sickness-friendly", "guest-friendly"]
     assert [item["title"] for item in await service.search_recipes(tag="SICKNESS-FRIENDLY")] == ["Ginger soup"]
     assert [item["title"] for item in await service.search_recipes(query="sickness-friendly")] == ["Ginger soup"]
+    assert [item["title"] for item in await service.search_recipes(query="sick")] == ["Ginger soup"]
     assert await service.search_recipes(tag="sickness") == []
+    assert await service.list_recipe_tags() == [
+        {"tag": "guest-friendly", "recipe_count": 2},
+        {"tag": "sickness-friendly", "recipe_count": 1},
+    ]
+    assert await service.search_recipes(query="invented-tag") == []
     with pytest.raises(ApplicationError, match="recipe tags must be nonempty"):
         await service.save_recipe({"title": "Invalid", "tags": [" "]})
     assert await service.search_recipes(query="Invalid") == []

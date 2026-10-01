@@ -42,9 +42,17 @@ async def test_local_supabase_week_plan_and_rhythm_roundtrip():
 
             saved_recipe = await repository.save_recipe({"title": "Ginger rasam", "tags": ["sickness-friendly", "rasam"]})
             assert saved_recipe["tags"] == ["sickness-friendly", "rasam"]
+            await repository.request("POST", "recipes", json=[
+                {"id": str(uuid4()), "household_id": household_id, "title": f"Filler recipe {index}"}
+                for index in range(26)
+            ])
+            assert saved_recipe["id"] not in [item["id"] for item in await repository.search_recipes(limit=25)]
             assert [item["id"] for item in await repository.search_recipes(tag="sickness-friendly")] == [saved_recipe["id"]]
             assert [item["id"] for item in await repository.search_recipes(query="rasam")] == [saved_recipe["id"]]
+            assert [item["id"] for item in await repository.search_recipes(query="sick")] == [saved_recipe["id"]]
+            assert {item["tag"] for item in await repository.list_recipe_tags()} == {"sickness-friendly", "rasam"}
             assert await repository.search_recipes(tag="guest-friendly") == []
+            assert await repository.search_recipes(query="not-a-real-tag") == []
 
             first_week = "2030-02-04"
             second_week = "2030-02-11"
