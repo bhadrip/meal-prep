@@ -229,14 +229,14 @@ async def copy_shared_recipe(token: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_pantry() -> dict[str, Any]:
-    """Return pantry items with quantity confidence and freshness basis."""
+    """Return pantry items with category, quantity confidence, and freshness basis. Categories are fruits, vegetables, snacks, frozen, dry_goods, condiments, and uncategorized."""
     items = await services_for_request().food.get_pantry()
     return {"items": items, "count": len(items)}
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def update_pantry_item(item: dict[str, Any]) -> dict[str, Any]:
-    """Create or update one pantry item. Never invent an exact expiry date."""
+    """Create or update one pantry item. Set category to fruits, vegetables, snacks, frozen, dry_goods, condiments, or uncategorized when known; unclear items remain uncategorized. Never invent an exact expiry date."""
     return await services_for_request().food.update_pantry_item(item)
 
 

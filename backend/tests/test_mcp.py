@@ -47,6 +47,26 @@ def test_http_surface_serves_website_and_mcp(client: TestClient):
     assert client.get("/invite").status_code == 200
 
 
+def test_pantry_categories_roundtrip_through_mcp_and_snapshot(client: TestClient):
+    def call(name, arguments, request_id):
+        return rpc(client, "tools/call", {"name": name, "arguments": arguments}, request_id=request_id)
+
+    chili = call("update_pantry_item", {"item": {"name": "Chili oil", "quantity": 1}}, 801)["structuredContent"]
+    mystery = call("update_pantry_item", {"item": {"name": "Mystery tin", "quantity": 1}}, 802)["structuredContent"]
+    assert chili["category"] == "condiments"
+    assert mystery["category"] == "uncategorized"
+    changed = call("update_pantry_item", {"item": {"id": mystery["id"], "name": "Mystery tin", "category": "snacks", "quantity": 1}}, 803)["structuredContent"]
+    assert changed["category"] == "snacks"
+    invalid = call("update_pantry_item", {"item": {"id": chili["id"], "name": "Chili oil", "category": "anything"}}, 804)
+    assert invalid["isError"] is True
+    assert "Invalid pantry category" in str(invalid["content"])
+    items = call("get_pantry", {}, 805)["structuredContent"]["items"]
+    assert {item["id"]: item["category"] for item in items}[chili["id"]] == "condiments"
+    assert {item["id"]: item["category"] for item in items}[mystery["id"]] == "snacks"
+    snapshot = call("render_household_snapshot", {}, 806)["structuredContent"]
+    assert any(item["id"] == mystery["id"] and item["category"] == "snacks" for item in snapshot["sections"]["pantry"]["value"])
+
+
 def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
     initialized = rpc(
         client,

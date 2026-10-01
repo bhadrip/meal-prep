@@ -99,6 +99,30 @@ test('MCP pantry use updates the remaining amount', async ({ page }) => {
   });
 });
 
+test('MCP pantry category filters and search narrow the saved inventory', async ({ page }) => {
+  const frame = await host(page);
+  await show(page, { kind: 'household_snapshot', household: { householdName: 'Test kitchen' }, sections: {
+    pantry: { status: 'ready', value: [
+      { id: 'chili-1', name: 'Chili oil', category: 'condiments', quantity: 1, unit: 'jar' },
+      { id: 'apple-1', name: 'Apples', category: 'fruits', quantity: 3, unit: 'each' },
+      { id: 'mystery-1', name: 'Mystery tin', category: 'uncategorized', quantity: 1, unit: 'tin' },
+    ] },
+  } });
+  const card = frame.locator('[data-card-id="pantry"]');
+  await card.locator('[data-pantry-category="condiments"]').click();
+  await expect(card.locator('.pantry-row')).toHaveCount(1);
+  await expect(card.locator('.pantry-row')).toContainText('Chili oil');
+  await card.locator('[data-pantry-category="uncategorized"]').click();
+  await expect(card.locator('.pantry-row')).toContainText('Mystery tin');
+  await card.locator('[data-pantry-category="all"]').click();
+  await card.locator('#mcp-pantry-search').fill('apple');
+  await expect(card.locator('.pantry-row')).toHaveCount(1);
+  await expect(card.locator('.pantry-row')).toContainText('Apples');
+  await card.locator('#mcp-pantry-search').fill('missing');
+  await expect(card.locator('.pantry-row')).toHaveCount(0);
+  await expect(card).toContainText('No matching items.');
+});
+
 test('MCP onboarding and recipe library actions', async ({ page }) => {
   const frame = await host(page);
   await show(page, { kind: 'onboarding', household: {} });

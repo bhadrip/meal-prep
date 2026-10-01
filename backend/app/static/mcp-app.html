@@ -96,6 +96,12 @@
       .pantry-use-actions { display:flex; align-items:center; gap:8px; }
       .pantry-use-actions .cancel { background:transparent; color:CanvasText; border:1px solid var(--line); }
       .pantry-notice { color:var(--accent); font-size:.72rem; }
+      .pantry-browse { display:grid; gap:8px; margin-bottom:12px; }
+      .pantry-browse input { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:Canvas; color:CanvasText; }
+      .pantry-filters { display:flex; gap:5px; overflow-x:auto; padding-bottom:3px; }
+      .pantry-filters button { flex:0 0 auto; border:1px solid var(--line); border-radius:99px; background:var(--surface); color:CanvasText; padding:5px 9px; font-size:.68rem; }
+      .pantry-filters button[aria-pressed="true"] { background:var(--accent); color:white; border-color:var(--accent); }
+      .pantry-category { display:block; color:var(--muted); font-size:.68rem; }
       @media (max-width:600px) { .pantry-use-fields { grid-template-columns:1fr; } }
       .week-grid { display:grid; grid-template-columns:repeat(7,minmax(70px,1fr)); gap:6px; overflow-x:auto; }
       .week-day { min-width:70px; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
@@ -246,6 +252,9 @@
       let shoppingList = null;
       let activePantryItemId = null;
       let pantryNotice = '';
+      let pantryCategory = 'all';
+      let pantrySearch = '';
+      const pantryCategories = [['all', 'All items'], ['fruits', 'Fruits'], ['vegetables', 'Vegetables'], ['snacks', 'Snacks'], ['frozen', 'Frozen'], ['dry_goods', 'Dry goods'], ['condiments', 'Condiments'], ['uncategorized', 'Uncategorized']];
       const pending = new Map();
       const escapeHtml = (value) => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
       const pick = (object, ...keys) => keys.map((key) => object?.[key]).find((value) => value !== undefined && value !== null);
@@ -331,16 +340,18 @@
       function renderPantryCard() {
         if (sectionStatus('pantry') === 'unavailable') return cardShell('pantry', 'Pantry', 'P', unavailableCard('Pantry'));
         const items = asArray(sectionValue('pantry'));
-        const rows = items.map((item) => {
+        const shown = items.filter((item) => (pantryCategory === 'all' || (item.category || 'uncategorized') === pantryCategory) && item.name.toLocaleLowerCase().includes(pantrySearch.trim().toLocaleLowerCase()));
+        const browse = `<div class="pantry-browse"><input type="search" id="mcp-pantry-search" aria-label="Search pantry items" placeholder="Search pantry items" value="${escapeHtml(pantrySearch)}"><div class="pantry-filters" role="group" aria-label="Pantry categories">${pantryCategories.map(([value, title]) => `<button type="button" data-pantry-category="${value}" aria-pressed="${pantryCategory === value}">${title} ${value === 'all' ? items.length : items.filter((item) => (item.category || 'uncategorized') === value).length}</button>`).join('')}</div><small role="status">Showing ${shown.length} of ${items.length} items</small></div>`;
+        const rows = shown.map((item) => {
           const quantity = item.quantity === null || item.quantity === undefined ? null : Number(item.quantity);
           const reference = Number(item.reference_quantity);
           const meter = quantity !== null && reference > 0 ? `<div class="pantry-meter" role="meter" aria-label="${escapeHtml(item.name)} remaining compared with tracked amount" aria-valuenow="${Math.round(Math.max(0, Math.min(1, quantity / reference)) * 100)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${Math.round(Math.max(0, Math.min(1, quantity / reference)) * 100)}%"></span></div>` : '';
-          return `<div class="compact-row pantry-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.storage_location || item.storageLocation || 'Pantry')} · ${escapeHtml(item.quantity_confidence || item.quantityConfidence || 'quantity not verified')}</small>${meter}</div><div class="pantry-amount"><span class="row-meta">${quantity === null ? 'Amount unknown' : `${escapeHtml(quantity)} ${escapeHtml(item.unit || '')} left`}</span><button type="button" data-pantry-use="${escapeHtml(item.id)}" ${quantity === null || quantity <= 0 ? 'disabled' : ''}>Use</button></div></div>`;
+          return `<div class="compact-row pantry-row"><div><strong>${escapeHtml(item.name)}</strong><small class="pantry-category">${escapeHtml(pantryCategories.find(([value]) => value === (item.category || 'uncategorized'))?.[1] || 'Uncategorized')}</small><small>${escapeHtml(item.storage_location || item.storageLocation || 'Pantry')} · ${escapeHtml(item.quantity_confidence || item.quantityConfidence || 'quantity not verified')}</small>${meter}</div><div class="pantry-amount"><span class="row-meta">${quantity === null ? 'Amount unknown' : `${escapeHtml(quantity)} ${escapeHtml(item.unit || '')} left`}</span><button type="button" data-pantry-use="${escapeHtml(item.id)}" ${quantity === null || quantity <= 0 ? 'disabled' : ''}>Use</button></div></div>`;
         }).join('');
         const active = items.find((item) => String(item.id) === activePantryItemId);
         const recipes = asArray(sectionValue('recipes'));
         const form = active ? `<form id="pantry-use-form" class="pantry-use-form"><strong>Use ${escapeHtml(active.name)}</strong><div class="pantry-use-fields"><label>Amount used (${escapeHtml(active.unit || 'units')})<input name="quantity" type="number" min="0.001" max="${escapeHtml(active.quantity)}" step="0.001" required autofocus></label><label>Recipe (optional)<select name="recipeId"><option value="">No recipe</option>${recipes.map((recipe) => `<option value="${escapeHtml(recipe.id)}">${escapeHtml(recipe.title)}</option>`).join('')}</select></label><label>Meal (optional)<input name="mealTitle" maxlength="180" placeholder="e.g. Tuesday dinner"></label></div><div class="pantry-use-actions"><button type="submit">Record use</button><button type="button" class="cancel" data-pantry-cancel>Cancel</button></div><p class="form-error" role="alert" hidden></p></form>` : '';
-        const body = `${pantryNotice ? `<p class="pantry-notice" role="status">${escapeHtml(pantryNotice)}</p>` : ''}${rows ? `<div class="compact-list">${rows}</div>` : '<div class="card-empty">No pantry items saved yet.</div>'}${form}`;
+        const body = `${browse}${pantryNotice ? `<p class="pantry-notice" role="status">${escapeHtml(pantryNotice)}</p>` : ''}${rows ? `<div class="compact-list">${rows}</div>` : `<div class="card-empty">${items.length ? 'No matching items.' : 'No pantry items saved yet.'}</div>`}${form}`;
         return cardShell('pantry', 'Pantry', 'P', body, `${items.length} item${items.length === 1 ? '' : 's'}`, true);
       }
 
@@ -632,6 +643,16 @@
         if (message.method === 'ui/notifications/tool-result') applyResult(message.params);
       }, { passive: true });
 
+      root.addEventListener('input', (event) => {
+        if (event.target.id !== 'mcp-pantry-search') return;
+        const start = event.target.selectionStart;
+        pantrySearch = event.target.value;
+        renderHouseholdSnapshot();
+        const input = root.querySelector('#mcp-pantry-search');
+        input?.focus();
+        input?.setSelectionRange(start, start);
+      });
+
       root.addEventListener('click', async (event) => {
         const recipeTag = event.target.closest('[data-filter-recipe-tag]');
         if (recipeTag) {
@@ -641,6 +662,8 @@
           updateRecipeResults();
           return;
         }
+        const filter = event.target.closest('[data-pantry-category]');
+        if (filter) { pantryCategory = filter.dataset.pantryCategory; renderHouseholdSnapshot(); return; }
         const usePantry = event.target.closest('[data-pantry-use]');
         if (usePantry) {
           activePantryItemId = usePantry.dataset.pantryUse;
