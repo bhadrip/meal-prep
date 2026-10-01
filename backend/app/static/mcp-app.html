@@ -84,6 +84,19 @@
       .compact-row strong { overflow:hidden; font-size:.77rem; text-overflow:ellipsis; white-space:nowrap; }
       .compact-row small { margin-top:2px; color:var(--muted); font-size:.67rem; }
       .row-meta { color:var(--muted); font-size:.68rem; white-space:nowrap; }
+      .pantry-row { grid-template-columns:minmax(0,1fr) auto; }
+      .pantry-amount { display:flex; align-items:center; gap:8px; }
+      .pantry-amount button { padding:5px 9px; font-size:.68rem; }
+      .pantry-meter { width:min(160px,100%); height:8px; margin-top:6px; border-radius:99px; background:var(--line); overflow:hidden; }
+      .pantry-meter span { display:block; height:100%; background:var(--accent); }
+      .pantry-use-form { display:grid; gap:8px; padding:11px; border:1px solid var(--line); border-radius:11px; background:var(--surface); }
+      .pantry-use-fields { display:grid; grid-template-columns:1fr 1.4fr 1.4fr; gap:8px; }
+      .pantry-use-form label { display:grid; grid-template-columns:1fr; gap:4px; font-size:.7rem; color:var(--muted); }
+      .pantry-use-form input,.pantry-use-form select { min-width:0; width:100%; padding:7px 8px; border:1px solid var(--line); border-radius:8px; background:Canvas; color:CanvasText; }
+      .pantry-use-actions { display:flex; align-items:center; gap:8px; }
+      .pantry-use-actions .cancel { background:transparent; color:CanvasText; border:1px solid var(--line); }
+      .pantry-notice { color:var(--accent); font-size:.72rem; }
+      @media (max-width:600px) { .pantry-use-fields { grid-template-columns:1fr; } }
       .week-grid { display:grid; grid-template-columns:repeat(7,minmax(70px,1fr)); gap:6px; overflow-x:auto; }
       .week-day { min-width:70px; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
       .week-day strong,.week-day small { display:block; }
@@ -228,6 +241,8 @@
       let householdSnapshot = null;
       let recipeLibrary = [];
       let shoppingList = null;
+      let activePantryItemId = null;
+      let pantryNotice = '';
       const pending = new Map();
       const escapeHtml = (value) => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
       const pick = (object, ...keys) => keys.map((key) => object?.[key]).find((value) => value !== undefined && value !== null);
@@ -313,9 +328,17 @@
       function renderPantryCard() {
         if (sectionStatus('pantry') === 'unavailable') return cardShell('pantry', 'Pantry', 'P', unavailableCard('Pantry'));
         const items = asArray(sectionValue('pantry'));
-        const rows = items.slice(0, 8).map((item) => `<div class="compact-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.storage_location || item.storageLocation || 'Pantry')} · ${escapeHtml(item.quantity_confidence || item.quantityConfidence || 'quantity not verified')}</small></div><span class="row-meta">${escapeHtml(item.quantity || '')} ${escapeHtml(item.unit || '')}</span></div>`).join('');
-        const body = rows ? `<div class="compact-list">${rows}</div>` : '<div class="card-empty">No pantry items saved yet.</div>';
-        return cardShell('pantry', 'Pantry', 'P', body, `${items.length} item${items.length === 1 ? '' : 's'}`);
+        const rows = items.map((item) => {
+          const quantity = item.quantity === null || item.quantity === undefined ? null : Number(item.quantity);
+          const reference = Number(item.reference_quantity);
+          const meter = quantity !== null && reference > 0 ? `<div class="pantry-meter" role="meter" aria-label="${escapeHtml(item.name)} remaining compared with tracked amount" aria-valuenow="${Math.round(Math.max(0, Math.min(1, quantity / reference)) * 100)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${Math.round(Math.max(0, Math.min(1, quantity / reference)) * 100)}%"></span></div>` : '';
+          return `<div class="compact-row pantry-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.storage_location || item.storageLocation || 'Pantry')} · ${escapeHtml(item.quantity_confidence || item.quantityConfidence || 'quantity not verified')}</small>${meter}</div><div class="pantry-amount"><span class="row-meta">${quantity === null ? 'Amount unknown' : `${escapeHtml(quantity)} ${escapeHtml(item.unit || '')} left`}</span><button type="button" data-pantry-use="${escapeHtml(item.id)}" ${quantity === null || quantity <= 0 ? 'disabled' : ''}>Use</button></div></div>`;
+        }).join('');
+        const active = items.find((item) => String(item.id) === activePantryItemId);
+        const recipes = asArray(sectionValue('recipes'));
+        const form = active ? `<form id="pantry-use-form" class="pantry-use-form"><strong>Use ${escapeHtml(active.name)}</strong><div class="pantry-use-fields"><label>Amount used (${escapeHtml(active.unit || 'units')})<input name="quantity" type="number" min="0.001" max="${escapeHtml(active.quantity)}" step="0.001" required autofocus></label><label>Recipe (optional)<select name="recipeId"><option value="">No recipe</option>${recipes.map((recipe) => `<option value="${escapeHtml(recipe.id)}">${escapeHtml(recipe.title)}</option>`).join('')}</select></label><label>Meal (optional)<input name="mealTitle" maxlength="180" placeholder="e.g. Tuesday dinner"></label></div><div class="pantry-use-actions"><button type="submit">Record use</button><button type="button" class="cancel" data-pantry-cancel>Cancel</button></div><p class="form-error" role="alert" hidden></p></form>` : '';
+        const body = `${pantryNotice ? `<p class="pantry-notice" role="status">${escapeHtml(pantryNotice)}</p>` : ''}${rows ? `<div class="compact-list">${rows}</div>` : '<div class="card-empty">No pantry items saved yet.</div>'}${form}`;
+        return cardShell('pantry', 'Pantry', 'P', body, `${items.length} item${items.length === 1 ? '' : 's'}`, true);
       }
 
       function recipeTime(recipe) {
@@ -568,7 +591,11 @@
       function applyResult(result) {
         const data = result?.structuredContent || result;
         if (!data) return;
-        if (data.kind === 'household_snapshot') renderHouseholdSnapshot(data);
+        if (data.kind === 'household_snapshot') {
+          activePantryItemId = null;
+          pantryNotice = '';
+          renderHouseholdSnapshot(data);
+        }
         else if (data.kind === 'onboarding') root.innerHTML = renderOnboarding(data.household);
         else if (data.kind === 'recipe_library') root.innerHTML = renderRecipeLibrary(asArray(data.recipes));
         else if (data.kind === 'feedback') {
@@ -597,6 +624,19 @@
       }, { passive: true });
 
       root.addEventListener('click', async (event) => {
+        const usePantry = event.target.closest('[data-pantry-use]');
+        if (usePantry) {
+          activePantryItemId = usePantry.dataset.pantryUse;
+          pantryNotice = '';
+          renderHouseholdSnapshot();
+          root.querySelector('#pantry-use-form input[name="quantity"]')?.focus();
+          return;
+        }
+        if (event.target.closest('[data-pantry-cancel]')) {
+          activePantryItemId = null;
+          renderHouseholdSnapshot();
+          return;
+        }
         const createShare = event.target.closest('[data-create-recipe-share]');
         if (createShare) {
           createShare.disabled = true;
@@ -680,6 +720,38 @@
       });
 
       root.addEventListener('submit', async (event) => {
+        if (event.target.matches('#pantry-use-form')) {
+          event.preventDefault();
+          const formElement = event.target;
+          const form = new FormData(formElement);
+          const submit = formElement.querySelector('button[type="submit"]');
+          const error = formElement.querySelector('.form-error');
+          submit.disabled = true;
+          error.hidden = true;
+          try {
+            const result = await rpc('tools/call', {
+              name: 'record_pantry_use',
+              arguments: {
+                item_id: activePantryItemId,
+                quantity: Number(form.get('quantity')),
+                recipe_id: String(form.get('recipeId') || '') || null,
+                meal_title: String(form.get('mealTitle') || '').trim() || null,
+              },
+            });
+            if (result?.isError) throw new Error(result.content?.find((entry) => entry.type === 'text')?.text || 'Could not record use.');
+            const use = result?.structuredContent || result;
+            const pantry = householdSnapshot?.sections?.pantry;
+            if (pantry) pantry.value = asArray(pantry.value).map((item) => item.id === use.itemId ? use.item : item);
+            pantryNotice = `${use.name}: ${use.quantityBefore} → ${use.quantityRemaining} ${use.unit || ''} remaining${use.recipeTitle ? ` · ${use.recipeTitle}` : use.mealTitle ? ` · ${use.mealTitle}` : ''}`;
+            activePantryItemId = null;
+            renderHouseholdSnapshot();
+          } catch (reason) {
+            error.textContent = reason?.message || 'Could not record use. Please try again.';
+            error.hidden = false;
+            submit.disabled = false;
+          }
+          return;
+        }
         if (event.target.matches('#shopping-add-form')) {
           event.preventDefault();
           const formElement = event.target;

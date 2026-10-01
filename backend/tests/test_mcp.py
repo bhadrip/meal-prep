@@ -81,11 +81,20 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         "get_pantry_evidence",
         "apply_pantry_evidence",
         "render_pantry_evidence",
+        "record_pantry_use",
     }.issubset(names)
     assert {"get_latest_retro", "get_weekly_retro", "save_weekly_retro"}.isdisjoint(names)
     add_tool = next(tool for tool in tools if tool["name"] == "add_shopping_item")
     assert "list_id" in add_tool["inputSchema"]["properties"]
     assert add_tool["annotations"]["idempotentHint"] is False
+    use_tool = next(tool for tool in tools if tool["name"] == "record_pantry_use")
+    assert use_tool["annotations"]["idempotentHint"] is False
+    assert {"item_id", "quantity"}.issubset(use_tool["inputSchema"]["required"])
+
+    contents = rpc(client, "resources/read", {"uri": "ui://meal-prep/household-dashboard-v4.html"})["contents"]
+    html = contents[0]["text"]
+    assert 'id="pantry-use-form"' in html
+    assert "pantry-meter" in html
     render_uris = {
         tool["name"]: tool["_meta"]["ui"]["resourceUri"]
         for tool in tools

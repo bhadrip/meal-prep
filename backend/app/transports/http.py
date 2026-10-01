@@ -188,6 +188,13 @@ async def update_pantry_item(item: dict[str, Any], services: WebServices) -> dic
     return await services.food.update_pantry_item(item)
 
 
+@router.post("/api/pantry/use")
+async def record_pantry_use(use: dict[str, Any], services: WebServices) -> dict:
+    return await services.food.record_pantry_use(
+        use.get("itemId"), use.get("quantity"), use.get("recipeId"), use.get("mealTitle"),
+    )
+
+
 @router.get("/api/meal-plan")
 async def get_meal_plan(services: WebServices, week_start: str | None = None) -> dict:
     return {"plan": await services.planning.get_meal_plan(week_start)}

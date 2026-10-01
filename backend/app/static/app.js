@@ -260,7 +260,13 @@ function renderPantry() {
   let html = `<div class="toolbar"><p class="muted tiny">Track what is actually on hand. Dates are entered by you.</p>${action('Add pantry item', 'add-pantry', '', 'primary')}</div>`;
   if (sectionStatus('pantry') === 'unavailable') return html + empty('Pantry unavailable', 'Try refreshing this page.');
   if (!items.length) return html + empty('Your pantry is empty', 'Add food you want to keep track of.');
-  html += `<div class="card table-card"><div class="table-row header"><span>Item</span><span>Quantity</span><span>Location</span><span>Use by</span><span></span></div>${items.map((item) => `<div class="table-row"><strong>${esc(item.name)}</strong><span class="tiny">${esc(item.quantity ?? '—')} ${esc(item.unit || '')}</span><span class="tiny">${esc(label(pick(item, 'storage_location', 'storageLocation') || 'pantry'))}</span><span class="tiny">${esc(pick(item, 'use_by_date', 'useByDate') || '—')}</span>${action('Edit', 'edit-pantry', item.id)}</div>`).join('')}</div>`;
+  html += `<div class="card table-card"><div class="table-row header"><span>Item</span><span>Remaining</span><span>Location</span><span>Use by</span><span></span></div>${items.map((item) => {
+    const quantity = item.quantity === null || item.quantity === undefined ? null : Number(item.quantity);
+    const reference = Number(item.reference_quantity);
+    const fraction = quantity !== null && reference > 0 ? Math.round(Math.max(0, Math.min(1, quantity / reference)) * 100) : null;
+    const meter = fraction === null ? '' : `<div class="pantry-stock" role="meter" aria-label="${esc(item.name)} remaining compared with tracked amount" aria-valuenow="${fraction}" aria-valuemin="0" aria-valuemax="100"><span style="width:${fraction}%"></span></div>`;
+    return `<div class="table-row"><strong>${esc(item.name)}</strong><div class="pantry-quantity"><span class="tiny">${quantity === null ? 'Amount unknown' : `${esc(quantity)} ${esc(item.unit || '')} left`}</span>${meter}</div><span class="tiny">${esc(label(pick(item, 'storage_location', 'storageLocation') || 'pantry'))}</span><span class="tiny">${esc(pick(item, 'use_by_date', 'useByDate') || '—')}</span><div class="pantry-actions">${quantity !== null && quantity > 0 ? action('Use', 'use-pantry', item.id, 'primary') : ''}${action('Edit', 'edit-pantry', item.id)}</div></div>`;
+  }).join('')}</div>`;
   return html;
 }
 
@@ -448,6 +454,9 @@ function openEditor(kind, item = null, selectedDate = null) {
   } else if (kind === 'pantry') {
     title = item ? 'Edit pantry item' : 'Add pantry item';
     markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0 }) + field('unit', 'Unit', item?.unit) + field('storageLocation', 'Storage location', pick(item, 'storage_location', 'storageLocation') || 'pantry', { choices: ['pantry', 'fridge', 'freezer', 'other'] }) + field('quantityConfidence', 'Quantity confidence', pick(item, 'quantity_confidence', 'quantityConfidence') || 'estimated', { choices: ['exact', 'estimated', 'unknown'] }) + field('useByDate', 'Use by date (only if known)', pick(item, 'use_by_date', 'useByDate'), { type: 'date' });
+  } else if (kind === 'pantry-use') {
+    title = `Use ${item.name}`;
+    markup = `<p class="muted tiny wide">${esc(item.quantity)} ${esc(item.unit || '')} remaining</p>` + field('quantity', `Amount used (${item.unit || 'units'})`, '', { type: 'number', min: 0.001, max: item.quantity, step: 0.001, required: true }) + field('recipeId', 'Saved recipe (optional)', '', { choices: [{ value: '', label: 'No recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('mealTitle', 'Meal (optional)', '', { placeholder: 'e.g. Tuesday dinner', wide: true });
   } else if (kind === 'meal') {
     title = item ? 'Edit planned meal' : 'Add meal or prep task';
     const date = item?.date || selectedDate || state.weekStart;
@@ -469,6 +478,7 @@ function openEditor(kind, item = null, selectedDate = null) {
     markup = field('content', 'What should be remembered?', item?.content, { type: 'textarea', required: true, wide: true }) + field('scope', 'Scope', item?.scope || 'persistent', { choices: ['persistent', 'this_week'] }) + (item ? field('action', 'Action', 'update', { choices: ['update', 'forget'] }) : '<p class="muted tiny">New memories are saved as suggestions until confirmed.</p>');
   }
   document.querySelector('#dialog-title').textContent = title;
+  document.querySelector('#dialog-save').textContent = kind === 'pantry-use' ? 'Record use' : 'Save';
   fields.innerHTML = markup;
   dialog.showModal();
   fields.querySelector('input,textarea,select')?.focus();
@@ -487,6 +497,8 @@ async function submitEditor(data) {
     writeRoute();
   } else if (kind === 'pantry') {
     await save('/api/pantry', 'PUT', { id: item?.id, name: value('name'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, storageLocation: value('storageLocation'), quantityConfidence: value('quantityConfidence'), useByDate: value('useByDate') || null });
+  } else if (kind === 'pantry-use') {
+    await save('/api/pantry/use', 'POST', { itemId: item.id, quantity: Number(value('quantity')), recipeId: value('recipeId') || null, mealTitle: value('mealTitle') || null });
   } else if (kind === 'meal') {
     if (monday(`${value('date')}T12:00:00`) !== state.weekStart) throw new Error('Choose a date in the selected week.');
     const existing = arr(state.plan?.entries);
@@ -517,7 +529,7 @@ async function submitEditor(data) {
     else await save('/api/memories', 'POST', { content: value('content'), scope: value('scope'), status: 'suggested' });
   }
   dialog.close();
-  await refresh('Saved to your household.');
+  await refresh(kind === 'pantry-use' ? 'Pantry quantity updated.' : 'Saved to your household.');
 }
 
 async function handleAction(actionName, id) {
@@ -584,6 +596,7 @@ async function handleAction(actionName, id) {
   }
   if (actionName === 'add-pantry') return openEditor('pantry');
   if (actionName === 'edit-pantry') return openEditor('pantry', pantry.find((item) => item.id === id));
+  if (actionName === 'use-pantry') return openEditor('pantry-use', pantry.find((item) => item.id === id));
   if (actionName === 'add-meal') return openEditor('meal', null, id || state.weekStart);
   if (actionName === 'edit-meal' || actionName === 'remove-meal') {
     const item = plan.find((entry) => (entry.id || `${entry.day}:${entry.slot}`) === id);

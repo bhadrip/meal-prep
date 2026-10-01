@@ -86,6 +86,9 @@ mcp = FastMCP(
         "Use apply_to_pantry=false if they want a list before deciding what to save. "
         "Do not mark visual quantities exact or invent expiry dates. "
         "Use render_pantry_evidence when they want to review saved pantry photos."
+        " When someone says they used pantry food, call record_pantry_use with the amount used; "
+        "include a saved recipe ID or a meal title when they identify the meal. "
+        "The amount is subtracted from the pantry quantity, so never pass the remaining amount as quantity."
     ),
     stateless_http=True,
     json_response=True,
@@ -235,6 +238,15 @@ async def get_pantry() -> dict[str, Any]:
 async def update_pantry_item(item: dict[str, Any]) -> dict[str, Any]:
     """Create or update one pantry item. Never invent an exact expiry date."""
     return await services_for_request().food.update_pantry_item(item)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def record_pantry_use(
+    item_id: str, quantity: float, recipe_id: str | None = None,
+    meal_title: str | None = None,
+) -> dict[str, Any]:
+    """Subtract a used amount from one pantry item. Optionally link a saved recipe and/or name the meal. First use get_pantry to find the item ID and its unit; quantity is the amount used in that unit."""
+    return await services_for_request().food.record_pantry_use(item_id, quantity, recipe_id, meal_title)
 
 
 @mcp.tool(annotations=APPEND, meta={"openai/fileParams": ["file"]}, structured_output=True)

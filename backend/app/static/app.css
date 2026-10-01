@@ -133,6 +133,11 @@ h1, h2, h3 { color: var(--ink); }
 .table-row:last-child { border-bottom: 0; }
 .table-row.header { background: #efede8; color: var(--muted); font-family: var(--font-label); font-size: .6rem; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
 .table-row strong { font-size: .78rem; }
+.pantry-quantity { min-width: 0; }
+.pantry-stock { width: min(140px,100%); height: 8px; margin-top: 6px; overflow: hidden; border-radius: 99px; background: var(--line); }
+.pantry-stock span { display: block; height: 100%; background: var(--primary); }
+.pantry-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.pantry-actions .button { white-space: nowrap; }
 .check-row { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--line); }
 .check-row:last-child { border-bottom: 0; }
 .check-row input { width: 19px; height: 19px; accent-color: var(--primary); }
@@ -226,6 +231,7 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
   .card-grid, .recipe-grid, .review-grid, .settings-grid { grid-template-columns: 1fr; }
   .week-grid { grid-template-columns: repeat(7,145px); }
   .table-row { grid-template-columns: 1fr auto; }
+  .pantry-actions { justify-content: flex-end; }
   .table-row > :nth-child(3), .table-row > :nth-child(4), .table-row.header { display: none; }
   .form-grid, .dialog-fields { grid-template-columns: 1fr; }
   .field.wide { grid-column: auto; }

@@ -37,6 +37,11 @@ account and selects it.
 2. Call `get_pantry` and `search_recipes` when existing food or saved recipes
    affect the request. Do not fabricate pantry quantities, freshness, prices,
    inventory, or recipe provenance.
+   When someone reports using pantry food, use `get_pantry` to identify the
+   item and its unit, then call `record_pantry_use` with the amount used. Link
+   `recipe_id` when they name a saved recipe and `meal_title` when they identify
+   a particular meal. The tool subtracts the used amount; do not pass the
+   amount remaining. Ask for an amount when it is unclear.
 3. Create and reason over the meal plan in the model. Cover the requested
    planning areas without assuming the request is dinner-only. Give every saved
    meal-plan entry an explicit `slot`, such as `breakfast`, `lunch`, `snack`,
