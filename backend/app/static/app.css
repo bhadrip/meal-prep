@@ -82,6 +82,7 @@ h1, h2, h3 { color: var(--ink); }
 .button.danger { background: #fbe8e5; color: #a23c30; }
 .button.small { min-height: 33px; padding: 0 11px; font-size: .7rem; }
 .card-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.dashboard-grid > [data-dashboard-card] > .card { height: 100%; }
 .card { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: 13px; background: var(--paper); box-shadow: 0 5px 18px rgba(39,37,46,.035); }
 .card.clickable { transition: transform .18s ease, box-shadow .18s ease; }
 .card.clickable:hover { transform: translateY(-2px); box-shadow: var(--shadow); }

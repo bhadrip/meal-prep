@@ -4,13 +4,46 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.application.errors import RepositoryError, StorageNotInstalledError
 from app.application.services import RecipePantryService
 from app.config import Settings
-from app.infrastructure.repositories import demo_repository
+from app.infrastructure.repositories import SupabaseRepository, demo_repository
 from app.main import app
 from app.transports import http
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_reviews_invitation_before_loading_household(monkeypatch):
+    repository = SupabaseRepository(
+        Settings(supabase_url="https://example.supabase.co", supabase_anon_key="test", _env_file=None),
+        "token",
+    )
+    snapshot = AsyncMock(return_value={"household": {"householdId": "active-id"}})
+    services = SimpleNamespace(household=SimpleNamespace(repository=repository, snapshot=snapshot))
+
+    async def pending_only(name, payload=None):
+        assert name == "pending_household_invitations"
+        return {"hasHousehold": False, "invitations": [{"id": "invite-id"}]}
+
+    monkeypatch.setattr(repository, "rpc", pending_only)
+    result = await http.app_bootstrap(services)
+    assert result["needsInvitationReview"] is True
+    snapshot.assert_not_awaited()
+
+    async def with_household(name, payload=None):
+        return {
+            "pending_household_invitations": {"hasHousehold": True, "invitations": []},
+            "household_access": {"role": "owner"},
+        }[name]
+
+    monkeypatch.setattr(repository, "rpc", with_household)
+    monkeypatch.setattr(repository, "list_households", AsyncMock(return_value={"activeHouseholdId": "active-id", "households": []}))
+    result = await http.app_bootstrap(services)
+    assert result["snapshot"]["household"]["householdId"] == "active-id"
+    assert result["access"]["role"] == "owner"
+    assert result["memberships"]["activeHouseholdId"] == "active-id"
 
 
 def test_website_uses_plugin_logo_and_self_hosted_type():
@@ -97,6 +130,9 @@ def test_local_website_edits_share_application_data_across_requests():
     snapshot = client.get("/api/app/snapshot").json()
     assert any(item["name"] == "Lentils" and item["quantity"] == 2 for item in snapshot["sections"]["pantry"]["value"])
     assert "retro" not in snapshot["sections"]
+    bootstrap = client.get("/api/app/bootstrap").json()
+    assert bootstrap["snapshot"]["sections"]["pantry"] == snapshot["sections"]["pantry"]
+    assert bootstrap["pendingInvites"] == []
     used = client.post("/api/pantry/use", json={
         "itemId": pantry.json()["id"], "quantity": 0.5,
         "recipeId": recipe_id, "mealTitle": "Tuesday dinner",
