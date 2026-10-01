@@ -379,6 +379,24 @@ def test_recipe_library_is_served_as_a_visual_mcp_app(client: TestClient):
     assert "Instructions" in html
 
 
+def test_mcp_recipe_tags_save_search_and_render(client: TestClient):
+    saved = rpc(client, "tools/call", {"name": "save_recipe", "arguments": {
+        "recipe": {"title": "Ginger rasam", "tags": [" Sickness-Friendly ", "rasam"]}
+    }})["structuredContent"]
+    assert saved["tags"] == ["sickness-friendly", "rasam"]
+    results = rpc(client, "tools/call", {"name": "search_recipes", "arguments": {
+        "tag": "sickness-friendly"
+    }})["structuredContent"]["items"]
+    assert saved["id"] in [item["id"] for item in results]
+    rendered = rpc(client, "tools/call", {"name": "render_recipe_library", "arguments": {
+        "tag": "sickness-friendly"
+    }})["structuredContent"]
+    assert [item["id"] for item in rendered["recipes"]] == [saved["id"]]
+    assert rpc(client, "tools/call", {"name": "search_recipes", "arguments": {
+        "tag": "sickness"
+    }})["structuredContent"]["count"] == 0
+
+
 def test_feedback_is_served_separately_from_confirmed_preferences(client: TestClient):
     rendered = rpc(
         client,

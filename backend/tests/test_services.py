@@ -14,6 +14,22 @@ from app.infrastructure.repositories import DemoRepository
 
 
 @pytest.mark.asyncio
+async def test_recipe_tags_are_normalized_and_filter_exactly():
+    repository = DemoRepository()
+    repository._recipes = []
+    service = RecipePantryService(repository)
+    sick = await service.save_recipe({"title": "Ginger soup", "tags": [" Sickness-Friendly ", "sickness-friendly", "guest-friendly"]})
+    await service.save_recipe({"title": "Party soup", "tags": ["guest-friendly"]})
+    assert sick["tags"] == ["sickness-friendly", "guest-friendly"]
+    assert [item["title"] for item in await service.search_recipes(tag="SICKNESS-FRIENDLY")] == ["Ginger soup"]
+    assert [item["title"] for item in await service.search_recipes(query="sickness-friendly")] == ["Ginger soup"]
+    assert await service.search_recipes(tag="sickness") == []
+    with pytest.raises(ApplicationError, match="recipe tags must be nonempty"):
+        await service.save_recipe({"title": "Invalid", "tags": [" "]})
+    assert await service.search_recipes(query="Invalid") == []
+
+
+@pytest.mark.asyncio
 async def test_pantry_categories_classify_clear_items_and_reject_invalid_choice():
     service = RecipePantryService(DemoRepository())
     examples = [
