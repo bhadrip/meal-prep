@@ -250,6 +250,10 @@ test('recipe create, search, edit, share, copy, public save, revoke, and archive
 });
 
 test('recipe tags can be saved, searched, and opened as exact filters', async ({ page }) => {
+  for (let index = 0; index < 26; index += 1) {
+    const response = await page.request.put('/api/recipes', { data: { title: unique(`Filler recipe ${index}`) } });
+    expect(response.ok()).toBe(true);
+  }
   await open(page, 'recipes');
   const tag = `sickness-friendly-${Date.now()}`;
   const soup = unique('Recovery soup');
@@ -261,16 +265,26 @@ test('recipe tags can be saved, searched, and opened as exact filters', async ({
     await saveEditor(page);
     await content(page).getByRole('button', { name: '← All recipes' }).click();
   }
-  await page.locator('#recipe-search').fill(tag);
+  const partialTag = 'sickness';
+  const searchResponse = page.waitForResponse((response) => response.url().includes('/api/recipes?') && new URL(response.url()).searchParams.get('query') === partialTag);
+  await page.locator('#recipe-search').fill(partialTag);
+  await expect(content(page).getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: new RegExp(tag) })).toBeVisible();
+  await searchResponse;
   await expect(content(page).locator('.recipe-card')).toHaveCount(1);
   await expect(content(page).locator('.recipe-card')).toContainText(soup);
-  await page.locator('#recipe-search').fill('');
-  await content(page).getByRole('button', { name: `Show recipes tagged ${tag}` }).click();
+  await content(page).getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: new RegExp(tag) }).click();
   await expect(content(page).locator('.recipe-card')).toHaveCount(1);
   await expect(content(page).locator('.recipe-card')).toContainText(soup);
   await expect(content(page).locator('.recipe-card')).not.toContainText(dinner);
   await content(page).getByRole('button', { name: 'Clear tag' }).click();
+  await page.locator('#recipe-search').fill('');
+  await page.getByRole('searchbox', { name: 'Find a recipe tag' }).fill('guest');
+  await content(page).getByRole('group', { name: 'Recipe tag filters' }).getByRole('button', { name: /guest-friendly/ }).click();
   await expect(content(page).locator('.recipe-card').filter({ hasText: dinner })).toHaveCount(1);
+  await content(page).getByRole('button', { name: 'Clear tag' }).click();
+  await page.getByRole('searchbox', { name: 'Find a recipe tag' }).fill(`imagined-${Date.now()}`);
+  await expect(content(page)).toContainText('No matching saved tags.');
+  await expect(content(page).getByRole('group', { name: 'Recipe tag filters' }).getByRole('button', { name: /imagined/ })).toHaveCount(0);
 });
 
 test('recipe feedback appears in the open detail without leaving the page', async ({ page }) => {

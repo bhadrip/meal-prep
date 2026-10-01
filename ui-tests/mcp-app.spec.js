@@ -27,6 +27,14 @@ async function host(page) {
           const name = message.params.name;
           let result = {};
           if (name === 'get_recipe') result = ${JSON.stringify(recipe)};
+          if (name === 'search_recipes') {
+            const query = String(message.params.arguments.query || '').toLowerCase();
+            const tag = String(message.params.arguments.tag || '').toLowerCase();
+            const items = (window.mcpRecipes || []).filter((item) =>
+              (!tag || item.tags?.some((value) => value.toLowerCase() === tag)) &&
+              (!query || [item.title, item.description, ...(item.tags || [])].some((value) => String(value || '').toLowerCase().includes(query))));
+            result = { items, count: items.length };
+          }
           if (name === 'create_recipe_share') result = { url: 'https://example.test/s/share-test' };
           if (name === 'revoke_recipe_share') window.revoked = true;
           if (name === 'list_recipe_shares') result = { items: window.revoked ? [] : [{ id: 'share-test', recipeId: 'recipe-ui-test', createdAt: '2026-09-30T00:00:00Z' }] };
@@ -43,6 +51,7 @@ async function host(page) {
 
 async function show(page, data) {
   await page.evaluate((payload) => {
+    if (payload.kind === 'recipe_library') window.mcpRecipes = payload.allRecipes || payload.recipes;
     document.querySelector('iframe').contentWindow.postMessage({
       jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: payload },
     }, '*');
@@ -168,6 +177,23 @@ test('MCP recipe tags filter the rendered library and open matching recipes', as
   await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(1);
   await frame.getByRole('button', { name: 'All recipes' }).click();
   await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(2);
+});
+
+test('MCP recipe search suggests saved tags and finds recipes beyond the initial cards', async ({ page }) => {
+  const frame = await host(page);
+  const hidden = { id: 'hidden-recipe', title: 'Recovery broth', description: 'Warm soup', tags: ['sickness-friendly'] };
+  await show(page, { kind: 'recipe_library', recipes: [recipe], allRecipes: [recipe, hidden], tags: [
+    { tag: 'weeknight', recipe_count: 1 }, { tag: 'sickness-friendly', recipe_count: 1 },
+  ] });
+  await frame.getByRole('searchbox', { name: 'Search recipes' }).fill('sick');
+  await expect(frame.getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: 'sickness-friendly' })).toBeVisible();
+  await expect(frame.locator('#recipe-results')).toContainText('Recovery broth');
+  await frame.getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: 'sickness-friendly' }).click();
+  await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(1);
+  await expect(frame.locator('#recipe-results')).toContainText('Recovery broth');
+  await frame.getByRole('searchbox', { name: 'Search recipes' }).fill('invented');
+  await expect(frame.getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button')).toHaveCount(0);
+  await expect(frame.getByText('No matching recipes')).toBeVisible();
 });
 
 test('MCP views explain empty and unavailable data', async ({ page }) => {

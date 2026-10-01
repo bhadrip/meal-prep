@@ -104,6 +104,23 @@ def test_weekly_reviews_are_visible_and_saved_as_feedback():
     demo_repository.cache_clear()
 
 
+def test_recipe_tag_api_suggests_only_saved_tags_and_searches_partial_text():
+    demo_repository.cache_clear()
+    client = TestClient(app)
+    saved = client.put("/api/recipes", json={
+        "title": "Recovery broth", "tags": ["sickness-friendly"],
+    }).json()
+    tags = client.get("/api/recipe-tags").json()["items"]
+    assert {item["tag"] for item in tags} >= {"sickness-friendly"}
+    assert all(item["tag"] != "imagined-tag" for item in tags)
+    assert saved["id"] in [item["id"] for item in client.get("/api/recipes?query=sick").json()["items"]]
+    assert client.get("/api/recipes?query=imagined-tag").json()["count"] == 0
+    assert client.get("/api/recipes?tag=sick").json()["count"] == 0
+    client.delete(f"/api/recipes/{saved['id']}")
+    assert all(item["tag"] != "sickness-friendly" for item in client.get("/api/recipe-tags").json()["items"])
+    demo_repository.cache_clear()
+
+
 def test_local_website_edits_share_application_data_across_requests():
     demo_repository.cache_clear()
     client = TestClient(app)

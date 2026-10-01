@@ -392,9 +392,16 @@ def test_mcp_recipe_tags_save_search_and_render(client: TestClient):
         "tag": "sickness-friendly"
     }})["structuredContent"]
     assert [item["id"] for item in rendered["recipes"]] == [saved["id"]]
+    assert {item["tag"] for item in rendered["tags"]} >= {"sickness-friendly", "rasam"}
     assert rpc(client, "tools/call", {"name": "search_recipes", "arguments": {
         "tag": "sickness"
     }})["structuredContent"]["count"] == 0
+    assert saved["id"] in [item["id"] for item in rpc(client, "tools/call", {
+        "name": "search_recipes", "arguments": {"query": "sick"}
+    })["structuredContent"]["items"]]
+    tags = rpc(client, "tools/call", {"name": "list_recipe_tags", "arguments": {}})["structuredContent"]["items"]
+    assert {item["tag"] for item in tags} >= {"sickness-friendly", "rasam"}
+    assert all(item["tag"] != "invented-tag" for item in tags)
 
 
 def test_feedback_is_served_separately_from_confirmed_preferences(client: TestClient):

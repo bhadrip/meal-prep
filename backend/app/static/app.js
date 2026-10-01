@@ -38,7 +38,7 @@ const CARD_NAMES = {
   pantry: 'Pantry', recipes: 'Recipes', feedback: 'Meal feedback', memories: 'Household memory',
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings' };
-const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', client: null, session: null, config: null, editor: null };
+const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', client: null, session: null, config: null, editor: null };
 function routeFromUrl() {
   const params = new URLSearchParams(location.search);
   const requestedView = params.get('view');
@@ -138,6 +138,14 @@ async function searchRecipeLibrary() {
   }
 }
 
+async function loadRecipeTags() {
+  const householdId = state.activeHouseholdId;
+  const data = await api('/api/recipe-tags');
+  if (householdId !== state.activeHouseholdId) return;
+  state.recipeTags = arr(data.items);
+  if (state.view === 'recipes' && !state.recipe) render();
+}
+
 async function refresh(message) {
   const data = await api('/api/app/bootstrap');
   state.pendingInvites = arr(data.pendingInvites);
@@ -156,6 +164,7 @@ async function refresh(message) {
   }
   state.plan = section('mealPlan');
   state.schedule = section('schedule');
+  if (state.view === 'recipes') await loadRecipeTags();
   if (!state.weekStart) state.weekStart = state.plan?.weekStart || state.schedule?.week_start || monday();
   if (state.view === 'plan' && household().onboardingComplete !== false) await loadWeek(state.weekStart);
   else render();
@@ -185,6 +194,9 @@ function tags(values, type = '') {
 }
 function recipeTags(values) {
   return arr(values).length ? `<div class="tag-list recipe-tags">${arr(values).map((value) => `<button type="button" class="tag recipe-tag-button" data-action="filter-recipe-tag" data-id="${esc(value)}" aria-label="Show recipes tagged ${esc(value)}">${esc(value)}</button>`).join('')}</div>` : '';
+}
+function tagFilterButton(tag, count) {
+  return `<button type="button" class="tag recipe-tag-button ${state.recipeTag === tag ? 'active' : ''}" data-action="filter-recipe-tag" data-id="${esc(tag)}" aria-pressed="${state.recipeTag === tag}">${esc(tag)} <span>${esc(count)}</span></button>`;
 }
 function row(title, subtitle, trailing = '') {
   return `<div class="row"><div class="row-copy"><strong>${esc(title)}</strong><small>${esc(subtitle)}</small></div>${trailing}</div>`;
@@ -268,7 +280,14 @@ function renderRecipes() {
     const feedbackAction = recipe.feedbackUnavailable ? '' : `<div style="margin-top:20px">${action('Add feedback', 'add-feedback', recipe.id)}</div>`;
     return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div style="display:flex;gap:8px">${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">Saved recipe</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p>${recipeTags(recipe.tags)}</div><div class="hero-stat"><strong>${esc(recipe.total_minutes || '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section><div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody, state.recipeSharesUnavailable ? '' : `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
   }
-  let html = `<div class="toolbar"><input class="search" id="recipe-search" type="search" placeholder="Search recipes" value="${esc(state.search)}" aria-label="Search recipes" />${action('Add recipe', 'add-recipe', '', 'primary')}</div>`;
+  let html = `<div class="toolbar"><input class="search" id="recipe-search" type="search" placeholder="Search recipes or tags" value="${esc(state.search)}" aria-label="Search recipes" />${action('Add recipe', 'add-recipe', '', 'primary')}</div>`;
+  const savedTags = arr(state.recipeTags);
+  const searchText = state.search.trim().toLowerCase();
+  const suggestions = searchText ? savedTags.filter((item) => item.tag.toLowerCase().includes(searchText)).slice(0, 6) : [];
+  if (suggestions.length) html += `<div class="recipe-tag-suggestions" role="group" aria-label="Suggested recipe tags"><span>Matching saved tags</span>${suggestions.map((item) => tagFilterButton(item.tag, item.recipe_count)).join('')}</div>`;
+  const tagQuery = state.tagSuggestionQuery.trim().toLowerCase();
+  const filteredTags = savedTags.filter((item) => item.tag.toLowerCase().includes(tagQuery));
+  html += `<section class="recipe-tag-filter"><div class="recipe-tag-filter-head"><div><strong>Filter by tag</strong><p>Choose a tag saved in this household.</p></div><input id="recipe-tag-search" type="search" placeholder="Find a tag" aria-label="Find a recipe tag" value="${esc(state.tagSuggestionQuery)}" autocomplete="off" /></div><div class="tag-list" role="group" aria-label="Recipe tag filters">${state.recipeTag ? action('All tags', 'clear-recipe-tag') : ''}${filteredTags.slice(0, 12).map((item) => tagFilterButton(item.tag, item.recipe_count)).join('')}${state.recipeTags && !filteredTags.length ? `<span class="muted tiny">${tagQuery ? 'No matching saved tags.' : 'No tags saved yet.'}</span>` : ''}</div>${filteredTags.length > 12 ? `<p class="muted tiny">Showing 12 of ${filteredTags.length} tags. Type to narrow the list.</p>` : ''}</section>`;
   if (state.recipeTag) html += `<div class="recipe-filter">Showing recipes tagged <strong>${esc(state.recipeTag)}</strong> ${action('Clear tag', 'clear-recipe-tag')}</div>`;
   if (sectionStatus('recipes') === 'unavailable') return html + empty('Recipes unavailable', 'Try refreshing this page.');
   if (!matches.length) return html + empty(query || state.recipeTag ? 'No matches' : 'No recipes yet', query || state.recipeTag ? 'Try another search or clear the tag.' : 'Add the first recipe to your household library.');
@@ -384,6 +403,7 @@ function view(name, historyMode = 'push') {
   state.shareId = null;
   writeRoute(historyMode);
   render();
+  if (name === 'recipes') loadRecipeTags().catch((error) => showToast(error.message));
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -580,6 +600,7 @@ async function handleAction(actionName, id) {
   if (TITLES[actionName]) return view(actionName);
   if (actionName === 'filter-recipe-tag') {
     state.recipeTag = id;
+    state.tagSuggestionQuery = '';
     state.recipe = null;
     state.recipeResults = null;
     writeRoute();
@@ -716,6 +737,15 @@ content.addEventListener('change', async (event) => {
 });
 
 content.addEventListener('input', (event) => {
+  if (event.target.id === 'recipe-tag-search') {
+    const start = event.target.selectionStart;
+    state.tagSuggestionQuery = event.target.value;
+    render();
+    const next = document.querySelector('#recipe-tag-search');
+    next?.focus();
+    next?.setSelectionRange(start, start);
+    return;
+  }
   if (event.target.id === 'pantry-search') {
     const start = event.target.selectionStart;
     state.pantrySearch = event.target.value;
@@ -808,6 +838,9 @@ householdSelect.addEventListener('change', async () => {
     state.weekStart = null;
     state.recipe = null;
     state.recipeResults = null;
+    state.recipeTags = null;
+    state.recipeTag = '';
+    state.tagSuggestionQuery = '';
     state.shareUrl = null;
     state.shareId = null;
     writeRoute('replace');

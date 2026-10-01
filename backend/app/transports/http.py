@@ -166,6 +166,12 @@ async def search_recipes(
     return {"items": items, "count": len(items)}
 
 
+@router.get("/api/recipe-tags")
+async def list_recipe_tags(services: WebServices) -> dict:
+    items = await services.food.list_recipe_tags()
+    return {"items": items, "count": len(items)}
+
+
 @router.get("/api/recipes/{recipe_id}")
 async def get_recipe(recipe_id: str, services: WebServices) -> dict:
     return await services.food.get_recipe(recipe_id)
