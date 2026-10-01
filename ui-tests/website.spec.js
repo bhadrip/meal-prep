@@ -260,15 +260,29 @@ test('pantry item can be added and edited', async ({ page }) => {
   await editor(page).locator('[name="quantity"]').fill('3');
   await saveEditor(page);
   await expect(content(page).locator('.table-row').filter({ hasText: name })).toContainText('3 bags');
+});
+
+test('pantry use records a meal and shows the remaining quantity', async ({ page }) => {
+  await open(page, 'pantry');
+  const name = unique('Playwright rice');
+  await content(page).getByRole('button', { name: 'Add pantry item' }).click();
+  await editor(page).locator('[name="name"]').fill(name);
+  await editor(page).locator('[name="quantity"]').fill('4');
+  await editor(page).locator('[name="unit"]').fill('cups');
+  await saveEditor(page);
   await content(page).locator('.table-row').filter({ hasText: name }).getByRole('button', { name: 'Use' }).click();
   await expect(editor(page).locator('#dialog-save')).toHaveText('Record use');
   await editor(page).locator('[name="quantity"]').fill('1');
+  await choose(page, 'recipeId', '11111111-1111-1111-1111-111111111111');
   await editor(page).locator('[name="mealTitle"]').fill('Tuesday dinner');
+  const useRequest = page.waitForRequest((request) => request.url().endsWith('/api/pantry/use') && request.method() === 'POST');
   await editor(page).locator('#dialog-save').click();
+  const request = await useRequest;
+  expect(request.postDataJSON()).toMatchObject({ quantity: 1, recipeId: '11111111-1111-1111-1111-111111111111', mealTitle: 'Tuesday dinner' });
   await expect(editor(page)).toBeHidden();
   const remaining = content(page).locator('.table-row').filter({ hasText: name });
-  await expect(remaining).toContainText('2 bags left');
-  await expect(remaining.getByRole('meter')).toHaveAttribute('aria-valuenow', '67');
+  await expect(remaining).toContainText('3 cups left');
+  await expect(remaining.getByRole('meter')).toHaveAttribute('aria-valuenow', '75');
 });
 
 test('shopping item can be added, purchased, edited, and removed', async ({ page }) => {
