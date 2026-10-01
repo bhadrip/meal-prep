@@ -38,7 +38,7 @@ const CARD_NAMES = {
   pantry: 'Pantry', recipes: 'Recipes', feedback: 'Meal feedback', memories: 'Household memory',
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings', notifications: 'Notifications' };
-const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', client: null, session: null, config: null, editor: null };
+const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, mealPlanRules: null, ruleHistory: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', client: null, session: null, config: null, editor: null };
 function routeFromUrl() {
   const params = new URLSearchParams(location.search);
   const requestedView = params.get('view');
@@ -170,6 +170,8 @@ async function refresh(message) {
   }
   state.plan = section('mealPlan');
   state.schedule = section('schedule');
+  state.mealPlanRules = section('mealPlanRules');
+  state.ruleHistory = null;
   if (state.view === 'recipes') await loadRecipeTags();
   if (!state.weekStart) state.weekStart = state.plan?.weekStart || state.schedule?.week_start || monday();
   if (state.view === 'plan' && household().onboardingComplete !== false) await loadWeek(state.weekStart);
@@ -273,6 +275,12 @@ function renderPlan() {
   const plan = state.plan;
   const schedule = state.schedule;
   let html = `<div class="toolbar"><label class="field">Week of<input id="week-picker" type="date" value="${esc(state.weekStart)}" /></label><div style="display:flex;gap:8px;flex-wrap:wrap">${action('Edit weekly rhythm', 'edit-schedule')}${action('Add meal or prep', 'add-meal', '', 'primary')}</div></div>`;
+  const rules = state.mealPlanRules;
+  const ruleBody = rules
+    ? `<p class="muted tiny">Version ${esc(rules.revision)} · Applies to your usual week</p><p class="planning-text">${esc(rules.text || 'No recurring rules in this version.')}</p>`
+    : '<p class="muted tiny">Describe your usual week in English, including favourite meals, prep, and leftovers.</p>';
+  const history = state.ruleHistory === null ? '' : `<details id="planning-rule-history" open><summary>Saved versions</summary>${state.ruleHistory.length ? state.ruleHistory.map((revision) => `<div class="feedback"><strong>Version ${esc(revision.revision)}</strong><p class="planning-text">${esc(revision.text || 'No recurring rules in this version.')}</p></div>`).join('') : '<p class="muted tiny">No versions saved yet.</p>'}</details>`;
+  html += `<div class="card-grid planning-context">${card('Planning rules', '▦', ruleBody, `<div class="toolbar">${action('Edit planning rules', 'edit-planning-rules')}${action('View rule history', 'view-rule-history')}</div>${history}`)}${card('Notes for this week', '◷', `<p class="planning-text">${esc(schedule?.notes || 'Add guests, ingredients to use, or other changes in Edit weekly rhythm.')}</p>`)}</div>`;
   if (!plan && !schedule) html += empty('This week is open', 'Add a meal or set your weekly rhythm to begin.');
   html += `<div class="week-grid">${DAYS.map((day, index) => {
     const date = dateForDay(state.weekStart, index);
@@ -282,6 +290,7 @@ function renderPlan() {
   }).join('')}</div>`;
   html += `<div class="section-head"><div><h2>Plan details</h2><p>Manual changes save to the same household plan used in MCP.</p></div></div>`;
   html += `<div class="card-grid">${card('Status', '▦', `<p class="metric">${esc(label(plan?.status || 'Draft'))}</p><p class="muted tiny">${plan ? `Week of ${esc(plan.weekStart)}` : 'No plan saved for this week'}</p>`)}${card('Meals and prep', '◇', `<p class="metric">${arr(plan?.entries).length}</p><p class="muted tiny">Entries in this week</p>`)}${card('Weekly rhythm', '◷', `<p class="metric">${arr(schedule?.days).length}/7</p><p class="muted tiny">Days with saved context</p>`)}</div>`;
+  if (plan?.ruleRevision) html += `<details class="card" id="plan-rule-source"><summary>Plan used planning rules version ${esc(plan.ruleRevision.revision)}</summary><p class="planning-text">${esc(plan.ruleRevision.text || 'No recurring rules in this version.')}</p></details>`;
   return html;
 }
 
@@ -533,7 +542,10 @@ function openEditor(kind, item = null, selectedDate = null) {
     markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0.001, step: 'any' }) + field('unit', 'Unit', item?.unit) + field('store', 'Where do you generally buy this? (optional)', item?.store || '', { placeholder: 'Costco, Trader Joe’s…', wide: true }) + (item ? field('listName', 'List name', section('shoppingList')?.name || 'Weekly groceries', { wide: true }) : '');
   } else if (kind === 'schedule') {
     title = 'Weekly rhythm';
-    markup = field('weekStart', 'Week of', state.weekStart, { type: 'date', required: true, wide: true }) + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('');
+    markup = field('weekStart', 'Week of', state.weekStart, { type: 'date', required: true, wide: true }) + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('') + field('notes', 'Notes for this week', state.schedule?.notes || '', { type: 'textarea', wide: true, placeholder: 'Guests on Saturday; use the spinach left from last week.' });
+  } else if (kind === 'planning-rules') {
+    title = 'Planning rules';
+    markup = '<p class="muted tiny wide">Describe recurring meals, weekend prep, and leftovers in your own words. Each change saves a new version. Leave blank to clear the rules.</p>' + field('text', 'Your usual week', item?.text || '', { type: 'textarea', wide: true, placeholder: 'Saturday dinner is pasta. Bulk cook ambta baaji for Tuesday and Thursday. Rotate newly cooked recipes; leftovers are welcome.' });
   } else if (kind === 'weekly-review') {
     title = 'Review this week';
     markup = field('weekStart', 'Week of', state.weekStart || monday(), { type: 'date', required: true }) + field('feedbackType', 'How did it go?', 'worked_well', { choices: [{ value: 'worked_well', label: 'Worked well' }, { value: 'problem', label: 'Did not work' }, { value: 'change_next_time', label: 'Change next time' }] }) + field('note', 'What happened?', '', { type: 'textarea', required: true, wide: true, placeholder: 'For example, prepping vegetables on Sunday saved time.' }) + field('nextTime', 'Lesson learned or change for next time (optional)', '', { type: 'textarea', wide: true });
@@ -584,7 +596,9 @@ async function submitEditor(data) {
       await save('/api/shopping-list/items', 'POST', { item: updated, listId: list?.id || null });
     }
   } else if (kind === 'schedule') {
-    await save('/api/schedule', 'PUT', { weekStart: value('weekStart'), days: DAYS.map((day) => ({ day, mode: value(day) })), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
+    await save('/api/schedule', 'PUT', { weekStart: value('weekStart'), days: DAYS.map((day) => ({ day, mode: value(day) })), notes: value('notes'), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
+  } else if (kind === 'planning-rules') {
+    await save('/api/meal-plan-rules', 'PUT', { text: value('text'), expectedRevision: item?.revision || 0 });
   } else if (kind === 'weekly-review') {
     await save('/api/feedback', 'POST', { weekStart: monday(`${value('weekStart')}T12:00:00`), feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: ['weekly-check-in'] });
   } else if (kind === 'feedback') {
@@ -714,6 +728,15 @@ async function handleAction(actionName, id) {
     return refresh('Grocery item removed.');
   }
   if (actionName === 'edit-schedule') return openEditor('schedule');
+  if (actionName === 'edit-planning-rules') {
+    const result = await api('/api/meal-plan-rules');
+    state.mealPlanRules = result.rules;
+    return openEditor('planning-rules', result.rules);
+  }
+  if (actionName === 'view-rule-history') {
+    state.ruleHistory = arr((await api('/api/meal-plan-rules/history')).items);
+    return render();
+  }
   if (actionName === 'review-week') return openEditor('weekly-review');
   if (actionName === 'add-feedback') return openEditor('feedback', recipes.find((item) => item.id === id));
   if (actionName === 'add-memory') return openEditor('memory');

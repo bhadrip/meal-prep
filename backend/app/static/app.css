@@ -86,6 +86,10 @@ h1, h2, h3 { color: var(--ink); }
 .button.danger { background: #fbe8e5; color: #a23c30; }
 .button.small { min-height: 33px; padding: 0 11px; font-size: .7rem; }
 .card-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.planning-context { grid-template-columns: repeat(2,minmax(0,1fr)); margin-bottom: 24px; }
+.planning-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; line-height: 1.6; }
+#planning-rule-history { margin-top: 16px; }
+#plan-rule-source { margin-top: 20px; }
 .dashboard-grid > [data-dashboard-card] > .card { height: 100%; }
 .card { min-width: 0; padding: 21px; border: 1px solid var(--line); border-radius: 13px; background: var(--paper); box-shadow: 0 5px 18px rgba(39,37,46,.035); }
 .card.clickable { transition: transform .18s ease, box-shadow .18s ease; }

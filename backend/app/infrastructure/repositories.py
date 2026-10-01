@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 import httpx
 from mcp.server.auth.middleware.auth_context import get_access_token
 
-from ..application.errors import RepositoryError, StorageNotInstalledError
+from ..application.errors import RepositoryError, RevisionConflictError, StorageNotInstalledError
 from ..application.pantry_categories import infer_pantry_category
 from ..config import Settings, get_settings
 
@@ -20,15 +20,18 @@ PLANNING_TABLES = {
     "weekly_schedules": "weekly schedules",
     "feedback_entries": "feedback",
     "household_memories": "household preferences",
+    "meal_plan_rule_revisions": "meal plan rules",
 }
 PLANNING_FUNCTIONS = {
     "rpc/get_experience_feedback": "feedback",
     "rpc/save_experience_feedback": "feedback",
     "rpc/record_pantry_use": "pantry use",
+    "rpc/save_meal_plan_rules": "meal plan rules",
+    "rpc/get_recent_meal_plans": "planning history",
 }
 
 
-def _repository_error(path: str, exc: httpx.HTTPError | ValueError) -> RepositoryError:
+def _repository_error(path: str, exc: httpx.HTTPError | ValueError) -> RepositoryError | RevisionConflictError:
     response = getattr(exc, "response", None)
     detail = getattr(response, "text", "")
     if response is not None:
@@ -40,6 +43,8 @@ def _repository_error(path: str, exc: httpx.HTTPError | ValueError) -> Repositor
             detail = str(payload.get("message") or payload.get("details") or detail)
             code = payload.get("code")
             table = path.split("?", 1)[0].strip("/")
+            if table == "rpc/save_meal_plan_rules" and code == "P0001" and detail.startswith("Meal plan rules changed."):
+                return RevisionConflictError(detail)
             if code == "PGRST205" and table in PLANNING_TABLES:
                 return StorageNotInstalledError(PLANNING_TABLES[table])
             if code == "PGRST202" and table in PLANNING_FUNCTIONS:
@@ -400,6 +405,31 @@ class SupabaseRepository:
         value = await self.rpc("get_meal_plan", {"requested_week_start": week_start})
         return value if isinstance(value, dict) else None
 
+    async def get_recent_meal_plans(self, before_week: str, limit: int = 2) -> list[dict[str, Any]]:
+        return await self.rpc("get_recent_meal_plans", {"before_week": before_week, "result_limit": limit}) or []
+
+    @staticmethod
+    def _rule_document(row: dict[str, Any]) -> dict[str, Any]:
+        return {"id": row["id"], "revision": row["revision"], "text": row["text"], "createdAt": row["created_at"]}
+
+    async def get_meal_plan_rules(self, revision_id: str | None = None) -> dict[str, Any] | None:
+        params = {"select": "id,revision,text,created_at", "household_id": f"eq.{await self.household_id()}",
+                  "order": "revision.desc", "limit": "1"}
+        if revision_id:
+            params["id"] = f"eq.{revision_id}"
+        rows = await self.request("GET", "meal_plan_rule_revisions", params=params)
+        return self._rule_document(rows[0]) if rows else None
+
+    async def get_meal_plan_rule_history(self, limit: int = 20) -> list[dict[str, Any]]:
+        rows = await self.request("GET", "meal_plan_rule_revisions", params={
+            "select": "id,revision,text,created_at", "household_id": f"eq.{await self.household_id()}",
+            "order": "revision.desc", "limit": str(limit),
+        })
+        return [self._rule_document(row) for row in rows or []]
+
+    async def save_meal_plan_rules(self, text: str, expected_revision: int) -> dict[str, Any]:
+        return await self.rpc("save_meal_plan_rules", {"rule_text": text, "expected_revision": expected_revision})
+
     async def save_shopping_list(self, shopping_list: dict[str, Any]) -> dict[str, Any]:
         return await self.rpc("save_shopping_list", {"shopping_list": shopping_list})
 
@@ -430,7 +460,7 @@ class SupabaseRepository:
     async def get_weekly_schedule(self, week_start: str | None = None) -> dict[str, Any] | None:
         household_id = await self.household_id()
         params = {
-            "select": "id,week_start,days,is_normal_week,remember_rhythm,created_at,updated_at",
+            "select": "id,week_start,days,notes,is_normal_week,remember_rhythm,created_at,updated_at",
             "household_id": f"eq.{household_id}",
             "order": "week_start.desc",
             "limit": "1",
@@ -449,6 +479,8 @@ class SupabaseRepository:
             "is_normal_week": schedule.get("isNormalWeek", True),
             "remember_rhythm": schedule.get("rememberRhythm", True),
         }
+        if "notes" in schedule:
+            row["notes"] = schedule["notes"].strip()
         rows = await self.request(
             "POST", "weekly_schedules", params={"on_conflict": "household_id,week_start"}, json=row
         )
@@ -543,6 +575,9 @@ class DemoRepository:
         for entry in initial_plan["entries"]:
             entry["id"] = entry.get("id") or str(uuid4())
         self._meal_plans = {initial_plan["weekStart"]: initial_plan}
+        self._rule_revisions: list[dict[str, Any]] = []
+        initial_schedule = deepcopy(self._weekly_schedule)
+        self._weekly_schedules = {initial_schedule["week_start"]: initial_schedule}
 
     _context = {
         "householdId": "00000000-0000-0000-0000-000000000010",
@@ -825,7 +860,13 @@ class DemoRepository:
         return deepcopy(row)
 
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
-        saved = {**deepcopy(plan), "id": plan.get("id") or str(uuid4())}
+        existing = self._meal_plans.get(plan["weekStart"], {})
+        revision_id = plan.get("ruleRevisionId", existing.get("ruleRevisionId"))
+        rules = await self.get_meal_plan_rules(revision_id) if revision_id else None
+        if revision_id and not rules:
+            raise RepositoryError("Meal plan rule revision was not found")
+        saved = {**deepcopy(plan), "id": plan.get("id") or existing.get("id") or str(uuid4()),
+                 "ruleRevisionId": revision_id, "ruleRevision": rules}
         for entry in saved["entries"]:
             entry["id"] = entry.get("id") or str(uuid4())
         self._meal_plans[saved["weekStart"]] = saved
@@ -835,6 +876,29 @@ class DemoRepository:
         if week_start:
             return deepcopy(self._meal_plans.get(week_start))
         return deepcopy(self._meal_plans[max(self._meal_plans)]) if self._meal_plans else None
+
+    async def get_recent_meal_plans(self, before_week: str, limit: int = 2) -> list[dict[str, Any]]:
+        weeks = sorted((week for week in self._meal_plans if week < before_week), reverse=True)[:limit]
+        return [deepcopy(self._meal_plans[week]) for week in weeks]
+
+    async def get_meal_plan_rules(self, revision_id: str | None = None) -> dict[str, Any] | None:
+        if revision_id:
+            return deepcopy(next((item for item in self._rule_revisions if item["id"] == revision_id), None))
+        return deepcopy(self._rule_revisions[-1]) if self._rule_revisions else None
+
+    async def get_meal_plan_rule_history(self, limit: int = 20) -> list[dict[str, Any]]:
+        return deepcopy(list(reversed(self._rule_revisions))[:limit])
+
+    async def save_meal_plan_rules(self, text: str, expected_revision: int) -> dict[str, Any]:
+        current = self._rule_revisions[-1] if self._rule_revisions else None
+        if expected_revision != (current["revision"] if current else 0):
+            raise RevisionConflictError("Meal plan rules changed. Reload the current rules before saving.")
+        if current and current["text"] == text:
+            return deepcopy(current)
+        saved = {"id": str(uuid4()), "revision": expected_revision + 1, "text": text,
+                 "createdAt": datetime.now(UTC).isoformat()}
+        self._rule_revisions.append(saved)
+        return deepcopy(saved)
 
     async def save_shopping_list(self, shopping_list: dict[str, Any]) -> dict[str, Any]:
         self._shopping_list = {"id": shopping_list.get("id") or str(uuid4()), **deepcopy(shopping_list)}
@@ -860,20 +924,20 @@ class DemoRepository:
         return deepcopy(item)
 
     async def get_weekly_schedule(self, week_start: str | None = None) -> dict[str, Any] | None:
-        value = type(self)._weekly_schedule
-        if week_start and value.get("week_start") != week_start:
-            return None
-        return deepcopy(value)
+        if week_start:
+            return deepcopy(self._weekly_schedules.get(week_start))
+        return deepcopy(self._weekly_schedules[max(self._weekly_schedules)]) if self._weekly_schedules else None
 
     async def save_weekly_schedule(self, schedule: dict[str, Any]) -> dict[str, Any]:
         value = {
-            "id": type(self)._weekly_schedule.get("id") or str(uuid4()),
+            "id": self._weekly_schedules.get(schedule["weekStart"], {}).get("id") or str(uuid4()),
             "week_start": schedule["weekStart"],
             "days": deepcopy(schedule["days"]),
             "is_normal_week": schedule.get("isNormalWeek", True),
             "remember_rhythm": schedule.get("rememberRhythm", True),
+            "notes": schedule.get("notes", self._weekly_schedules.get(schedule["weekStart"], {}).get("notes", "")).strip(),
         }
-        type(self)._weekly_schedule = value
+        self._weekly_schedules[schedule["weekStart"]] = value
         return deepcopy(value)
 
     async def get_feedback(

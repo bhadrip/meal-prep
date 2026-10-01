@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .application.errors import ApplicationError, RepositoryError
+from .application.errors import ApplicationError, RepositoryError, RevisionConflictError
 from .invitations import router as invitations_router
 from .transports.http import router as http_router
 from .transports.mcp import mcp, mcp_app
@@ -37,6 +37,11 @@ app.include_router(invitations_router)
 @app.exception_handler(ApplicationError)
 async def application_error_handler(_, exc: ApplicationError) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(RevisionConflictError)
+async def revision_conflict_handler(_, exc: RevisionConflictError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
 @app.exception_handler(RepositoryError)

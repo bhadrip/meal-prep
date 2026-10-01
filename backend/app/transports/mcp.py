@@ -53,12 +53,20 @@ mcp = FastMCP(
         "or the intended household is unclear; use switch_household before reading or changing that household. "
         "The active household is shared by the website and MCP. Never mix data from different households. "
         "Call get_planning_context before drafting or revising a weekly meal plan. It returns household "
-        "preferences, the requested or remembered weekly schedule, recent feedback, and active "
+        "preferences, English mealPlanRules, the current plan, two previous saved weeks, pantry, recipe tags, "
+        "the weekly schedule including week-specific notes, recent feedback, and active "
         "household knowledge. If onboardingComplete is false, call render_onboarding so the user can complete "
         "the MCP-served setup for household size, dietary restrictions, store priority, weeknight cooking limit, "
         "lunch leftovers, and the planning areas they want coordinated. Save those areas in "
         "planningPreferences.focusAreas. Do not describe empty or null onboarding "
         "fields as saved preferences. Respect hard dietary restrictions. "
+        "Use the English rules as recurring defaults and this week's notes as temporary overrides. "
+        "Keep recipe variations grouped through saved tags. Compare new cooking choices with recent plans; "
+        "allow intentional leftovers and identify their source in entry notes. Consult recipe feedback lessons. "
+        "Flag conflicts, missing ingredients, or unknown leftover quantities instead of inventing them. "
+        "Check coverage, restrictions, timing, variation, and batch reuse before showing the proposal. "
+        "When saving a plan guided by rules, include plan.ruleRevisionId from mealPlanRules.id. "
+        "Save explicitly requested rule changes with save_meal_plan_rules after reading the current revision. "
         "Do not assume a weekly plan is dinner-only. Give each saved entry an explicit slot such as breakfast, "
         "lunch, snack, dinner, or prep, and keep repeated breakfasts and packed lunches simple unless variety is requested. "
         "Use confirmed household knowledge as preferences; treat suggestions and feedback only as evidence. "
@@ -296,6 +304,24 @@ async def get_meal_plan(week_start: str | None = None) -> dict[str, Any]:
     return {"plan": plan}
 
 
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_meal_plan_rules(revision_id: str | None = None) -> dict[str, Any]:
+    """Read the current English planning rules, or an immutable revision by ID. Null means no rules saved."""
+    return {"rules": await services_for_request().planning.get_rules(revision_id)}
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_meal_plan_rule_history(limit: int = 20) -> dict[str, Any]:
+    """Read saved English rule revisions, newest first, for the active household."""
+    return {"items": await services_for_request().planning.get_rule_history(limit)}
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_meal_plan_rules(text: str, expected_revision: int) -> dict[str, Any]:
+    """Save a user-requested English rules document as a new revision. Read current rules first; pass its revision, or 0 if none. Blank text clears recurring rules while preserving history. A stale revision fails; reread and reconcile with the user."""
+    return await services_for_request().planning.save_rules(text, expected_revision)
+
+
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_shopping_list(shopping_list: dict[str, Any]) -> dict[str, Any]:
     """Persist a shopping list. Each item may have an optional store tag. This does not place an order."""
@@ -333,7 +359,7 @@ async def get_weekly_schedule(week_start: str | None = None) -> dict[str, Any]:
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_planning_context(week_start: str | None = None) -> dict[str, Any]:
-    """Load the complete durable context needed before drafting or revising a weekly meal plan."""
+    """Load rules, current plan, two earlier saved weeks, pantry, recipe tags, week notes, feedback and preferences. Search saved recipes and their feedback summaries before drafting; no plan is generated or saved by this read."""
     return await services_for_request().planning.get_context(week_start)
 
 
