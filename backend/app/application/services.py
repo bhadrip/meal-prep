@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable, Protocol
 
 from .errors import ApplicationError, RepositoryError, StorageNotInstalledError
 from .pantry_photos import compact_photo, download_chatgpt_photo, normalize_observations
+from .pantry_categories import PANTRY_CATEGORIES, infer_pantry_category
 
 
 DASHBOARD_CARD_IDS = (
@@ -41,7 +42,8 @@ class MealPrepRepository(Protocol):
     async def switch_household(self, household_id: str) -> dict[str, Any]: ...
     async def create_household(self, name: str) -> dict[str, Any]: ...
     async def update_household_preferences(self, patch: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, Any]: ...
-    async def search_recipes(self, query: str = "", limit: int = 10) -> list[dict[str, Any]]: ...
+    async def search_recipes(self, query: str = "", limit: int = 10, tag: str = "") -> list[dict[str, Any]]: ...
+    async def list_recipe_tags(self) -> list[dict[str, Any]]: ...
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None: ...
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]: ...
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]: ...
@@ -230,8 +232,11 @@ class RecipePantryService:
     def __init__(self, repository: MealPrepRepository):
         self.repository = repository
 
-    async def search_recipes(self, query: str = "", limit: int = 10) -> list[dict[str, Any]]:
-        return await self.repository.search_recipes(query=query, limit=limit)
+    async def search_recipes(self, query: str = "", limit: int = 10, tag: str = "") -> list[dict[str, Any]]:
+        return await self.repository.search_recipes(query=query, limit=limit, tag=tag.strip().casefold())
+
+    async def list_recipe_tags(self) -> list[dict[str, Any]]:
+        return await self.repository.list_recipe_tags()
 
     async def get_recipe(self, recipe_id: str) -> dict[str, Any]:
         recipe = await self.repository.get_recipe(recipe_id)
@@ -252,7 +257,17 @@ class RecipePantryService:
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]:
         if not str(recipe.get("title", "")).strip():
             raise ApplicationError("recipe.title is required")
-        return await self.repository.save_recipe(recipe)
+        values = recipe.get("tags", [])
+        if not isinstance(values, list) or len(values) > 12:
+            raise ApplicationError("recipe.tags must be a list of at most 12 tags")
+        tags = []
+        for value in values:
+            if not isinstance(value, str) or not 1 <= len(value.strip()) <= 48:
+                raise ApplicationError("recipe tags must be nonempty text of at most 48 characters")
+            tag = " ".join(value.split()).casefold()
+            if tag not in tags:
+                tags.append(tag)
+        return await self.repository.save_recipe({**recipe, "tags": tags})
 
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]:
         return await self.repository.archive_recipe(recipe_id)
@@ -286,6 +301,14 @@ class RecipePantryService:
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]:
         if not str(item.get("name", "")).strip():
             raise ApplicationError("item.name is required")
+        category = item.get("category")
+        if category is not None and category not in PANTRY_CATEGORIES:
+            raise ApplicationError("Invalid pantry category")
+        if category is None:
+            existing = next((row for row in await self.repository.get_pantry() if row.get("id") == item.get("id")), None) if item.get("id") else None
+            item = {**item, "category": (existing or {}).get("category") or infer_pantry_category(
+                item["name"], item.get("storageLocation", item.get("storage_location", ""))
+            )}
         return await self.repository.update_pantry_item(item)
 
     async def record_pantry_use(

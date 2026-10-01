@@ -14,6 +14,47 @@ from app.infrastructure.repositories import DemoRepository
 
 
 @pytest.mark.asyncio
+async def test_recipe_tags_are_normalized_and_filter_exactly():
+    repository = DemoRepository()
+    repository._recipes = []
+    service = RecipePantryService(repository)
+    sick = await service.save_recipe({"title": "Ginger soup", "tags": [" Sickness-Friendly ", "sickness-friendly", "guest-friendly"]})
+    await service.save_recipe({"title": "Party soup", "tags": ["guest-friendly"]})
+    assert sick["tags"] == ["sickness-friendly", "guest-friendly"]
+    assert [item["title"] for item in await service.search_recipes(tag="SICKNESS-FRIENDLY")] == ["Ginger soup"]
+    assert [item["title"] for item in await service.search_recipes(query="sickness-friendly")] == ["Ginger soup"]
+    assert [item["title"] for item in await service.search_recipes(query="sick")] == ["Ginger soup"]
+    assert await service.search_recipes(tag="sickness") == []
+    assert await service.list_recipe_tags() == [
+        {"tag": "guest-friendly", "recipe_count": 2},
+        {"tag": "sickness-friendly", "recipe_count": 1},
+    ]
+    assert await service.search_recipes(query="invented-tag") == []
+    with pytest.raises(ApplicationError, match="recipe tags must be nonempty"):
+        await service.save_recipe({"title": "Invalid", "tags": [" "]})
+    assert await service.search_recipes(query="Invalid") == []
+
+
+@pytest.mark.asyncio
+async def test_pantry_categories_classify_clear_items_and_reject_invalid_choice():
+    service = RecipePantryService(DemoRepository())
+    examples = [
+        ("Apples", "pantry", "fruits"),
+        ("Baby spinach", "fridge", "vegetables"),
+        ("Popcorn", "pantry", "snacks"),
+        ("Peas", "freezer", "frozen"),
+        ("Rice", "pantry", "dry_goods"),
+        ("Garlic paste", "fridge", "condiments"),
+        ("Mystery tin", "pantry", "uncategorized"),
+    ]
+    for name, location, category in examples:
+        saved = await service.update_pantry_item({"name": name, "storageLocation": location})
+        assert saved["category"] == category
+    with pytest.raises(ApplicationError, match="Invalid pantry category"):
+        await service.update_pantry_item({"name": "Apples", "category": "unknown-category"})
+
+
+@pytest.mark.asyncio
 async def test_recipe_detail_survives_missing_feedback_storage():
     repository = DemoRepository()
     repository.get_recipe = AsyncMock(return_value={"id": "recipe-1", "title": "Lentil soup"})

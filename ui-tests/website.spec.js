@@ -249,6 +249,44 @@ test('recipe create, search, edit, share, copy, public save, revoke, and archive
   await expect(content(page).locator(`[data-action="open-recipe"][data-id="${originalId}"]`)).toHaveCount(0);
 });
 
+test('recipe tags can be saved, searched, and opened as exact filters', async ({ page }) => {
+  for (let index = 0; index < 26; index += 1) {
+    const response = await page.request.put('/api/recipes', { data: { title: unique(`Filler recipe ${index}`) } });
+    expect(response.ok()).toBe(true);
+  }
+  await open(page, 'recipes');
+  const tag = `sickness-friendly-${Date.now()}`;
+  const soup = unique('Recovery soup');
+  const dinner = unique('Guest dinner');
+  for (const [title, tags] of [[soup, `${tag}, comfort`], [dinner, 'guest-friendly']]) {
+    await content(page).getByRole('button', { name: 'Add recipe' }).click();
+    await editor(page).locator('[name="title"]').fill(title);
+    await editor(page).locator('[name="tags"]').fill(tags);
+    await saveEditor(page);
+    await content(page).getByRole('button', { name: '← All recipes' }).click();
+  }
+  const partialTag = 'sickness';
+  const searchResponse = page.waitForResponse((response) => response.url().includes('/api/recipes?') && new URL(response.url()).searchParams.get('query') === partialTag);
+  await page.locator('#recipe-search').fill(partialTag);
+  await expect(content(page).getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: new RegExp(tag) })).toBeVisible();
+  await searchResponse;
+  await expect(content(page).locator('.recipe-card')).toHaveCount(1);
+  await expect(content(page).locator('.recipe-card')).toContainText(soup);
+  await content(page).getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: new RegExp(tag) }).click();
+  await expect(content(page).locator('.recipe-card')).toHaveCount(1);
+  await expect(content(page).locator('.recipe-card')).toContainText(soup);
+  await expect(content(page).locator('.recipe-card')).not.toContainText(dinner);
+  await content(page).getByRole('button', { name: 'Clear tag' }).click();
+  await page.locator('#recipe-search').fill('');
+  await page.getByRole('searchbox', { name: 'Find a recipe tag' }).fill('guest');
+  await content(page).getByRole('group', { name: 'Recipe tag filters' }).getByRole('button', { name: /guest-friendly/ }).click();
+  await expect(content(page).locator('.recipe-card').filter({ hasText: dinner })).toHaveCount(1);
+  await content(page).getByRole('button', { name: 'Clear tag' }).click();
+  await page.getByRole('searchbox', { name: 'Find a recipe tag' }).fill(`imagined-${Date.now()}`);
+  await expect(content(page)).toContainText('No matching saved tags.');
+  await expect(content(page).getByRole('group', { name: 'Recipe tag filters' }).getByRole('button', { name: /imagined/ })).toHaveCount(0);
+});
+
 test('recipe feedback appears in the open detail without leaving the page', async ({ page }) => {
   await open(page, 'recipes');
   await content(page).locator('[data-action="open-recipe"][data-id="11111111-1111-1111-1111-111111111111"]').click();
@@ -279,6 +317,40 @@ test('pantry item can be added and edited', async ({ page }) => {
   await editor(page).locator('[name="quantity"]').fill('3');
   await saveEditor(page);
   await expect(content(page).locator('.table-row').filter({ hasText: name })).toContainText('3 bags');
+});
+
+test('pantry categories and search narrow items and save corrections', async ({ page }) => {
+  await open(page, 'pantry');
+  const chili = unique('Chili oil');
+  const mystery = unique('Mystery tin');
+  for (const name of [chili, mystery]) {
+    await content(page).getByRole('button', { name: 'Add pantry item' }).click();
+    await editor(page).locator('[name="name"]').fill(name);
+    await saveEditor(page);
+  }
+  await content(page).locator('[data-pantry-category="condiments"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: chili })).toBeVisible();
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toHaveCount(0);
+  await content(page).locator('[data-pantry-category="uncategorized"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
+  await content(page).locator('.table-row').filter({ hasText: mystery }).getByRole('button', { name: 'Edit' }).click();
+  await choose(page, 'category', 'snacks');
+  await saveEditor(page);
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toHaveCount(0);
+  await content(page).locator('[data-pantry-category="snacks"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
+  await content(page).locator('#pantry-search').fill('no match');
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toHaveCount(0);
+  await content(page).locator('#pantry-search').fill('Mystery tin');
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
+  await content(page).locator('[data-pantry-category="all"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: chili })).toHaveCount(0);
+  await content(page).locator('#pantry-search').fill('');
+  await expect(content(page).locator('.table-row').filter({ hasText: chili })).toBeVisible();
+  await page.reload();
+  await page.locator('.sidebar [data-view="pantry"]').click();
+  await content(page).locator('[data-pantry-category="snacks"]').click();
+  await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
 });
 
 test('pantry use records a meal and shows the remaining quantity', async ({ page }) => {

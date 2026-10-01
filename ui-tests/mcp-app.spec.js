@@ -27,6 +27,14 @@ async function host(page) {
           const name = message.params.name;
           let result = {};
           if (name === 'get_recipe') result = ${JSON.stringify(recipe)};
+          if (name === 'search_recipes') {
+            const query = String(message.params.arguments.query || '').toLowerCase();
+            const tag = String(message.params.arguments.tag || '').toLowerCase();
+            const items = (window.mcpRecipes || []).filter((item) =>
+              (!tag || item.tags?.some((value) => value.toLowerCase() === tag)) &&
+              (!query || [item.title, item.description, ...(item.tags || [])].some((value) => String(value || '').toLowerCase().includes(query))));
+            result = { items, count: items.length };
+          }
           if (name === 'create_recipe_share') result = { url: 'https://example.test/s/share-test' };
           if (name === 'revoke_recipe_share') window.revoked = true;
           if (name === 'list_recipe_shares') result = { items: window.revoked ? [] : [{ id: 'share-test', recipeId: 'recipe-ui-test', createdAt: '2026-09-30T00:00:00Z' }] };
@@ -43,6 +51,7 @@ async function host(page) {
 
 async function show(page, data) {
   await page.evaluate((payload) => {
+    if (payload.kind === 'recipe_library') window.mcpRecipes = payload.allRecipes || payload.recipes;
     document.querySelector('iframe').contentWindow.postMessage({
       jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: payload },
     }, '*');
@@ -99,6 +108,30 @@ test('MCP pantry use updates the remaining amount', async ({ page }) => {
   });
 });
 
+test('MCP pantry category filters and search narrow the saved inventory', async ({ page }) => {
+  const frame = await host(page);
+  await show(page, { kind: 'household_snapshot', household: { householdName: 'Test kitchen' }, sections: {
+    pantry: { status: 'ready', value: [
+      { id: 'chili-1', name: 'Chili oil', category: 'condiments', quantity: 1, unit: 'jar' },
+      { id: 'apple-1', name: 'Apples', category: 'fruits', quantity: 3, unit: 'each' },
+      { id: 'mystery-1', name: 'Mystery tin', category: 'uncategorized', quantity: 1, unit: 'tin' },
+    ] },
+  } });
+  const card = frame.locator('[data-card-id="pantry"]');
+  await card.locator('[data-pantry-category="condiments"]').click();
+  await expect(card.locator('.pantry-row')).toHaveCount(1);
+  await expect(card.locator('.pantry-row')).toContainText('Chili oil');
+  await card.locator('[data-pantry-category="uncategorized"]').click();
+  await expect(card.locator('.pantry-row')).toContainText('Mystery tin');
+  await card.locator('[data-pantry-category="all"]').click();
+  await card.locator('#mcp-pantry-search').fill('apple');
+  await expect(card.locator('.pantry-row')).toHaveCount(1);
+  await expect(card.locator('.pantry-row')).toContainText('Apples');
+  await card.locator('#mcp-pantry-search').fill('missing');
+  await expect(card.locator('.pantry-row')).toHaveCount(0);
+  await expect(card).toContainText('No matching items.');
+});
+
 test('MCP onboarding and recipe library actions', async ({ page }) => {
   const frame = await host(page);
   await show(page, { kind: 'onboarding', household: {} });
@@ -128,6 +161,39 @@ test('MCP onboarding and recipe library actions', async ({ page }) => {
   await expect(frame.locator('#recipe-share-result')).toHaveText('Share link revoked.');
   await frame.getByRole('button', { name: '← All recipes' }).click();
   await expect(frame.getByRole('heading', { name: 'Your recipes' })).toBeVisible();
+});
+
+test('MCP recipe tags filter the rendered library and open matching recipes', async ({ page }) => {
+  const frame = await host(page);
+  await show(page, { kind: 'recipe_library', recipes: [recipe, {
+    id: 'guest-recipe', title: 'Guest dinner', description: 'Dinner for visitors', tags: ['guest-friendly'],
+  }] });
+  await frame.getByRole('button', { name: 'weeknight', exact: true }).click();
+  await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(1);
+  await expect(frame.locator('#recipe-results')).toContainText('Lentil bowls');
+  await expect(frame.locator('#recipe-results')).not.toContainText('Guest dinner');
+  await frame.getByRole('button', { name: 'Open Lentil bowls' }).click();
+  await frame.getByRole('button', { name: 'Show recipes tagged weeknight' }).click();
+  await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(1);
+  await frame.getByRole('button', { name: 'All recipes' }).click();
+  await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(2);
+});
+
+test('MCP recipe search suggests saved tags and finds recipes beyond the initial cards', async ({ page }) => {
+  const frame = await host(page);
+  const hidden = { id: 'hidden-recipe', title: 'Recovery broth', description: 'Warm soup', tags: ['sickness-friendly'] };
+  await show(page, { kind: 'recipe_library', recipes: [recipe], allRecipes: [recipe, hidden], tags: [
+    { tag: 'weeknight', recipe_count: 1 }, { tag: 'sickness-friendly', recipe_count: 1 },
+  ] });
+  await frame.getByRole('searchbox', { name: 'Search recipes' }).fill('sick');
+  await expect(frame.getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: 'sickness-friendly' })).toBeVisible();
+  await expect(frame.locator('#recipe-results')).toContainText('Recovery broth');
+  await frame.getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: 'sickness-friendly' }).click();
+  await expect(frame.locator('#recipe-results .recipe-card')).toHaveCount(1);
+  await expect(frame.locator('#recipe-results')).toContainText('Recovery broth');
+  await frame.getByRole('searchbox', { name: 'Search recipes' }).fill('invented');
+  await expect(frame.getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button')).toHaveCount(0);
+  await expect(frame.getByText('No matching recipes')).toBeVisible();
 });
 
 test('MCP views explain empty and unavailable data', async ({ page }) => {

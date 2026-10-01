@@ -186,9 +186,16 @@ async def configure_dashboard(payload: dict[str, Any], services: WebServices) ->
 async def search_recipes(
     services: WebServices,
     query: str = "",
+    tag: str = "",
     limit: int = Query(25, ge=1, le=25),
 ) -> dict:
-    items = await services.food.search_recipes(query=query, limit=limit)
+    items = await services.food.search_recipes(query=query, limit=limit, tag=tag)
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/api/recipe-tags")
+async def list_recipe_tags(services: WebServices) -> dict:
+    items = await services.food.list_recipe_tags()
     return {"items": items, "count": len(items)}
 
 

@@ -30,6 +30,7 @@ sidebarToggle.addEventListener('click', () => {
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const SLOTS = ['breakfast', 'lunch', 'snack', 'dinner', 'prep'];
 const FOCUS = ['breakfasts', 'lunches', 'snacks', 'dinners', 'weekend-prep', 'pantry', 'shopping'];
+const PANTRY_CATEGORIES = [['all', 'All items'], ['fruits', 'Fruits'], ['vegetables', 'Vegetables'], ['snacks', 'Snacks'], ['frozen', 'Frozen'], ['dry_goods', 'Dry goods'], ['condiments', 'Condiments'], ['uncategorized', 'Uncategorized']];
 const CARD_IDS = ['food-rules', 'planning-defaults', 'stores', 'schedule', 'meal-plan', 'shopping-list', 'pantry', 'recipes', 'feedback', 'memories'];
 const CARD_NAMES = {
   'food-rules': 'Food rules', 'planning-defaults': 'Planning defaults', stores: 'Preferred stores',
@@ -37,7 +38,7 @@ const CARD_NAMES = {
   pantry: 'Pantry', recipes: 'Recipes', feedback: 'Meal feedback', memories: 'Household memory',
 };
 const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings', notifications: 'Notifications' };
-const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', client: null, session: null, config: null, editor: null };
+const state = { view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', pantrySearch: '', pantryCategory: 'all', client: null, session: null, config: null, editor: null };
 function routeFromUrl() {
   const params = new URLSearchParams(location.search);
   const requestedView = params.get('view');
@@ -124,6 +125,27 @@ async function loadRecipe(id) {
   state.shareId = null;
 }
 
+async function searchRecipeLibrary() {
+  const params = new URLSearchParams({ limit: '25' });
+  if (state.search.trim()) params.set('query', state.search.trim());
+  if (state.recipeTag) params.set('tag', state.recipeTag);
+  const search = state.search;
+  const tag = state.recipeTag;
+  const result = await api(`/api/recipes?${params}`);
+  if (state.search === search && state.recipeTag === tag) {
+    state.recipeResults = result.items;
+    render();
+  }
+}
+
+async function loadRecipeTags() {
+  const householdId = state.activeHouseholdId;
+  const data = await api('/api/recipe-tags');
+  if (householdId !== state.activeHouseholdId) return;
+  state.recipeTags = arr(data.items);
+  if (state.view === 'recipes' && !state.recipe) render();
+}
+
 async function refresh(message) {
   const [data, notifications] = await Promise.all([
     api('/api/app/bootstrap'),
@@ -148,6 +170,7 @@ async function refresh(message) {
   }
   state.plan = section('mealPlan');
   state.schedule = section('schedule');
+  if (state.view === 'recipes') await loadRecipeTags();
   if (!state.weekStart) state.weekStart = state.plan?.weekStart || state.schedule?.week_start || monday();
   if (state.view === 'plan' && household().onboardingComplete !== false) await loadWeek(state.weekStart);
   else render();
@@ -182,6 +205,12 @@ function card(title, icon, body, extra = '') {
 }
 function tags(values, type = '') {
   return `<div class="tag-list">${arr(values).map((value) => `<span class="tag ${type}">${esc(value)}</span>`).join('')}</div>`;
+}
+function recipeTags(values) {
+  return arr(values).length ? `<div class="tag-list recipe-tags">${arr(values).map((value) => `<button type="button" class="tag recipe-tag-button" data-action="filter-recipe-tag" data-id="${esc(value)}" aria-label="Show recipes tagged ${esc(value)}">${esc(value)}</button>`).join('')}</div>` : '';
+}
+function tagFilterButton(tag, count) {
+  return `<button type="button" class="tag recipe-tag-button ${state.recipeTag === tag ? 'active' : ''}" data-action="filter-recipe-tag" data-id="${esc(tag)}" aria-pressed="${state.recipeTag === tag}">${esc(tag)} <span>${esc(count)}</span></button>`;
 }
 function row(title, subtitle, trailing = '') {
   return `<div class="row"><div class="row-copy"><strong>${esc(title)}</strong><small>${esc(subtitle)}</small></div>${trailing}</div>`;
@@ -259,7 +288,7 @@ function renderPlan() {
 function renderRecipes() {
   const recipes = state.recipeResults || arr(section('recipes'));
   const query = state.search.toLowerCase();
-  const matches = recipes.filter((recipe) => [recipe.title, recipe.description, ...arr(recipe.tags)].some((value) => String(value || '').toLowerCase().includes(query)));
+  const matches = recipes.filter((recipe) => (!state.recipeTag || arr(recipe.tags).some((tag) => tag.toLowerCase() === state.recipeTag.toLowerCase())) && [recipe.title, recipe.description, ...arr(recipe.tags)].some((value) => String(value || '').toLowerCase().includes(query)));
   if (state.recipe) {
     const recipe = state.recipe;
     const ingredients = arr(recipe.ingredients);
@@ -274,26 +303,38 @@ function renderRecipes() {
         ? `<div class="stack">${arr(recipe.feedback).slice(0, 5).map((item) => row(item.note, item.next_time || '')).join('')}</div>`
         : '<p class="muted tiny">No feedback yet.</p>';
     const feedbackAction = recipe.feedbackUnavailable ? '' : `<div style="margin-top:20px">${action('Add feedback', 'add-feedback', recipe.id)}</div>`;
-    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div style="display:flex;gap:8px">${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">Saved recipe</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p></div><div class="hero-stat"><strong>${esc(recipe.total_minutes || '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section><div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody, state.recipeSharesUnavailable ? '' : `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
+    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div style="display:flex;gap:8px">${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">Saved recipe</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p>${recipeTags(recipe.tags)}</div><div class="hero-stat"><strong>${esc(recipe.total_minutes || '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section><div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody, state.recipeSharesUnavailable ? '' : `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
   }
-  let html = `<div class="toolbar"><input class="search" id="recipe-search" type="search" placeholder="Search recipes" value="${esc(state.search)}" aria-label="Search recipes" />${action('Add recipe', 'add-recipe', '', 'primary')}</div>`;
+  let html = `<div class="toolbar"><input class="search" id="recipe-search" type="search" placeholder="Search recipes or tags" value="${esc(state.search)}" aria-label="Search recipes" />${action('Add recipe', 'add-recipe', '', 'primary')}</div>`;
+  const savedTags = arr(state.recipeTags);
+  const searchText = state.search.trim().toLowerCase();
+  const suggestions = searchText ? savedTags.filter((item) => item.tag.toLowerCase().includes(searchText)).slice(0, 6) : [];
+  if (suggestions.length) html += `<div class="recipe-tag-suggestions" role="group" aria-label="Suggested recipe tags"><span>Matching saved tags</span>${suggestions.map((item) => tagFilterButton(item.tag, item.recipe_count)).join('')}</div>`;
+  const tagQuery = state.tagSuggestionQuery.trim().toLowerCase();
+  const filteredTags = savedTags.filter((item) => item.tag.toLowerCase().includes(tagQuery));
+  html += `<section class="recipe-tag-filter"><div class="recipe-tag-filter-head"><div><strong>Filter by tag</strong><p>Choose a tag saved in this household.</p></div><input id="recipe-tag-search" type="search" placeholder="Find a tag" aria-label="Find a recipe tag" value="${esc(state.tagSuggestionQuery)}" autocomplete="off" /></div><div class="tag-list" role="group" aria-label="Recipe tag filters">${state.recipeTag ? action('All tags', 'clear-recipe-tag') : ''}${filteredTags.slice(0, 12).map((item) => tagFilterButton(item.tag, item.recipe_count)).join('')}${state.recipeTags && !filteredTags.length ? `<span class="muted tiny">${tagQuery ? 'No matching saved tags.' : 'No tags saved yet.'}</span>` : ''}</div>${filteredTags.length > 12 ? `<p class="muted tiny">Showing 12 of ${filteredTags.length} tags. Type to narrow the list.</p>` : ''}</section>`;
+  if (state.recipeTag) html += `<div class="recipe-filter">Showing recipes tagged <strong>${esc(state.recipeTag)}</strong> ${action('Clear tag', 'clear-recipe-tag')}</div>`;
   if (sectionStatus('recipes') === 'unavailable') return html + empty('Recipes unavailable', 'Try refreshing this page.');
-  if (!matches.length) return html + empty(query ? 'No matches' : 'No recipes yet', query ? 'Try another search.' : 'Add the first recipe to your household library.');
-  html += `<div class="recipe-grid">${matches.map((recipe) => `<article class="card recipe-card clickable"><div class="recipe-art" aria-hidden="true">${esc(recipe.title?.slice(0, 1) || 'M')}</div><div class="recipe-body"><h3>${esc(recipe.title)}</h3><p>${esc(recipe.description || 'Saved household recipe')}</p><div class="recipe-meta"><span>${esc(recipe.total_minutes || '—')} min</span><span>${esc(recipe.servings || '—')} servings</span></div><div style="margin-top:16px">${action('View recipe', 'open-recipe', recipe.id)}</div></div></article>`).join('')}</div>`;
+  if (!matches.length) return html + empty(query || state.recipeTag ? 'No matches' : 'No recipes yet', query || state.recipeTag ? 'Try another search or clear the tag.' : 'Add the first recipe to your household library.');
+  html += `<div class="recipe-grid">${matches.map((recipe) => `<article class="card recipe-card clickable"><div class="recipe-art" aria-hidden="true">${esc(recipe.title?.slice(0, 1) || 'M')}</div><div class="recipe-body"><h3>${esc(recipe.title)}</h3><p>${esc(recipe.description || 'Saved household recipe')}</p><div class="recipe-meta"><span>${esc(recipe.total_minutes || '—')} min</span><span>${esc(recipe.servings || '—')} servings</span></div>${recipeTags(recipe.tags)}<div style="margin-top:16px">${action('View recipe', 'open-recipe', recipe.id)}</div></div></article>`).join('')}</div>`;
   return html;
 }
 
 function renderPantry() {
   const items = arr(section('pantry'));
-  let html = `<div class="toolbar"><p class="muted tiny">Track what is actually on hand. Dates are entered by you.</p>${action('Add pantry item', 'add-pantry', '', 'primary')}</div>`;
+  const query = state.pantrySearch.trim().toLocaleLowerCase();
+  const matches = items.filter((item) => (state.pantryCategory === 'all' || (item.category || 'uncategorized') === state.pantryCategory) && item.name.toLocaleLowerCase().includes(query));
+  let html = `<div class="toolbar"><div><p class="muted tiny">Find what is on hand. Dates are entered by you.</p><input class="search" id="pantry-search" type="search" placeholder="Search pantry items" value="${esc(state.pantrySearch)}" aria-label="Search pantry items" /></div>${action('Add pantry item', 'add-pantry', '', 'primary')}</div>`;
   if (sectionStatus('pantry') === 'unavailable') return html + empty('Pantry unavailable', 'Try refreshing this page.');
-  if (!items.length) return html + empty('Your pantry is empty', 'Add food you want to keep track of.');
-  html += `<div class="card table-card"><div class="table-row header"><span>Item</span><span>Remaining</span><span>Location</span><span>Use by</span><span></span></div>${items.map((item) => {
+  html += `<div class="pantry-filters" role="group" aria-label="Pantry categories">${PANTRY_CATEGORIES.map(([value, title]) => `<button type="button" class="pantry-filter ${state.pantryCategory === value ? 'active' : ''}" data-pantry-category="${value}" aria-pressed="${state.pantryCategory === value}">${title} <span>${value === 'all' ? items.length : items.filter((item) => (item.category || 'uncategorized') === value).length}</span></button>`).join('')}</div>`;
+  html += `<p class="muted tiny pantry-result-count" role="status">Showing ${matches.length} of ${items.length} items</p>`;
+  if (!matches.length) return html + empty(items.length ? 'No matching items' : 'Your pantry is empty', items.length ? 'Try another search or category.' : 'Add food you want to keep track of.');
+  html += `<div class="card table-card"><div class="table-row header"><span>Item</span><span>Remaining</span><span>Location</span><span>Use by</span><span></span></div>${matches.map((item) => {
     const quantity = item.quantity === null || item.quantity === undefined ? null : Number(item.quantity);
     const reference = Number(item.reference_quantity);
     const fraction = quantity !== null && reference > 0 ? Math.round(Math.max(0, Math.min(1, quantity / reference)) * 100) : null;
     const meter = fraction === null ? '' : `<div class="pantry-stock" role="meter" aria-label="${esc(item.name)} remaining compared with tracked amount" aria-valuenow="${fraction}" aria-valuemin="0" aria-valuemax="100"><span style="width:${fraction}%"></span></div>`;
-    return `<div class="table-row"><strong>${esc(item.name)}</strong><div class="pantry-quantity"><span class="tiny">${quantity === null ? 'Amount unknown' : `${esc(quantity)} ${esc(item.unit || '')} left`}</span>${meter}</div><span class="tiny">${esc(label(pick(item, 'storage_location', 'storageLocation') || 'pantry'))}</span><span class="tiny">${esc(pick(item, 'use_by_date', 'useByDate') || '—')}</span><div class="pantry-actions">${quantity !== null && quantity > 0 ? action('Use', 'use-pantry', item.id, 'primary') : ''}${action('Edit', 'edit-pantry', item.id)}</div></div>`;
+    return `<div class="table-row"><strong>${esc(item.name)}<small class="pantry-item-category">${esc(PANTRY_CATEGORIES.find(([value]) => value === (item.category || 'uncategorized'))?.[1] || 'Uncategorized')}</small></strong><div class="pantry-quantity"><span class="tiny">${quantity === null ? 'Amount unknown' : `${esc(quantity)} ${esc(item.unit || '')} left`}</span>${meter}</div><span class="tiny">${esc(label(pick(item, 'storage_location', 'storageLocation') || 'pantry'))}</span><span class="tiny">${esc(pick(item, 'use_by_date', 'useByDate') || '—')}</span><div class="pantry-actions">${quantity !== null && quantity > 0 ? action('Use', 'use-pantry', item.id, 'primary') : ''}${action('Edit', 'edit-pantry', item.id)}</div></div>`;
   }).join('')}</div>`;
   return html;
 }
@@ -387,6 +428,7 @@ function view(name, historyMode = 'push') {
   state.shareId = null;
   writeRoute(historyMode);
   render();
+  if (name === 'recipes') loadRecipeTags().catch((error) => showToast(error.message));
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -478,7 +520,7 @@ function openEditor(kind, item = null, selectedDate = null) {
     markup = field('title', 'Recipe name', item?.title, { required: true, wide: true }) + field('description', 'Description', item?.description, { type: 'textarea', wide: true }) + field('servings', 'Servings', item?.servings || 4, { type: 'number', min: 1 }) + field('totalMinutes', 'Total minutes', item?.total_minutes ?? item?.totalMinutes, { type: 'number', min: 1 }) + field('activeMinutes', 'Active minutes', item?.active_minutes ?? item?.activeMinutes, { type: 'number', min: 1 }) + field('tags', 'Tags, separated by commas', joinNames(item?.tags), { wide: true }) + field('ingredients', 'Ingredients — one per line: name | quantity | unit', arr(item?.ingredients).map((entry) => typeof entry === 'string' ? entry : `${entry.name || ''} | ${entry.quantity ?? ''} | ${entry.unit || ''}`).join('\n'), { type: 'textarea', wide: true }) + field('instructions', 'Instructions — one step per line', arr(item?.instructions).map((entry) => typeof entry === 'string' ? entry : entry.text || entry.instruction || '').join('\n'), { type: 'textarea', wide: true }) + field('sourceUrl', 'Source URL', item?.source_url || item?.sourceUrl, { type: 'url', wide: true });
   } else if (kind === 'pantry') {
     title = item ? 'Edit pantry item' : 'Add pantry item';
-    markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0 }) + field('unit', 'Unit', item?.unit) + field('storageLocation', 'Storage location', pick(item, 'storage_location', 'storageLocation') || 'pantry', { choices: ['pantry', 'fridge', 'freezer', 'other'] }) + field('quantityConfidence', 'Quantity confidence', pick(item, 'quantity_confidence', 'quantityConfidence') || 'estimated', { choices: ['exact', 'estimated', 'unknown'] }) + field('useByDate', 'Use by date (only if known)', pick(item, 'use_by_date', 'useByDate'), { type: 'date' });
+    markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('category', 'Category', item?.category || 'auto', { choices: [{ value: 'auto', label: 'Categorize from name' }, ...PANTRY_CATEGORIES.filter(([value]) => value !== 'all').map(([value, title]) => ({ value, label: title }))] }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0 }) + field('unit', 'Unit', item?.unit) + field('storageLocation', 'Storage location', pick(item, 'storage_location', 'storageLocation') || 'pantry', { choices: ['pantry', 'fridge', 'freezer', 'other'] }) + field('quantityConfidence', 'Quantity confidence', pick(item, 'quantity_confidence', 'quantityConfidence') || 'estimated', { choices: ['exact', 'estimated', 'unknown'] }) + field('useByDate', 'Use by date (only if known)', pick(item, 'use_by_date', 'useByDate'), { type: 'date' });
   } else if (kind === 'pantry-use') {
     title = `Use ${item.name}`;
     markup = `<p class="muted tiny wide">${esc(item.quantity)} ${esc(item.unit || '')} remaining</p>` + field('quantity', `Amount used (${item.unit || 'units'})`, '', { type: 'number', min: 0.001, max: item.quantity, step: 0.001, required: true }) + field('recipeId', 'Saved recipe (optional)', '', { choices: [{ value: '', label: 'No recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('mealTitle', 'Meal (optional)', '', { placeholder: 'e.g. Tuesday dinner', wide: true });
@@ -521,7 +563,7 @@ async function submitEditor(data) {
     state.view = 'recipes';
     writeRoute();
   } else if (kind === 'pantry') {
-    await save('/api/pantry', 'PUT', { id: item?.id, name: value('name'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, storageLocation: value('storageLocation'), quantityConfidence: value('quantityConfidence'), useByDate: value('useByDate') || null });
+    await save('/api/pantry', 'PUT', { id: item?.id, name: value('name'), category: value('category') === 'auto' ? null : value('category'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, storageLocation: value('storageLocation'), quantityConfidence: value('quantityConfidence'), useByDate: value('useByDate') || null });
   } else if (kind === 'pantry-use') {
     await save('/api/pantry/use', 'POST', { itemId: item.id, quantity: Number(value('quantity')), recipeId: value('recipeId') || null, mealTitle: value('mealTitle') || null });
   } else if (kind === 'meal') {
@@ -595,6 +637,22 @@ async function handleAction(actionName, id) {
     return refresh('Collaborator removed.');
   }
   if (TITLES[actionName]) return view(actionName);
+  if (actionName === 'filter-recipe-tag') {
+    state.recipeTag = id;
+    state.tagSuggestionQuery = '';
+    state.recipe = null;
+    state.recipeResults = null;
+    writeRoute();
+    render();
+    return searchRecipeLibrary();
+  }
+  if (actionName === 'clear-recipe-tag') {
+    state.recipeTag = '';
+    state.recipeResults = null;
+    render();
+    if (state.search.trim()) return searchRecipeLibrary();
+    return;
+  }
   if (actionName === 'add-recipe') return openEditor('recipe');
   if (actionName === 'edit-recipe') return openEditor('recipe', state.recipe || recipes.find((item) => item.id === id));
   if (actionName === 'open-recipe') {
@@ -686,6 +744,8 @@ async function handleAction(actionName, id) {
 }
 
 document.addEventListener('click', async (event) => {
+  const pantryFilter = event.target.closest('[data-pantry-category]');
+  if (pantryFilter) { state.pantryCategory = pantryFilter.dataset.pantryCategory; render(); return; }
   const nav = event.target.closest('[data-view]');
   if (nav) return view(nav.dataset.view);
   const button = event.target.closest('[data-action]');
@@ -716,6 +776,24 @@ content.addEventListener('change', async (event) => {
 });
 
 content.addEventListener('input', (event) => {
+  if (event.target.id === 'recipe-tag-search') {
+    const start = event.target.selectionStart;
+    state.tagSuggestionQuery = event.target.value;
+    render();
+    const next = document.querySelector('#recipe-tag-search');
+    next?.focus();
+    next?.setSelectionRange(start, start);
+    return;
+  }
+  if (event.target.id === 'pantry-search') {
+    const start = event.target.selectionStart;
+    state.pantrySearch = event.target.value;
+    render();
+    const next = document.querySelector('#pantry-search');
+    next?.focus();
+    next?.setSelectionRange(start, start);
+    return;
+  }
   if (event.target.id !== 'recipe-search') return;
   const start = event.target.selectionStart;
   state.search = event.target.value;
@@ -726,13 +804,11 @@ content.addEventListener('input', (event) => {
   next?.setSelectionRange(start, start);
   clearTimeout(state.searchTimer);
   const search = state.search;
-  if (!search.trim()) return;
+  if (!search.trim() && !state.recipeTag) return;
   state.searchTimer = setTimeout(async () => {
     try {
-      const result = await api(`/api/recipes?query=${encodeURIComponent(search.trim())}&limit=25`);
+      await searchRecipeLibrary();
       if (state.search !== search) return;
-      state.recipeResults = result.items;
-      render();
       const input = document.querySelector('#recipe-search');
       input?.focus();
       input?.setSelectionRange(start, start);
@@ -802,6 +878,9 @@ householdSelect.addEventListener('change', async () => {
     state.weekStart = null;
     state.recipe = null;
     state.recipeResults = null;
+    state.recipeTags = null;
+    state.recipeTag = '';
+    state.tagSuggestionQuery = '';
     state.shareUrl = null;
     state.shareId = null;
     writeRoute('replace');

@@ -12,6 +12,7 @@ import httpx
 from mcp.server.auth.middleware.auth_context import get_access_token
 
 from ..application.errors import RepositoryError, StorageNotInstalledError
+from ..application.pantry_categories import infer_pantry_category
 from ..config import Settings, get_settings
 
 
@@ -154,7 +155,7 @@ class SupabaseRepository:
         self._household_context = None
         return await self.get_household_context()
 
-    async def search_recipes(self, query: str = "", limit: int = 10) -> list[dict[str, Any]]:
+    async def search_recipes(self, query: str = "", limit: int = 10, tag: str = "") -> list[dict[str, Any]]:
         household_id = await self.household_id()
         params = {
             "select": "id,title,description,servings,active_minutes,total_minutes,tags,ingredients,instructions,source_url,created_at,updated_at",
@@ -163,9 +164,15 @@ class SupabaseRepository:
             "order": "updated_at.desc",
             "limit": str(min(max(limit, 1), 25)),
         }
-        if query.strip():
-            params["title"] = f"ilike.*{query.strip()[:80]}*"
-        return await self.request("GET", "recipes", params=params) or []
+        if not query.strip() and not tag:
+            return await self.request("GET", "recipes", params=params) or []
+        return await self.rpc("find_recipes", {
+            "search_query": query.strip()[:80], "filter_tag": tag,
+            "result_limit": min(max(limit, 1), 25),
+        }) or []
+
+    async def list_recipe_tags(self) -> list[dict[str, Any]]:
+        return await self.rpc("list_recipe_tags") or []
 
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None:
         rows = await self.request(
@@ -244,6 +251,7 @@ class SupabaseRepository:
             "quantity": item.get("quantity"),
             "unit": item.get("unit"),
             "storage_location": item.get("storageLocation", "pantry"),
+            "category": item.get("category") or infer_pantry_category(item["name"], item.get("storageLocation", "pantry")),
             "quantity_confidence": item.get("quantityConfidence", "estimated"),
             "use_by_date": item.get("useByDate"),
             "freshness_basis": item.get("freshnessBasis"),
@@ -576,6 +584,7 @@ class DemoRepository:
             "quantity": 1,
             "unit": "bag",
             "storage_location": "fridge",
+            "category": "vegetables",
             "quantity_confidence": "exact",
             "use_by_date": date.today().isoformat(),
         }
@@ -645,9 +654,22 @@ class DemoRepository:
         self._context.update(deepcopy(patch))
         return deepcopy(self._context)
 
-    async def search_recipes(self, query: str = "", limit: int = 10) -> list[dict[str, Any]]:
-        matches = [item for item in self._recipes if query.lower() in item["title"].lower()]
+    async def search_recipes(self, query: str = "", limit: int = 10, tag: str = "") -> list[dict[str, Any]]:
+        needle = query.strip().casefold()
+        matches = [item for item in self._recipes if (
+            not tag or tag in [str(value).casefold() for value in item.get("tags", [])]
+        ) and (
+            not needle or any(needle in str(item.get(key) or "").casefold() for key in ("title", "description"))
+            or any(needle in str(value).casefold() for value in item.get("tags", []))
+        )]
         return deepcopy(matches[:limit])
+
+    async def list_recipe_tags(self) -> list[dict[str, Any]]:
+        counts: dict[str, int] = {}
+        for recipe in self._recipes:
+            for tag in set(str(value).strip().casefold() for value in recipe.get("tags", []) if str(value).strip()):
+                counts[tag] = counts.get(tag, 0) + 1
+        return [{"tag": tag, "recipe_count": count} for tag, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
 
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None:
         return deepcopy(next((item for item in self._recipes if item["id"] == recipe_id), None))
@@ -727,6 +749,7 @@ class DemoRepository:
 
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]:
         row = {"id": item.get("id") or str(uuid4()), **deepcopy(item)}
+        row["category"] = row.get("category") or infer_pantry_category(row["name"], row.get("storageLocation", row.get("storage_location", "")))
         if row.get("quantity") is not None and row.get("reference_quantity") is None:
             row["reference_quantity"] = row["quantity"]
         self._pantry = [value for value in self._pantry if value["id"] != row["id"]] + [row]

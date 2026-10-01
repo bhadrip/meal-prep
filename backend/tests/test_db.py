@@ -1,9 +1,27 @@
 import httpx
 import pytest
+from unittest.mock import AsyncMock
 
 from app.application.errors import RepositoryError, StorageNotInstalledError
 from app.config import Settings
 from app.infrastructure.repositories import SupabaseRepository, _repository_error
+
+
+@pytest.mark.asyncio
+async def test_pantry_category_is_written_to_supabase_row(monkeypatch):
+    repository = SupabaseRepository(Settings(supabase_url="https://example.supabase.co", supabase_anon_key="test", _env_file=None), "token")
+    monkeypatch.setattr(repository, "household_id", AsyncMock(return_value="household-id"))
+    writes = []
+
+    async def request(method, path, **kwargs):
+        writes.append((method, path, kwargs))
+        return [kwargs["json"]]
+
+    monkeypatch.setattr(repository, "request", request)
+    saved = await repository.update_pantry_item({"name": "Garlic paste", "category": "condiments", "quantity": 1})
+    assert saved["category"] == "condiments"
+    assert writes[0][1] == "pantry_items"
+    assert writes[0][2]["json"]["category"] == "condiments"
 
 
 def test_missing_planning_table_has_actionable_error():
