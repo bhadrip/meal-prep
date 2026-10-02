@@ -188,3 +188,17 @@ async def test_pantry_partial_edit_preserves_database_dates_and_scope(monkeypatc
     with pytest.raises(ApplicationError, match="quantity must"):
         await service.update_pantry_item({"id": "item-1", "quantity": -2})
     assert all(call.args[0] == "GET" for call in request.call_args_list)
+
+
+@pytest.mark.asyncio
+async def test_recipe_nutrition_supabase_payload_keeps_numbers_and_units(monkeypatch):
+    repository = SupabaseRepository(Settings(supabase_url='https://example.supabase.co', supabase_anon_key='test', _env_file=None), 'token')
+    monkeypatch.setattr(repository, 'household_id', AsyncMock(return_value='home'))
+    request = AsyncMock(side_effect=lambda *args, **kwargs: [kwargs['json']])
+    monkeypatch.setattr(repository, 'request', request)
+    guide = {'basis': 'Label', 'profiles': [{'name': 'Base', 'portion': '1 bowl', 'serving': 'Serve',
+        'valueType': 'label', 'amounts': {'protein': 30, 'fat': 0},
+        'micronutrients': [{'nutrient': 'Iron', 'source': 'Tofu', 'amount': 3, 'unit': 'mg'}]}]}
+    saved = await repository.save_recipe({'title': 'Noodles', 'nutrition': guide})
+    assert saved['nutrition'] == guide
+    assert request.call_args.kwargs['json']['household_id'] == 'home'

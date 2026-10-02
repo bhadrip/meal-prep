@@ -774,3 +774,51 @@ def test_mcp_searchable_meal_category_and_http_plan_roundtrip_preserve_copies(cl
     assert '/static/choices.js' not in resource
     metadata = next(tool for tool in rpc(client, 'tools/list', {})['tools'] if tool['name'] == 'render_meal_library')
     assert metadata['_meta']['ui']['resourceUri'] == 'ui://meal-prep/recipe-library-v1.html'
+
+
+def test_nutrition_roundtrip_and_failure_through_direct_mcp(client):
+    guide = {'basis': 'Ingredient estimate', 'profiles': [{'name': 'Adults',
+        'serving': 'Add tofu', 'portion': '1 bowl', 'valueType': 'estimated', 'amounts': {'protein': 35, 'calories': 520}, 'macros': {'protein': 'high'},
+        'micronutrients': [{'nutrient': 'Iron', 'source': 'Tofu'}]}]}
+    saved = rpc(client, 'tools/call', {'name': 'save_meal_plan', 'arguments': {'plan': {
+        'weekStart': '2044-02-01', 'entries': [{'date': '2044-02-01', 'slot': 'dinner',
+        'meal': 'Noodles', 'nutrition': guide}]}}}, 950)['structuredContent']
+    assert saved['entries'][0]['nutrition']['profiles'][0]['macros']['protein'] == 'high'
+    assert saved['entries'][0]['nutrition']['profiles'][0]['amounts']['protein'] == 35
+    rejected = rpc(client, 'tools/call', {'name': 'update_plan_item', 'arguments': {
+        'week_start': '2044-02-01', 'kind': 'meal', 'item': {'id': saved['entries'][0]['id'],
+        'nutrition': {'basis': 'Estimate', 'profiles': []}}}}, 951)
+    assert rejected['isError']
+    read = rpc(client, 'tools/call', {'name': 'get_meal_plan', 'arguments': {'week_start': '2044-02-01'}}, 952)['structuredContent']
+    assert read['plan']['entries'][0]['nutrition'] == saved['entries'][0]['nutrition']
+    html = rpc(client, 'resources/read', {'uri': 'ui://meal-prep/meal-plan-v2.html'})['contents'][0]['text']
+    assert '/static/nutrition.js' not in html and 'window.MealNutrition' in html
+
+
+def test_direct_mcp_recipe_nutrition_and_weekly_summary(client):
+    guide = {'basis': 'Estimate', 'profiles': [{'name': 'Adults', 'serving': 'One bowl',
+        'portion': '1 bowl', 'amounts': {'protein': 30}, 'micronutrients': []}]}
+    guide['profiles'].append({'name':'Standard', 'serving':'Original', 'portion':'1 bowl', 'amounts':{'protein':14}})
+    recipe = rpc(client, 'tools/call', {'name': 'save_recipe', 'arguments': {'recipe': {
+        'title': 'Recipe nutrition test', 'nutrition': guide}}}, 970)['structuredContent']
+    assert recipe['nutrition']['profiles'][0]['amounts']['protein'] == 30
+    read = rpc(client, 'tools/call', {'name': 'get_recipe', 'arguments': {'recipe_id': recipe['id']}}, 971)['structuredContent']
+    assert read['nutrition'] == recipe['nutrition']
+    selected = rpc(client, 'tools/call', {'name':'get_recipe', 'arguments':{'recipe_id':recipe['id'], 'variation':'adults'}}, 976)['structuredContent']
+    assert len(selected['nutrition']['profiles']) == 1
+    assert selected['nutrition']['profiles'][0]['amounts']['protein'] == 30
+    rejected_selection = rpc(client, 'tools/call', {'name':'get_recipe', 'arguments':{'recipe_id':recipe['id'], 'variation':'Missing'}}, 977)
+    assert rejected_selection['isError']
+
+    rpc(client, 'tools/call', {'name': 'save_meal_plan', 'arguments': {'plan': {
+        'weekStart': '2046-02-05', 'entries': [{'date': '2046-02-05', 'slot': 'dinner',
+        'meal': 'Weekly test', 'nutrition': guide}]}}}, 972)
+    summary = rpc(client, 'tools/call', {'name': 'get_weekly_nutrition', 'arguments': {'week_start': '2046-02-05'}}, 973)['structuredContent']
+    assert summary['profiles'][0]['amounts']['protein'] == {'total': 30, 'coveredMeals': 1}
+    rejected = rpc(client, 'tools/call', {'name': 'get_weekly_nutrition', 'arguments': {'week_start': 'bad-date'}}, 974)
+    assert rejected['isError']
+    rendered = rpc(client, 'tools/call', {'name': 'render_meal_plan', 'arguments': {'week_start': '2046-02-05'}}, 975)['structuredContent']
+    assert rendered['plan']['nutritionSummary'] == summary
+    selected_week = rpc(client, 'tools/call', {'name':'get_weekly_nutrition', 'arguments':{'week_start':'2046-02-05', 'variation':'standard'}}, 978)['structuredContent']
+    assert len(selected_week['profiles']) == 1
+    assert selected_week['profiles'][0]['amounts']['protein']['total'] == 14

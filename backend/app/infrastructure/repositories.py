@@ -304,6 +304,8 @@ class SupabaseRepository:
             "source_url": recipe.get("sourceUrl"),
             "source_type": recipe.get("sourceType", "manual"),
         }
+        if "nutrition" in recipe:
+            row["nutrition"] = deepcopy(recipe["nutrition"])
         row.update({field: recipe[field] for field in CATEGORY_FIELDS.values() if field != "tags" and field in recipe})
         rows = await self.request(
             "POST", "recipes", params={"on_conflict": "id"}, json=row
@@ -1194,7 +1196,8 @@ class DemoRepository:
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]:
         existing = next((r for r in self._recipes if r["id"] == recipe.get("id")), {})
         row = {"id": recipe.get("id") or str(uuid4()),
-               **{field: deepcopy(existing.get(field, [])) for field in CATEGORY_FIELDS.values()}, **deepcopy(recipe)}
+               **{field: deepcopy(existing.get(field, [])) for field in CATEGORY_FIELDS.values()},
+               **({"nutrition": deepcopy(existing["nutrition"])} if "nutrition" in existing else {}), **deepcopy(recipe)}
         for camel, snake in (("totalMinutes", "total_minutes"), ("activeMinutes", "active_minutes"),
                              ("sourceUrl", "source_url"), ("sourceType", "source_type")):
             if camel in recipe:

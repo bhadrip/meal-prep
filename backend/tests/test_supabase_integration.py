@@ -188,6 +188,22 @@ async def test_local_supabase_unified_plan_activity_and_household_isolation():
                 "components": [{"name": "Dal", "quantity": 4, "unit": "servings", "source": "task", "taskId": task_id}]}],
                 "tasks": [{"id": task_id, "date": "2030-02-03", "title": "Cook dal", "recipeId": recipe["id"], "servings": 8}]})
             assert plan["entries"][0]["id"] == meal_id
+            guide = {"basis": "Ingredient estimate", "profiles": [{"name": "Adults", "serving": "More dal, less rice", "portion": "1 bowl", "valueType": "estimated",
+                "amounts": {"protein": 25, "calories": 450}, "macros": {"protein": "high"}, "micronutrients": [{"nutrient": "Iron", "source": "Lentils"}]}]}
+            plan = await planning.update_plan_item(week, "meal", {"id": meal_id, "nutrition": guide})
+            nutrition = plan["entries"][0]["nutrition"]
+            with_recipe_nutrition = await food.save_recipe({**recipe, "nutrition": guide})
+            assert with_recipe_nutrition["nutrition"] == nutrition
+            retained = await food.save_recipe(recipe)
+            assert retained["nutrition"] == nutrition
+            with pytest.raises(ApplicationError):
+                await food.save_recipe({**recipe, "nutrition": {"basis": "Estimate", "profiles": []}})
+            assert (await food.get_recipe(recipe["id"]))["nutrition"] == nutrition
+            assert nutrition["profiles"][0]["macros"]["fat"] == "unknown"
+            assert (await planning.get_meal_plan(week))["entries"][0]["nutrition"] == nutrition
+            with pytest.raises(ApplicationError):
+                await planning.update_plan_item(week, "meal", {"id": meal_id, "nutrition": {"basis": "Estimate", "profiles": []}})
+            assert await planning.get_meal_plan(week) == plan
             assert plan["tasks"][0]["recipeSnapshot"]["ingredients"][0]["quantity"] == 200
             # Save keeps the entry row: existing occurrence/feedback references survive edits.
             occurrence = await repo.request('POST', 'meal_occurrences', json={"household_id": home, "meal_plan_entry_id": meal_id, "title": "Dal bowl"})
@@ -207,6 +223,9 @@ async def test_local_supabase_unified_plan_activity_and_household_isolation():
             dal_id = cooked["activity"]["outputs"][0]["itemId"]
             eaten = await planning.complete_item(week, "meal", meal_id, [{"itemId": dal_id, "quantity": 4}])
             assert eaten["plan"]["entries"][0]["completedAt"]
+            assert eaten["plan"]["entries"][0]["nutrition"] == nutrition
+            with pytest.raises(RepositoryError, match="Completed"):
+                await repo.save_meal_plan({**eaten["plan"], "entries": [{**eaten["plan"]["entries"][0], "nutrition": None}]})
             assert next(row["quantity"] for row in await repo.get_pantry() if row["id"] == dal_id) == 3
             await planning.update_plan_item(week, "task", {"title": "Pack snacks"})
             line = (await shopping.add_item({"name": "Rotis", "quantity": 1, "unit": "pack"}))["items"][0]

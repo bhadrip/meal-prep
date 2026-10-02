@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..application import MealPrepServices
+from ..application.nutrition import weekly_nutrition, with_weekly_nutrition
 from ..auth import SupabaseTokenVerifier
 from ..config import get_settings
 from ..container import services_for_request
@@ -399,8 +400,8 @@ async def delete_recipe_relationship(relationship_id: str, services: WebServices
 
 
 @router.get("/api/recipes/{recipe_id}")
-async def get_recipe(recipe_id: str, services: WebServices) -> dict:
-    return await services.food.get_recipe(recipe_id)
+async def get_recipe(recipe_id: str, services: WebServices, variation: str | None = None) -> dict:
+    return await services.food.get_recipe(recipe_id, variation)
 
 
 @router.put("/api/recipes")
@@ -490,7 +491,13 @@ async def record_pantry_use(use: dict[str, Any], services: WebServices) -> dict:
 
 @router.get("/api/meal-plan")
 async def get_meal_plan(services: WebServices, week_start: str | None = None) -> dict:
-    return {"plan": await services.planning.get_meal_plan(week_start)}
+    plan = await services.planning.get_meal_plan(week_start)
+    return {"plan": plan, "nutritionSummary": weekly_nutrition(plan)}
+
+
+@router.get("/api/meal-plan/nutrition")
+async def get_weekly_nutrition(services: WebServices, week_start: str | None = None, variation: str | None = None) -> dict:
+    return await services.planning.get_weekly_nutrition(week_start, variation)
 
 
 @router.get("/api/meal-plan-rules")
