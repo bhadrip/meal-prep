@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "meal-prep": {
-      "type": "http",
-      "url": "https://meal-prep-swart.vercel.app/mcp"
-    }
-  }
-}

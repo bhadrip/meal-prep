@@ -30,7 +30,7 @@ Future mobile app → HTTP API ─┘
 
 ## Website
 
-Open the [Meal Prep landing page](https://meal-prep-swart.vercel.app/) and choose **Open the app**, or go straight to `/app`. Sign up or sign in with the same Supabase email used for the MCP connection. Browser and MCP clients have separate sessions, but they share the same identity and active household. The app supports manual edits and never places grocery orders.
+Open the [Meal Prep landing page](https://meal-prep.madhavan-padmaja.dev/) and choose **Open the app**, or go straight to `/app`. Sign up or sign in with the same Supabase email used for the MCP connection. Browser and MCP clients have separate sessions, but they share the same identity and active household. The app supports manual edits and never places grocery orders.
 
 In **Recipes**, start with a cuisine, eating goal, meal, diet, or saved tag. Filters combine across groups (for example, protein rich + dinner), with alternatives within a group. Search includes ingredients, and cooking time filters require a saved total time. Filters stay in the website URL through recipe detail and reload; **Show more recipes** continues beyond the first 25.
 
@@ -69,7 +69,7 @@ codex plugin add meal-prep@badri-personal-plugins
 
 ## Connect from a chat assistant
 
-Add the remote MCP server `https://meal-prep-swart.vercel.app/mcp` in a client that supports remote MCP and OAuth. After sign-in, the client discovers the Meal Prep tools. The same household data is available in the [web app](https://meal-prep-swart.vercel.app/app).
+Add the remote MCP server `https://meal-prep.madhavan-padmaja.dev/mcp` in a client that supports remote MCP and OAuth. After sign-in, the client discovers the Meal Prep tools. The same household data is available in the [web app](https://meal-prep.madhavan-padmaja.dev/app).
 
 ### ChatGPT
 
