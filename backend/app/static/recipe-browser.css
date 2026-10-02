@@ -78,3 +78,9 @@
 .rg-node-related { border-style:dashed; }
 @media(max-width:520px) { .rb-explore-panel { padding:0 8px 8px; } }
 @media(prefers-reduced-motion:reduce) { .rb-explore-chevron { transition:none; } }
+
+.rb-type { display:flex; align-items:center; gap:8px; font-size:.75rem; color:var(--muted); }
+.rb-type select { padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--rb-paper); min-width:115px; }
+.recipe-browser .saved-meal { padding:18px; border:1px solid var(--line); border-radius:13px; background:var(--rb-paper); }
+.rb-type select { color:var(--ink,CanvasText); }
+@media(max-width:620px) { .rb-search-row { flex-wrap:wrap; } .recipe-browser #recipe-search { flex-basis:100%; } .rb-type,.rb-time { flex:1; font-size:.7rem; justify-content:space-between; } .rb-type select,.rb-time select { min-width:0; width:auto; font-size:16px; } }

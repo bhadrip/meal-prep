@@ -169,6 +169,38 @@ async def configure_meal_slots(payload: dict[str, Any], services: WebServices) -
     return await services.household.configure_meal_slots(payload.get("slots"))
 
 
+@router.get("/api/meals")
+async def search_meals(services: WebServices, query: str = "", limit: int = 50, offset: int = 0) -> dict:
+    return await services.planning.meals.search(query, limit, offset)
+
+
+@router.put("/api/meals")
+async def save_meal(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.meals.save(payload)
+
+
+@router.post("/api/meals/from-plan")
+async def save_planned_meal(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.save_planned_meal(payload.get("weekStart"), payload.get("itemId"),
+                                                    payload.get("name"), payload.get("servings"))
+
+
+@router.get("/api/meals/{meal_id}")
+async def get_meal(meal_id: str, services: WebServices) -> dict:
+    return await services.planning.meals.get(meal_id)
+
+
+@router.delete("/api/meals/{meal_id}")
+async def archive_meal(meal_id: str, services: WebServices) -> dict:
+    return await services.planning.meals.archive(meal_id)
+
+
+@router.post("/api/meals/{meal_id}/plan")
+async def plan_saved_meal(meal_id: str, payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.plan_saved_meal(payload.get("weekStart"), meal_id, payload.get("date"),
+                                                  payload.get("slot"), payload.get("servings"))
+
+
 @router.patch("/api/meal-plan/items")
 async def update_plan_item(payload: dict[str, Any], services: WebServices) -> dict:
     return await services.planning.update_plan_item(payload.get("weekStart"), payload.get("kind"), payload.get("item", {}))
@@ -254,11 +286,11 @@ async def browse_recipe_library(
     services: WebServices, query: str = "", cuisine: list[str] = Query([]),
     goal: list[str] = Query([]), meal: list[str] = Query([]), diet: list[str] = Query([]),
     tag: list[str] = Query([]), max_minutes: int | None = None,
-    limit: int = 25, offset: int = 0,
+    limit: int = 25, offset: int = 0, item_type: str = "recipes",
 ) -> dict:
     return await services.food.browse_recipe_library(query, {
         "cuisine": cuisine, "goal": goal, "meal": meal, "diet": diet, "tag": tag,
-    }, max_minutes, limit, offset)
+    }, max_minutes, limit, offset, item_type)
 
 
 @router.put("/api/recipe-relationships")

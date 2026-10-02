@@ -2,7 +2,29 @@
 
 Meal Prep is a household food-planning app available as a website and a hosted MCP service. It coordinates breakfasts, lunches, dinners, snacks, weekend prep, pantry inventory, and store-prioritized shopping around a family’s actual week.
 
-The website offers direct, manual access to household setup, planning, recipes, pantry, shopping, and feedback. The installable plugin supplies workflow guidance and the MCP connection. Both use the same application services and Supabase household data. The website has no AI features.
+The website offers direct, manual access to household setup, planning, meals, recipes, pantry, shopping, and feedback. The installable plugin supplies workflow guidance and the MCP connection. Both use the same application services and Supabase household data. The website has no AI features.
+
+**Recipes** is one searchable library with an All view and type filters for
+Recipes, Ready food, and Meals. Save one
+or several recipes with ready food, such as dal + pre-cooked rotis + yogurt,
+with default servings and notes. Search names, notes, and components across the
+whole library. **Save as meal** is available on a recipe or weekly-plan entry;
+**Use saved meal** adds a dated copy to the selected week. Component amounts
+scale with servings. The copy retains the saved meal's ID/name/revision and
+recipe ingredient snapshots, so editing or archiving the library meal leaves
+existing plans intact. Pantry lot and batch-task links belong to the dated copy.
+Ready foods use `save_recipe` with `kind="ready_food"`; their preparation notes
+are instructions, and shopping demands the food itself rather than ingredients.
+Meal components link to either kind of library entry and open its details.
+
+MCP exposes the same filter through `render_recipe_library(item_type="meals")`
+(or `render_meal_library`), with
+`search_meals`, `get_meal`, `save_meal`, `archive_meal`, `save_planned_meal`, and
+`plan_saved_meal` available without UI. The additive migration
+`202610020002_reusable_meals.sql` installs household-scoped storage and plan
+provenance. Supabase's GitHub integration applies it after merge through the
+existing deployment workflow; GitHub Actions tests migrations on a disposable
+local database.
 
 Households configure their ordered eating occasions in **Settings → Meal slots**.
 The weekly plan keeps dated meals separate from tasks. Meals can combine bought

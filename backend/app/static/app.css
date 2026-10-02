@@ -386,3 +386,10 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
 .other-tasks { margin-top: 20px; }
 .shopping-needs .row { flex-wrap: wrap; gap: 6px; }
 .shopping-needs .row small { flex-basis: 100%; }
+
+.saved-meal { min-width: 0; overflow-wrap: anywhere; }
+.saved-meal .meal-actions { flex-wrap: wrap; margin-top: 20px; }
+
+.saved-meal .meal-actions .button.primary { padding: 0 11px; background: var(--primary); color: white; font-weight: 700; }
+.saved-meal .meal-actions .button.primary:hover { background: #3d486b; text-decoration: none; }
+.library-plan-summary { grid-column: 1 / -1; }

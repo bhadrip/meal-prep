@@ -159,6 +159,7 @@ def test_mcp_initializes_and_exposes_domain_tools(client: TestClient):
         if tool["name"].startswith("render_")
     }
     assert render_uris == {
+        "render_meal_library": "ui://meal-prep/recipe-library-v1.html",
         "render_household_snapshot": "ui://meal-prep/household-dashboard-v4.html",
         "render_recipe_library": "ui://meal-prep/recipe-library-v1.html",
         "render_recipe_graph": "ui://meal-prep/recipe-library-v1.html",
@@ -403,7 +404,7 @@ def test_household_snapshot_collects_chatgpt_ui_data_without_flattening_it_to_te
     assert rendered["kind"] == "household_snapshot"
     assert rendered["household"]["householdSize"] == 4
     assert set(rendered["sections"]) == {
-        "pantry", "recipes", "schedule", "feedback", "memories", "mealPlan", "shoppingList", "mealPlanRules"
+        "pantry", "recipes", "meals", "schedule", "feedback", "memories", "mealPlan", "shoppingList", "mealPlanRules"
     }
     assert rendered["sections"]["pantry"]["status"] in {"ready", "empty", "unavailable"}
 
@@ -627,7 +628,7 @@ def test_mcp_browses_typed_categories_and_rejects_unknown_filters(client):
     def call(name, arguments):
         return rpc(client, 'tools/call', {"name": name, "arguments": arguments})
     recipe = call('save_recipe', {"recipe": {"title": "MCP tofu", "eating_goals": ["protein rich"], "meal_types": ["dinner"]}})["structuredContent"]
-    arguments = {"filters": {"goal": ["protein rich"], "meal": ["dinner"]}}
+    arguments = {"filters": {"goal": ["protein rich"], "meal": ["dinner"]}, "item_type": "all"}
     results = call('browse_recipe_library', arguments)["structuredContent"]
     assert any(r["id"] == recipe["id"] for r in results["items"])
     rendered = call('render_recipe_library', arguments)["structuredContent"]
@@ -670,3 +671,39 @@ def test_mcp_and_http_share_custom_slots_components_tasks_and_failures(client):
         assert client.get(f'/api/meal-plan?week_start={WEEK}').json()["plan"]["tasks"][0]["completedAt"] == done["activity"]["completedAt"]
     finally:
         demo_repository.cache_clear()
+
+
+def test_mcp_searchable_meal_category_and_http_plan_roundtrip_preserve_copies(client):
+    from uuid import uuid4
+    suffix = str(uuid4())
+    meal = rpc(client, 'tools/call', {'name': 'save_meal', 'arguments': {'meal': {
+        'name': f'Bought dinner {suffix}', 'servings': 2, 'notes': 'Busy evening',
+        'components': [{'name': f'Rotis {suffix}', 'quantity': 4, 'unit': 'pieces', 'action': 'heat'}]}}})['structuredContent']
+    rendered = rpc(client, 'tools/call', {'name': 'render_meal_library', 'arguments': {'query': suffix}})['structuredContent']
+    assert rendered['kind'] == 'recipe_library' and rendered['items'] == [{**meal, 'itemType': 'meals'}]
+    assert rendered['household']['mealSlots']
+    shared = rpc(client, 'tools/call', {'name':'render_recipe_library','arguments':{'item_type':'meals','query':suffix}})['structuredContent']
+    assert shared == rendered
+    rejected_category = rpc(client, 'tools/call', {'name':'render_recipe_library','arguments':{'item_type':'invalid'}})
+    assert rejected_category['isError']
+    assert rpc(client, 'tools/call', {'name': 'get_meal', 'arguments': {'meal_id': meal['id']}})['structuredContent'] == meal
+    assert client.get('/api/meals', params={'query': suffix}).json()['items'] == [meal]
+    planned = rpc(client, 'tools/call', {'name': 'plan_saved_meal', 'arguments': {'week_start': '2038-01-04',
+        'meal_id': meal['id'], 'planned_date': '2038-01-04', 'slot': 'dinner', 'servings': 4}})['structuredContent']
+    entry = next(row for row in planned['entries'] if row['sourceMeal'] and row['sourceMeal']['id'] == meal['id'])
+    assert entry['components'][0]['quantity'] == 8
+    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == planned
+    invalid = rpc(client, 'tools/call', {'name': 'save_meal', 'arguments': {'meal': {**meal, 'components': []}}})
+    assert invalid['isError'] and 'component' in str(invalid['content'])
+    assert client.get(f"/api/meals/{meal['id']}").json() == meal
+    copy = client.post('/api/meals/from-plan', json={'weekStart': '2038-01-04', 'itemId': entry['id'], 'name': f'Copy {suffix}'}).json()
+    assert copy['components'][0]['quantity'] == 8 and copy['servings'] == 4
+    archive = client.delete(f"/api/meals/{meal['id']}").json()
+    assert archive['archivedAt']
+    rejected = client.post(f"/api/meals/{meal['id']}/plan", json={'weekStart': '2038-01-04', 'date': '2038-01-04', 'slot': 'dinner'})
+    assert rejected.status_code == 422
+    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == planned
+    resource = rpc(client, 'resources/read', {'uri': 'ui://meal-prep/recipe-library-v1.html'})['contents'][0]['text']
+    assert '/static/choices.js' not in resource
+    metadata = next(tool for tool in rpc(client, 'tools/list', {})['tools'] if tool['name'] == 'render_meal_library')
+    assert metadata['_meta']['ui']['resourceUri'] == 'ui://meal-prep/recipe-library-v1.html'

@@ -222,6 +222,8 @@ Data tools:
 - `get_weekly_schedule`, `save_weekly_schedule`
 - `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`
 - `get_household_memory`, `save_household_memory`, `review_household_memory`
+- `search_meals`, `get_meal`, `save_meal`, `archive_meal`
+- `save_planned_meal`, `plan_saved_meal`, `render_meal_library`
 - `save_meal_plan`, `get_meal_plan`
 - `configure_meal_slots`, `update_plan_item`, `complete_plan_item`
 - `preview_plan_shopping`, `save_plan_shopping`, `receive_shopping_item`
@@ -238,6 +240,40 @@ Presentation tools:
 - `render_shopping_list`
 
 ## Meals and tasks
+
+Reusable Meals are stored separately from Recipes and weekly-plan entries.
+Recipes have `kind=recipe|ready_food`. Ready-food entries have preparation
+instructions and no ingredient demand. Their meal components use `source=ready`
+and may link to the library entry through `recipeId`. The same reference opens
+details in the website and MCP App.
+
+`/api/recipe-library?item_type=all|recipes|ready_food|meals` and
+`browse_recipe_library(item_type=...)` share search and pagination. Recipe
+filters also match recipes inside meals; they do not imply nutritional labels
+for the entire meal.
+`save_meal` requires a name, positive default servings, and 1–30 components
+(`ready`, `cook`, `external`); cooking components reference active household
+recipes. Library components have no task/pantry-lot IDs. `search_meals` searches
+names, notes, and components, with `limit` 1–100 and `offset` 0–10000; archived
+meals are excluded. `get_meal` also reads archived records for history.
+
+`plan_saved_meal` adds an independent dated copy, scales component quantities
+from default servings (rounding up to 0.001), snapshots current recipe
+ingredients, and records `sourceMeal: {id, name, revision}`. Library edits and
+archives preserve prior copies, which can still link actual stock or prep tasks.
+`save_planned_meal` detaches those references, resolving recipe batches to cook
+components. Missing plan servings default to 1; specify the quantity basis when
+it is known. None of these operations changes inventory.
+
+HTTP routes: `GET/PUT /api/meals`, `GET/DELETE /api/meals/{id}`,
+`POST /api/meals/{id}/plan`, `POST /api/meals/from-plan`. The rendered MCP App
+shares the Recipes library resource, with Recipes, Ready food, and Meals type filters, search, pagination, and a date/slot/servings form that
+uses the same MCP tools. `render_recipe_library(item_type="meals")` selects
+the Meals filter; `render_meal_library` is a convenience tool for that same
+resource. `202610020002_reusable_meals.sql` adds the `meals`
+table with RLS and JSON-reference validation, plus immutable plan provenance.
+Fresh local Supabase tests verify the entire migration chain, foreign-household
+rejection, direct-table validation, and edits after a library archive.
 
 Household context exposes ordered `mealSlots` (`id`, `name`, `enabled`). The
 website and MCP share `configure_meal_slots`; stable IDs survive renaming and

@@ -34,6 +34,10 @@ PLANNING_FUNCTIONS = {
     "rpc/get_recent_meal_plans": "planning history",
     "rpc/complete_plan_item": "plan activity",
     "rpc/receive_shopping_item": "shopping receipts",
+    "rpc/search_meals": "meal library",
+    "rpc/get_meal": "meal library",
+    "rpc/save_meal": "meal library",
+    "rpc/archive_meal": "meal library",
 }
 
 
@@ -59,6 +63,22 @@ def _repository_error(path: str, exc: httpx.HTTPError | ValueError) -> Repositor
 
 
 class SupabaseRepository:
+    async def search_meals(self, query, limit, offset):
+        await self.household_id()
+        return await self.rpc("search_meals", {"search_text": query, "result_limit": limit, "result_offset": offset})
+
+    async def get_meal(self, meal_id):
+        await self.household_id()
+        return await self.rpc("get_meal", {"requested_meal_id": meal_id})
+
+    async def save_meal(self, meal):
+        await self.household_id()
+        return await self.rpc("save_meal", {"meal": meal})
+
+    async def archive_meal(self, meal_id):
+        await self.household_id()
+        return await self.rpc("archive_meal", {"requested_meal_id": meal_id})
+
     def __init__(self, settings: Settings, access_token: str):
         self.settings = settings
         self.access_token = access_token
@@ -208,6 +228,7 @@ class SupabaseRepository:
             "id": recipe.get("id") or str(uuid4()),
             "household_id": household_id,
             "title": recipe["title"],
+            "kind": recipe.get("kind", "recipe"),
             "description": recipe.get("description", ""),
             "servings": recipe.get("servings", 4),
             "active_minutes": recipe.get("activeMinutes"),
@@ -599,11 +620,35 @@ class SupabaseRepository:
 class DemoRepository:
     """Deterministic local state used when Supabase is not configured."""
 
+    async def search_meals(self, query, limit, offset):
+        rows = [deepcopy(row) for row in self._meals.values() if not row.get("archivedAt")
+                and (not query or query.casefold() in str([row["name"], row["notes"], row["components"]]).casefold())]
+        rows.sort(key=lambda row: (row["updatedAt"], row["id"]), reverse=True)
+        return {"items": rows[offset:offset + limit], "total": len(rows), "limit": limit, "offset": offset, "query": query}
+
+    async def get_meal(self, meal_id):
+        return deepcopy(self._meals.get(meal_id))
+
+    async def save_meal(self, meal):
+        old = self._meals.get(meal["id"], {})
+        now = datetime.now(UTC).isoformat()
+        changed = any(old.get(key) != meal.get(key) for key in ("name", "servings", "notes", "components"))
+        saved = {**deepcopy(meal), "revision": old.get("revision", 0) + int(changed), "archivedAt": None,
+                 "createdAt": old.get("createdAt", now), "updatedAt": now}
+        self._meals[meal["id"]] = saved
+        return deepcopy(saved)
+
+    async def archive_meal(self, meal_id):
+        row = self._meals[meal_id]
+        row["archivedAt"] = row.get("archivedAt") or datetime.now(UTC).isoformat()
+        return deepcopy(row)
+
     def __init__(self) -> None:
         self._context = deepcopy(self._context)
         self._pantry = deepcopy(self._pantry)
         self._shopping_list = deepcopy(self._shopping_list)
         self._activities = {}
+        self._meals = {}
         self._receipts = {}
         self._recipes = deepcopy(self._recipes)
         self._recipe_relationships: list[dict[str, Any]] = []
@@ -616,6 +661,7 @@ class DemoRepository:
             entry["notes"] = ""
             entry["components"] = []
             entry["completedAt"] = None
+            entry["sourceMeal"] = None
         self._meal_plans = {initial_plan["weekStart"]: initial_plan}
         self._rule_revisions: list[dict[str, Any]] = []
         initial_schedule = deepcopy(self._weekly_schedule)
@@ -821,6 +867,7 @@ class DemoRepository:
                 "sourceType": "source_type", "sourceUrl": "source_url",
             }.items()
         }
+        snapshot["kind"] = recipe.get("kind", "recipe")
         type(self)._shares[token] = {
             "id": share_id, "kind": "recipe", "recipe": snapshot,
             "recipeId": recipe_id, "createdAt": datetime.now(UTC).isoformat(),

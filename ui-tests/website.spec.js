@@ -258,6 +258,7 @@ test('recipe create, search, edit, share, copy, public save, revoke, and archive
   await page.goto('/app');
   await page.locator('.sidebar [data-view="recipes"]').click();
   await content(page).locator(`[data-action="open-recipe"][data-id="${originalId}"]`).click();
+  await expect(content(page).locator('.hero h2')).toHaveText(title);
   page.once('dialog', (dialog) => dialog.accept());
   await content(page).getByRole('button', { name: 'Archive' }).click();
   await expect(content(page).locator(`[data-action="open-recipe"][data-id="${originalId}"]`)).toHaveCount(0);
