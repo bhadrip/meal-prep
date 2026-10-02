@@ -48,48 +48,7 @@ if settings.auth_required and settings.supabase_configured:
 
 mcp = FastMCP(
     "meal-prep",
-    instructions=(
-        "An account may belong to several households. Call list_households when the user names a household "
-        "or the intended household is unclear; use switch_household before reading or changing that household. "
-        "The active household is shared by the website and MCP. Never mix data from different households. "
-        "Call get_planning_context before drafting or revising a weekly meal plan. It returns household "
-        "preferences, the requested or remembered weekly schedule, recent feedback, and active "
-        "household knowledge. If onboardingComplete is false, call render_onboarding so the user can complete "
-        "the MCP-served setup for household size, dietary restrictions, store priority, weeknight cooking limit, "
-        "lunch leftovers, and the planning areas they want coordinated. Save those areas in "
-        "planningPreferences.focusAreas. Do not describe empty or null onboarding "
-        "fields as saved preferences. Respect hard dietary restrictions. "
-        "Do not assume a weekly plan is dinner-only. Give each saved entry an explicit slot such as breakfast, "
-        "lunch, snack, dinner, or prep, and keep repeated breakfasts and packed lunches simple unless variety is requested. "
-        "Use confirmed household knowledge as preferences; treat suggestions and feedback only as evidence. "
-        "When someone reports how a dish or week went, save atomic feedback linked to the meal occurrence, recipe, "
-        "and week whenever those subjects are known. Use canonical tags for reusable themes and audiences, preserve "
-        "an actionable nextTime, and query the recipe feedback summary before repeating a dish. A weekly check-in "
-        "is a conversation that creates ordinary feedback entries; it is not a separate data type. "
-        "A null schedule means no record exists, not permission to invent one. "
-        "Search stores in storePriority order. When someone adds a shopping item, ask which store they generally buy it at; "
-        "the store is optional and belongs to that item. Save durable plans and lists only after the user agrees. "
-        "When the user asks what Meal Prep knows, use render_household_snapshot so the result is "
-        "a compact card dashboard instead of a long text inventory. When the user asks to change that "
-        "dashboard, use get_dashboard_layout and configure_dashboard, then render it again for verification. "
-        "When the user asks to see, browse, or list saved recipes, use render_recipe_library so the recipes "
-        "appear as visual cards with expandable ingredients and instructions instead of a text list. "
-        "When the user asks to share a saved recipe, use create_recipe_share and return its URL. "
-        "Anyone with that link can view a fixed recipe snapshot. Use list_recipe_shares and "
-        "revoke_recipe_share when they ask to stop sharing. A recipient can save an independent "
-        "copy with copy_shared_recipe. "
-        "When the user asks for a weekly check-in, what worked, or meal feedback, use render_feedback "
-        "so feedback appears separately from confirmed household preferences. "
-        "Never place or imply an order; external commerce requires a separate confirmation flow. "
-        "When the user attaches a fridge or pantry photo and asks to update the pantry, "
-        "call save_pantry_photo with the file parameter and visible observed_items. "
-        "Use apply_to_pantry=false if they want a list before deciding what to save. "
-        "Do not mark visual quantities exact or invent expiry dates. "
-        "Use render_pantry_evidence when they want to review saved pantry photos."
-        " When someone says they used pantry food, call record_pantry_use with the amount used; "
-        "include a saved recipe ID or a meal title when they identify the meal. "
-        "The amount is subtracted from the pantry quantity, so never pass the remaining amount as quantity."
-    ),
+    instructions=Path(__file__).with_name("meal-prep-instructions.md").read_text(encoding="utf-8"),
     stateless_http=True,
     json_response=True,
     streamable_http_path="/mcp",

@@ -1,4 +1,5 @@
 from copy import deepcopy
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 import pytest
@@ -550,3 +551,32 @@ def test_household_onboarding_can_be_completed_only_with_full_answers(client: Te
     )["structuredContent"]
     assert completed["householdSize"] == 2
     assert completed["onboardingCompletedAt"] != "2026-01-01T00:00:00+00:00"
+
+
+def test_direct_client_receives_workflow_and_records_pantry_use(client: TestClient):
+    initialized = rpc(client, "initialize", {
+        "protocolVersion": "2025-06-18", "capabilities": {},
+        "clientInfo": {"name": "direct-client-without-plugin", "version": "1.0"},
+    }, request_id=901)
+    instructions = Path(__file__).resolve().parents[1] / "app/transports/meal-prep-instructions.md"
+    assert initialized["instructions"] == instructions.read_text(encoding="utf-8")
+    assert "## Required sequence" in initialized["instructions"]
+    assert "## Client compatibility" in initialized["instructions"]
+
+    def call(name, arguments, request_id):
+        return rpc(client, "tools/call", {"name": name, "arguments": arguments}, request_id)
+
+    pantry = call("update_pantry_item", {"item": {
+        "name": "Direct client lentils", "quantity": 2, "unit": "cups",
+    }}, 902)["structuredContent"]
+    failed = call("record_pantry_use", {"item_id": pantry["id"], "quantity": 3}, 903)
+    assert failed["isError"] is True
+    assert "exceed" in str(failed["content"]).lower()
+    unchanged = call("get_pantry", {}, 904)["structuredContent"]["items"]
+    assert next(item for item in unchanged if item["id"] == pantry["id"])["quantity"] == 2
+    used = call("record_pantry_use", {
+        "item_id": pantry["id"], "quantity": 0.5, "meal_title": "Tuesday dinner",
+    }, 905)["structuredContent"]
+    assert used["quantityRemaining"] == 1.5
+    snapshot = call("render_household_snapshot", {}, 906)["structuredContent"]
+    assert next(item for item in snapshot["sections"]["pantry"]["value"] if item["id"] == pantry["id"])["quantity"] == 1.5
