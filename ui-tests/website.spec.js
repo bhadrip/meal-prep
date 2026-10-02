@@ -236,6 +236,12 @@ test('recipe create, search, edit, share, copy, public save, revoke, and archive
   await saveEditor(page);
   await expect(content(page)).toContainText('Updated browser tested recipe');
   await content(page).getByRole('button', { name: 'Create share link' }).click();
+  await expect(page.getByLabel('Review public recipe')).toContainText('Updated browser tested recipe');
+  await expect(page.getByRole('textbox', { name: 'New recipe share link' })).toHaveCount(0);
+  await page.getByLabel('Review public recipe').getByRole('button', {name: 'Cancel'}).click();
+  await expect(page.getByLabel('Review public recipe')).toHaveCount(0);
+  await content(page).getByRole('button', { name: 'Create share link' }).click();
+  await page.getByRole('button', {name: 'Confirm public link'}).click();
   const shareUrl = await page.getByRole('textbox', { name: 'New recipe share link' }).inputValue();
   expect(shareUrl).toContain('/s/');
   await content(page).getByRole('button', { name: 'Copy link' }).click();

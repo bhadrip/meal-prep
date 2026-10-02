@@ -76,6 +76,9 @@ class MealPrepRepository(Protocol):
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]: ...
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]: ...
     async def create_recipe_share(self, recipe_id: str, expires_at: str | None = None) -> dict[str, Any]: ...
+    async def create_meal_share(self, meal_id: str, expires_at: str | None = None) -> dict[str, Any]: ...
+    async def list_public_shares(self) -> list[dict[str, Any]]: ...
+    async def revoke_public_share(self, share_id: str) -> bool: ...
     async def list_recipe_shares(self) -> list[dict[str, Any]]: ...
     async def revoke_recipe_share(self, share_id: str) -> bool: ...
     async def copy_shared_recipe(self, token: str) -> str: ...
@@ -432,6 +435,26 @@ class RecipePantryService:
 
     async def list_recipe_shares(self) -> list[dict[str, Any]]:
         return await self.repository.list_recipe_shares()
+
+    async def create_meal_share(self, meal_id: str, expires_at: str | None = None) -> dict[str, Any]:
+        if not await self.repository.get_meal(meal_id):
+            raise ApplicationError("Meal was not found")
+        if expires_at:
+            try:
+                parsed = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if parsed.tzinfo is None or parsed <= datetime.now(UTC):
+                    raise ValueError
+            except ValueError as exc:
+                raise ApplicationError("expires_at must be a future ISO 8601 timestamp") from exc
+        return await self.repository.create_meal_share(meal_id, expires_at)
+
+    async def list_public_shares(self) -> list[dict[str, Any]]:
+        return await self.repository.list_public_shares()
+
+    async def revoke_public_share(self, share_id: str) -> dict[str, Any]:
+        if not await self.repository.revoke_public_share(share_id):
+            raise ApplicationError("Share was not found")
+        return {"id": share_id, "revoked": True}
 
     async def revoke_recipe_share(self, share_id: str) -> dict[str, Any]:
         if not await self.repository.revoke_recipe_share(share_id):

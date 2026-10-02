@@ -16,7 +16,7 @@ from ..auth import SupabaseTokenVerifier
 from ..config import get_settings
 from ..container import services_for_request
 from ..infrastructure.repositories import SupabaseRepository
-from ..sharing import read_shared_recipe, render_shared_recipe_page
+from ..sharing import read_shared_recipe, read_shared_food, render_shared_recipe_page, render_shared_meal_page
 
 
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
@@ -189,7 +189,7 @@ async def get_circle_share(share_id: UUID, services: WebServices) -> dict:
 
 @router.post("/api/circles/{circle_id}/weeks")
 async def share_week_to_circle(circle_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
-    return await services.circles.share_week(str(circle_id), payload.get("weekStart"))
+    return await services.circles.share_week(str(circle_id), payload.get("weekStart"), payload.get("expectedAudience"))
 
 
 @router.post("/api/circles/{circle_id}/recipes")
@@ -199,12 +199,31 @@ async def share_recipe_to_circle(circle_id: UUID, payload: dict[str, Any], servi
 
 @router.post("/api/circles/{circle_id}/messages")
 async def send_circle_message(circle_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
-    return await services.circles.send_message(str(circle_id), payload.get("body"))
+    return await services.circles.send_message(str(circle_id), payload.get("body"),
+        payload.get("attachmentKind"), payload.get("attachmentId"), payload.get("mentionIds"),
+        payload.get("expectedAudience"))
+
+
+@router.get("/api/circles/{circle_id}/mention-candidates")
+async def circle_mention_candidates(circle_id: UUID, services: WebServices) -> dict:
+    return await services.circles.mention_candidates(str(circle_id))
+
+
+@router.get("/api/direct-shares")
+async def list_direct_shares(services: WebServices, limit: int = 50, offset: int = 0) -> dict:
+    return await services.circles.list_direct_shares(limit, offset)
+
+
+@router.post("/api/direct-shares")
+async def create_direct_share(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.circles.share_direct(payload.get("email"), payload.get("kind"),
+                                               payload.get("recipeId"), payload.get("weekStart"), payload.get("mealId"))
 
 
 @router.post("/api/circle-shares/{share_id}/comments")
 async def comment_on_circle_share(share_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
-    return await services.circles.comment(str(share_id), payload.get("body"), payload.get("targetType", "post"), payload.get("targetId"))
+    return await services.circles.comment(str(share_id), payload.get("body"), payload.get("targetType", "post"),
+                                           payload.get("targetId"), payload.get("mentionIds"))
 
 
 @router.delete("/api/circle-comments/{comment_id}")
@@ -411,6 +430,25 @@ async def revoke_recipe_share(share_id: str, services: WebServices) -> dict:
     return await services.food.revoke_recipe_share(share_id)
 
 
+@router.post("/api/meals/{meal_id}/shares")
+async def create_meal_share(meal_id: UUID, services: WebServices) -> dict:
+    share = await services.food.create_meal_share(str(meal_id))
+    return {**share, "url": f"{get_settings().app_base_url.rstrip('/')}/s/{share['token']}"}
+
+
+@router.get("/api/public-shares")
+async def list_public_shares(services: WebServices) -> dict:
+    items = await services.food.list_public_shares()
+    base = get_settings().app_base_url.rstrip('/')
+    return {"items": [{**item, "url": f"{base}/s/{item['token']}" if item.get("token") else None}
+                      for item in items], "count": len(items)}
+
+
+@router.delete("/api/public-shares/{share_id}")
+async def revoke_public_share(share_id: UUID, services: WebServices) -> dict:
+    return await services.food.revoke_public_share(str(share_id))
+
+
 @router.get("/api/recipes/{recipe_id}/lessons")
 async def get_recipe_lessons(recipe_id: str, services: WebServices, limit: int = 50) -> dict:
     return await services.feedback.recipe_feedback_summary(recipe_id, limit)
@@ -575,13 +613,13 @@ async def review_household_memory(
 @router.get("/s/{token}", response_class=HTMLResponse, include_in_schema=False)
 async def shared_recipe_page(token: str) -> HTMLResponse:
     try:
-        share = await read_shared_recipe(token, get_settings())
+        share = await read_shared_food(token, get_settings())
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Sharing is temporarily unavailable") from exc
     if not share:
         raise HTTPException(status_code=404, detail="Share not found or no longer available")
     return HTMLResponse(
-        render_shared_recipe_page(share),
+        render_shared_meal_page(share) if share["kind"] == "meal" else render_shared_recipe_page(share),
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow"},
     )
 

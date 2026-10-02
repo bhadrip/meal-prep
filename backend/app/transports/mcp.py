@@ -136,8 +136,21 @@ async def leave_circle(circle_id: str) -> dict[str, Any]:
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def list_shared_with_me(limit: int = 50, offset: int = 0, kind: str | None = None,
                               circle_id: str | None = None) -> dict[str, Any]:
-    """Read accepted-circle conversations with messages, shared weeks, and recipes. Set circle_id for one circle; page with limit/offset until nextOffset is null. kind can be message, week, or recipe. Open an item to read its thread. No whole-plan copy."""
+    """Read accessible private conversations, including direct shares, with messages, shared weeks, recipes, and saved meals. Set circle_id for one conversation; page with limit/offset until nextOffset is null. Open an item to read its thread. No whole-plan copy."""
     return await services_for_request().circles.list_shared_with_me(limit, offset, kind, circle_id)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_direct_shares(limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    """List one-to-one recipe and weekly-plan shares addressed to or created by this account, with thread counts. Page until nextOffset is null."""
+    return await services_for_request().circles.list_direct_shares(limit, offset)
+
+
+@mcp.tool(annotations=SHARE, structured_output=True)
+async def share_direct(email: str, kind: str, recipe_id: str | None = None,
+                       week_start: str | None = None, meal_id: str | None = None) -> dict[str, Any]:
+    """Share one immutable recipe, saved meal, or whole-week snapshot directly with an existing account by email. kind is recipe, meal, or week. This does not add the friend to a circle; the two people can reply in the share thread."""
+    return await services_for_request().circles.share_direct(email, kind, recipe_id, week_start, meal_id)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
@@ -147,15 +160,25 @@ async def get_shared_item(share_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=SHARE, structured_output=True)
-async def send_circle_message(circle_id: str, body: str) -> dict[str, Any]:
-    """Send a short group message to an accepted private circle when the user asks to post it."""
-    return await services_for_request().circles.send_message(circle_id, body)
+async def send_circle_message(circle_id: str, body: str, attachment_kind: str | None = None,
+                              attachment_id: str | None = None, mention_ids: list[str] | None = None,
+                              expected_audience: list[str] | None = None) -> dict[str, Any]:
+    """Post to an accepted private circle. Optionally attach one recipe or saved meal snapshot and mention accepted circle member IDs. The attachment is shared with the circle and opens a thread."""
+    return await services_for_request().circles.send_message(circle_id, body, attachment_kind,
+        attachment_id, mention_ids, expected_audience)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_circle_mention_candidates(circle_id: str) -> dict[str, Any]:
+    """List accepted members who may be tagged in a circle message or share thread. Only available to accepted members."""
+    return await services_for_request().circles.mention_candidates(circle_id)
 
 
 @mcp.tool(annotations=SHARE, structured_output=True)
-async def share_week_to_circle(circle_id: str, week_start: str) -> dict[str, Any]:
+async def share_week_to_circle(circle_id: str, week_start: str,
+                               expected_audience: list[str] | None = None) -> dict[str, Any]:
     """Explicitly publish one immutable whole-week meal plan snapshot to an accepted friend circle. Later plan edits are not published automatically."""
-    return await services_for_request().circles.share_week(circle_id, week_start)
+    return await services_for_request().circles.share_week(circle_id, week_start, expected_audience)
 
 
 @mcp.tool(annotations=SHARE, structured_output=True)
@@ -165,9 +188,10 @@ async def share_recipe_to_circle(circle_id: str, recipe_id: str) -> dict[str, An
 
 
 @mcp.tool(annotations=APPEND, structured_output=True)
-async def comment_on_circle_share(share_id: str, body: str, target_type: str = "post", target_id: str | None = None) -> dict[str, Any]:
+async def comment_on_circle_share(share_id: str, body: str, target_type: str = "post", target_id: str | None = None,
+                                  mention_ids: list[str] | None = None) -> dict[str, Any]:
     """Discuss a shared week, a specific planned meal, or a recipe in the share. Use target_type post, meal, or recipe with target_id for meal/recipe."""
-    return await services_for_request().circles.comment(share_id, body, target_type, target_id)
+    return await services_for_request().circles.comment(share_id, body, target_type, target_id, mention_ids)
 
 
 @mcp.tool(annotations=ARCHIVE, structured_output=True)
@@ -305,9 +329,30 @@ async def create_recipe_share(recipe_id: str, expires_at: str | None = None) -> 
     return {**share, "url": f"{settings.app_base_url.rstrip('/')}/s/{share['token']}"}
 
 
+@mcp.tool(annotations=SHARE, structured_output=True)
+async def create_meal_share(meal_id: str, expires_at: str | None = None) -> dict[str, Any]:
+    """Publish a read-only snapshot of one saved meal and its referenced recipes to a revocable public link. Anyone with the link can view it; public shares have no comments."""
+    share = await services_for_request().food.create_meal_share(meal_id, expires_at)
+    return {**share, "url": f"{settings.app_base_url.rstrip('/')}/s/{share['token']}"}
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_public_shares() -> dict[str, Any]:
+    """List public recipe and saved-meal links created by this account, including links that can be copied again and revoked or expired link history. Older hash-only links cannot be recovered."""
+    items = await services_for_request().food.list_public_shares()
+    return {"items": [{**item, "url": f"{settings.app_base_url.rstrip('/')}/s/{item['token']}" if item.get("token") else None}
+                      for item in items], "count": len(items)}
+
+
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def revoke_public_share(share_id: str) -> dict[str, Any]:
+    """Revoke a public recipe or meal link created by this account. Further views fail immediately."""
+    return await services_for_request().food.revoke_public_share(share_id)
+
+
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def list_recipe_shares() -> dict[str, Any]:
-    """List links created by the caller, including expired and revoked links. Raw link tokens are never returned again."""
+    """List recipe link metadata created by the caller. For recoverable active links, use list_public_shares."""
     items = await services_for_request().food.list_recipe_shares()
     return {"items": items, "count": len(items)}
 

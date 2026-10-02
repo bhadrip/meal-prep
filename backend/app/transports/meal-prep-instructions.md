@@ -271,17 +271,45 @@ remain connected to the meal, recipe, variant, and week it describes.
    `review_household_memory` only after the user confirms, corrects, or asks to
    forget one.
 
-## Recipe sharing
+## Sharing food with friends
+
+- Circles are private group conversations. Use `list_my_circles` to find an
+  accepted circle, `list_shared_with_me` for its timeline, and
+  `get_shared_item` for the exact post and thread. A whole-week share is a
+  frozen snapshot; it does not update when the household plan changes.
+  Before posting food or a week, show the circle's accepted audience and the
+  content to the user. Pass the sorted `userId:membershipId` values from the
+  circle's `audience` as `expected_audience` when publishing; the server
+  rejects a changed audience instead of adding recipients silently.
+- For a one-to-one share, use `share_direct` with an existing friend's account
+  email and a recipe, saved meal, or Monday week start. The recipient can see
+  only that share and reply in its thread; no group invitation is needed.
+  `list_direct_shares` returns these items. Do not infer an email address.
+- A circle message can attach one recipe or saved meal with
+  `send_circle_message(attachment_kind, attachment_id)`. Use
+  `list_circle_mention_candidates` to resolve people before passing
+  `mention_ids` in a group message or thread reply. Never treat a typed
+  `@name` alone as proof of an account identity. A referenced food item is
+  shared as a snapshot when posted.
+- Use `comment_on_circle_share` for private threads and
+  `save_circle_recipe` when a recipient wants an independent recipe copy.
+  World broadcasts are read-only and have no comments.
+
+## Public links
 
 - When the user asks to share a saved recipe, find it with `search_recipes` if
   needed, then call `create_recipe_share` for that recipe. Give the returned
   URL to the user. Anyone holding the active link can view its fixed recipe
   snapshot; it excludes household details and cooking feedback.
-- `expires_at` is optional. With no value, the link stays active until revoked.
-  `list_recipe_shares` shows link metadata but cannot recover a previously
-  created URL. Create a new link if the user needs another URL.
-- If the user wants to stop sharing, call `list_recipe_shares` to find the link
-  and `revoke_recipe_share` with its ID. Revocation blocks later views and
+- A saved meal may be published with `create_meal_share`. Its link shows a
+  fixed, read-only meal and referenced recipe snapshot. Neither public food
+  link has a comment thread.
+- `expires_at` is optional. With no value, a link stays active until revoked.
+  `list_public_shares` shows all links created by the caller and allows active
+  links created by the current version to be copied again. Older hash-only
+  links cannot be recovered; create a new link if needed.
+- If the user wants to stop sharing, find the link with `list_public_shares`
+  and call `revoke_public_share`. Revocation blocks later views and recipe
   copies.
 - A signed-in recipient can open the link and save an independent copy to
   their household. In chat, use `copy_shared_recipe` only when the recipient

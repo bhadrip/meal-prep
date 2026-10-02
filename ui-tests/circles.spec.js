@@ -95,8 +95,11 @@ test('Circle feed shares a whole week and recipe, supports discussion and saving
   await page.getByRole('button', {name: 'Close thread'}).click();
   await expect(page.locator('.circle-feed')).toBeVisible();
   await page.locator('.circle-card').filter({hasText: 'Friday friends'}).getByRole('button', {name: 'Share a recipe'}).click();
-  await page.getByLabel('Recipe to share').selectOption({label: 'Paneer rice bowls'});
-  await page.getByRole('button', {name: 'Share recipe', exact: true}).click();
+  await page.getByLabel('Message Friday friends').fill('');
+  await page.getByLabel('Message Friday friends').pressSequentially('@recipe');
+  await page.locator('.mention-item').filter({hasText: 'Paneer rice bowls'}).click();
+  await page.getByRole('button', {name: 'Send message'}).click();
+  await page.getByRole('button', {name: 'Confirm share'}).click();
   await expect(page.locator('.circle-post').first()).toContainText('Paneer rice bowls');
   await page.locator('.circle-post').first().getByRole('button', {name: /Reply in thread/}).click();
   await page.getByRole('button', {name: 'Save recipe'}).click();
