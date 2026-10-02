@@ -293,12 +293,43 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
 .toast { position: fixed; right: 26px; bottom: 26px; z-index: 50; max-width: 360px; padding: 13px 17px; border-radius: 9px; background: var(--primary); color: white; font-size: .75rem; font-weight: 600; box-shadow: var(--shadow); opacity: 0; transform: translateY(16px); pointer-events: none; transition: .22s ease; }
 .toast.show { opacity: 1; transform: translateY(0); }
 .mobile-nav { display: none; }
-.circle-page, .circle-detail { max-width: 950px; margin-inline: auto; }
+.circle-page { max-width: 1480px; margin-inline: auto; }
+.circle-detail { min-width: 0; }
 .circle-page .page-heading { margin-bottom: 22px; }
 .circle-page .page-heading p:last-child { margin-top: 7px; color: var(--muted); }
+.circle-layout { display: grid; grid-template-columns: minmax(230px, 280px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.circle-layout:has(.circle-thread-panel) { grid-template-columns: minmax(210px, 250px) minmax(300px, 1fr) minmax(360px, 430px); }
 .circle-setup, .circle-feed, .circle-meals, .circle-recipes, .circle-discussion { display: grid; gap: 14px; margin-bottom: 30px; }
 .circle-setup .section-head, .circle-feed .section-head { margin: 0; }
-.circle-card, .circle-post { padding: 22px; }
+.circle-card { padding: 18px; min-width: 0; }
+.circle-feed > .circle-card { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; box-shadow: none; background: transparent; }
+.circle-manage { margin-top: 12px; font-size: .74rem; }
+.circle-manage summary { width: fit-content; cursor: pointer; color: var(--muted); font-weight: 700; }
+.circle-manage[open] { border-top: 1px solid var(--line); padding-top: 12px; }
+.circle-room-list { display: grid; gap: 6px; }
+.circle-room { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid transparent; border-radius: 12px; background: transparent; padding: 9px; color: var(--ink); font: inherit; cursor: pointer; }
+.circle-room:hover, .circle-room.active { background: var(--paper); border-color: var(--line); }
+.circle-room span:last-child { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; font-weight: 700; }
+.circle-room small { color: var(--muted); font-size: .7rem; font-weight: 400; }
+.circle-room-avatar { display: grid; place-items: center; flex: 0 0 34px; height: 34px; border-radius: 50%; background: #e7e0d5; color: var(--ink); font-weight: 800; }
+.circle-feed { gap: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); min-height: 420px; }
+.circle-chat-head { padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.circle-chat-head h2 { font-family: var(--font-display); font-size: 1.25rem; }
+.circle-timeline { display: flex; flex-direction: column-reverse; gap: 16px; padding: 20px; min-width: 0; min-height: 340px; max-height: calc(100vh - 330px); overflow-y: auto; }
+.circle-post { align-self: flex-start; width: min(100%, 600px); padding: 15px 18px; border: 1px solid var(--line); border-radius: 4px 15px 15px 15px; background: #fffdf9; box-shadow: 0 3px 12px rgba(39, 39, 43, .04); overflow-wrap: anywhere; }
+.circle-post.thread-open { border-color: var(--copper); }
+.circle-message-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: .78rem; }
+.circle-message-meta time { color: var(--muted); font-size: .68rem; }
+.circle-message-body { margin-top: 10px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+.circle-post .eyebrow { margin-top: 10px; }
+.circle-message-form { display: flex; align-items: end; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--line); }
+.circle-message-form label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.circle-message-form textarea { flex: 1; min-width: 0; min-height: 48px; max-height: 150px; padding: 10px 12px; resize: vertical; border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--ink); font: inherit; }
+.circle-message-form button { flex: 0 0 auto; }
+.circle-thread-panel { min-width: 0; max-height: calc(100vh - 130px); overflow-y: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); padding: 18px; }
+.circle-thread-panel .circle-detail-head { margin: 16px 0 22px; }
+.circle-thread-panel .circle-detail-head h2 { font-size: 1.45rem; }
+.circle-thread-panel .circle-recipe-grid { grid-template-columns: minmax(0, 1fr); }
 .circle-card h3, .circle-post h3, .circle-recipe h3 { font-family: var(--font-display); font-size: 1.2rem; }
 .circle-card > p, .circle-post > p { margin-top: 8px; }
 .circle-preview { color: var(--ink); font-size: .78rem; }
@@ -325,6 +356,21 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
 .circle-review ul { margin: 12px 0 12px 20px; font-size: .76rem; line-height: 1.7; overflow-wrap: anywhere; }
 .circle-members h4 { margin-bottom: 8px; font-size: .8rem; }
 .circle-member { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 0; color: var(--muted); font-size: .73rem; overflow-wrap: anywhere; }
+@media (max-width: 1180px) {
+  .circle-layout:has(.circle-thread-panel) { grid-template-columns: minmax(210px, 250px) minmax(0, 1fr); }
+  .circle-thread-panel { grid-column: 2; max-height: none; }
+}
+@media (max-width: 740px) {
+  .circle-layout, .circle-layout:has(.circle-thread-panel) { grid-template-columns: minmax(0, 1fr); }
+  .circle-thread-panel { grid-column: 1; }
+  .circle-setup { margin-bottom: 0; }
+  .circle-room-list { display: flex; overflow-x: auto; }
+  .circle-room { min-width: 150px; }
+  .circle-message-form { flex-wrap: wrap; }
+  .circle-timeline { max-height: 60vh; }
+  .circle-layout:has(.circle-thread-panel) .circle-setup,
+  .circle-layout:has(.circle-thread-panel) .circle-feed { display: none; }
+}
 @media (max-width: 600px) {
   .topbar:has(.household-picker:not([hidden])) { flex-wrap: wrap; gap: 12px; }
   .topbar:has(.household-picker:not([hidden])) .top-actions { width: 100%; }

@@ -81,8 +81,9 @@ class SupabaseRepository:
     async def circle_leave(self, circle_id):
         return await self.rpc("leave_circle", {"requested_circle_id": circle_id})
 
-    async def circle_feed(self, limit=51, offset=0, kind=None):
-        return await self.rpc("list_shared_with_me", {"result_limit": limit, "result_offset": offset, "requested_kind": kind})
+    async def circle_feed(self, limit=51, offset=0, kind=None, circle_id=None):
+        return await self.rpc("list_shared_with_me", {"result_limit": limit, "result_offset": offset,
+                                                       "requested_kind": kind, "requested_circle_id": circle_id})
 
     async def circle_get_post(self, share_id):
         return await self.rpc("get_circle_share", {"requested_share_id": share_id})
@@ -92,6 +93,9 @@ class SupabaseRepository:
 
     async def circle_share_recipe(self, circle_id, recipe_id):
         return await self.rpc("share_recipe_to_circle", {"requested_circle_id": circle_id, "requested_recipe_id": recipe_id})
+
+    async def circle_send_message(self, circle_id, body):
+        return await self.rpc("send_circle_message", {"requested_circle_id": circle_id, "requested_body": body})
 
     async def circle_comment(self, share_id, body, target_type, target_id):
         return await self.rpc("comment_on_circle_share", {"requested_share_id": share_id, "requested_body": body,
@@ -733,16 +737,17 @@ class DemoRepository:
             raise RepositoryError("Circle is not available")
         return circle
 
-    async def circle_feed(self, limit=51, offset=0, kind=None):
+    async def circle_feed(self, limit=51, offset=0, kind=None, circle_id=None):
         rows = [self._circle_summary(row) for row in reversed(list(self._circle_posts.values()))
                 if row["revokedAt"] is None and self._circles[row["circleId"]]["members"].get(self.user_id) == "accepted"
                 and row["recipientIds"].get(self.user_id) == self._circles[row["circleId"]]["memberEpochs"].get(self.user_id)
-                and (kind is None or row["kind"] == kind)]
+                and (kind is None or row["kind"] == kind)
+                and (circle_id is None or row["circleId"] == circle_id)]
         return deepcopy(rows[offset:offset + limit])
 
-    @staticmethod
-    def _circle_summary(row):
-        return {key: deepcopy(row[key]) for key in ("id", "circleId", "circleName", "kind", "createdBy", "createdByName", "createdAt", "snapshot")}
+    def _circle_summary(self, row):
+        return {**{key: deepcopy(row[key]) for key in ("id", "circleId", "circleName", "kind", "createdBy", "createdByName", "createdAt", "snapshot")},
+                "commentCount": len([comment for comment in self._circle_comments.get(row["id"], []) if not comment.get("deletedAt")])}
 
     async def circle_get_post(self, share_id):
         row = self._circle_posts.get(share_id)
@@ -802,6 +807,9 @@ class DemoRepository:
         if not recipe:
             raise RepositoryError("Recipe was not found")
         return await self._circle_post(circle_id, "recipe", {"recipe": self._circle_recipe_snapshot(recipe)})
+
+    async def circle_send_message(self, circle_id, body):
+        return await self._circle_post(circle_id, "message", {"text": body})
 
     async def circle_comment(self, share_id, body, target_type, target_id):
         row = await self.circle_get_post(share_id)

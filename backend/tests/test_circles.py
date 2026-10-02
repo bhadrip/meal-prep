@@ -8,6 +8,37 @@ from app.infrastructure.repositories import DemoRepository
 
 
 @pytest.mark.asyncio
+async def test_circle_group_message_and_thread_are_scoped_to_members():
+    owner = DemoRepository()
+    owner.user_id = "owner"
+    owner._circles = {}
+    owner._circle_posts = {}
+    owner._circle_comments = {}
+    service = CircleService(owner)
+    circle = await service.create_circle("Dinner friends")
+    another = await service.create_circle("Other friends")
+    friend = owner.as_user("friend@example.test")
+    outsider = owner.as_user("outsider@example.test")
+    await service.invite_friend(circle["id"], friend.user_id)
+    await CircleService(friend).respond_invitation(circle["id"], True)
+    with pytest.raises(ApplicationError, match="message"):
+        await service.send_message(circle["id"], "  ")
+    with pytest.raises(ApplicationError, match="message"):
+        await service.send_message(circle["id"], "x" * 2001)
+    with pytest.raises(RepositoryError, match="Circle is not available"):
+        await CircleService(outsider).send_message(circle["id"], "Can I join?")
+    sent = await service.send_message(circle["id"], "  Dinner was great  ")
+    assert sent["snapshot"] == {"text": "Dinner was great"}
+    assert (await CircleService(friend).list_shared_with_me(circle_id=circle["id"]))["items"][0]["id"] == sent["id"]
+    assert (await CircleService(friend).list_shared_with_me(circle_id=another["id"]))["items"] == []
+    reply = await CircleService(friend).comment(sent["id"], "What did you make?")
+    assert (await service.get_shared_item(sent["id"]))["comments"][0]["id"] == reply["id"]
+    assert (await service.list_shared_with_me(circle_id=circle["id"]))["items"][0]["commentCount"] == 1
+    with pytest.raises(RepositoryError, match="Shared item was not found"):
+        await CircleService(outsider).comment(sent["id"], "Hello")
+
+
+@pytest.mark.asyncio
 async def test_week_snapshot_contains_all_slots_and_referenced_food_without_private_data():
     owner = DemoRepository()
     owner.user_id = "owner"
@@ -139,6 +170,15 @@ async def test_shared_inspiration_pages_across_circles_and_filters_by_kind():
     assert page["nextOffset"] == 1
     assert [item["id"] for item in (await service.list_shared_with_me(limit=1, offset=1))["items"]] == [older["id"]]
     assert (await service.list_shared_with_me(kind="week"))["items"][0]["id"] == older["id"]
+    latest = await service.share_recipe(first["id"], repository._recipes[0]["id"])
+    first_page = await service.list_shared_with_me(circle_id=first["id"], limit=1)
+    assert [item["id"] for item in first_page["items"]] == [latest["id"]]
+    assert first_page["nextOffset"] == 1
+    assert [item["id"] for item in (await service.list_shared_with_me(circle_id=first["id"], limit=1, offset=1))["items"]] == [older["id"]]
+    assert [item["id"] for item in (await service.list_shared_with_me(circle_id=second["id"]))["items"]] == [newer["id"]]
+    assert (await CircleService(repository.as_user("outsider@example.test")).list_shared_with_me(circle_id=first["id"]))["items"] == []
+    with pytest.raises(ApplicationError, match="valid circle"):
+        await service.list_shared_with_me(circle_id="not-a-circle")
     with pytest.raises(ApplicationError):
         await service.list_shared_with_me(kind="pantry")
 
