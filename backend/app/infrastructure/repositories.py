@@ -32,6 +32,8 @@ PLANNING_FUNCTIONS = {
     "rpc/record_pantry_use": "pantry use",
     "rpc/save_meal_plan_rules": "meal plan rules",
     "rpc/get_recent_meal_plans": "planning history",
+    "rpc/complete_plan_item": "plan activity",
+    "rpc/receive_shopping_item": "shopping receipts",
 }
 
 
@@ -426,6 +428,15 @@ class SupabaseRepository:
     async def get_recent_meal_plans(self, before_week: str, limit: int = 2) -> list[dict[str, Any]]:
         return await self.rpc("get_recent_meal_plans", {"before_week": before_week, "result_limit": limit}) or []
 
+    async def complete_plan_item(self, week_start: str, kind: str, item_id: str, inputs: list[dict], outputs: list[dict]) -> dict:
+        return await self.rpc("complete_plan_item", {"requested_week": week_start, "item_kind": kind,
+                                                   "item_id": item_id, "used_inputs": inputs, "made_outputs": outputs})
+
+    async def receive_shopping_item(self, item_id: str, quantity: float, unit: str, storage_location: str) -> dict:
+        return await self.rpc("receive_shopping_item", {"shopping_item_id": item_id,
+                                                       "received_quantity": quantity, "received_unit": unit,
+                                                       "received_location": storage_location})
+
     @staticmethod
     def _rule_document(row: dict[str, Any]) -> dict[str, Any]:
         return {"id": row["id"], "revision": row["revision"], "text": row["text"], "createdAt": row["created_at"]}
@@ -589,11 +600,22 @@ class DemoRepository:
     """Deterministic local state used when Supabase is not configured."""
 
     def __init__(self) -> None:
+        self._context = deepcopy(self._context)
+        self._pantry = deepcopy(self._pantry)
+        self._shopping_list = deepcopy(self._shopping_list)
+        self._activities = {}
+        self._receipts = {}
         self._recipes = deepcopy(self._recipes)
         self._recipe_relationships: list[dict[str, Any]] = []
         initial_plan = deepcopy(self._meal_plan)
-        for entry in initial_plan["entries"]:
+        initial_plan["tasks"] = []
+        for index, entry in enumerate(initial_plan["entries"]):
             entry["id"] = entry.get("id") or str(uuid4())
+            entry["date"] = (date.fromisoformat(initial_plan["weekStart"]) + timedelta(days=index)).isoformat()
+            entry["slotName"] = "Dinner"
+            entry["notes"] = ""
+            entry["components"] = []
+            entry["completedAt"] = None
         self._meal_plans = {initial_plan["weekStart"]: initial_plan}
         self._rule_revisions: list[dict[str, Any]] = []
         initial_schedule = deepcopy(self._weekly_schedule)
@@ -943,6 +965,51 @@ class DemoRepository:
         weeks = sorted((week for week in self._meal_plans if week < before_week), reverse=True)[:limit]
         return [deepcopy(self._meal_plans[week]) for week in weeks]
 
+    async def complete_plan_item(self, week_start: str, kind: str, item_id: str, inputs: list[dict], outputs: list[dict]) -> dict:
+        if item_id in self._activities:
+            return {"plan": await self.get_meal_plan(week_start), "activity": deepcopy(self._activities[item_id])}
+        plan = deepcopy(self._meal_plans.get(week_start))
+        item = next((row for row in (plan or {}).get("entries" if kind == "meal" else "tasks", []) if row["id"] == item_id), None)
+        if not item:
+            raise RepositoryError("Plan item was not found")
+        pantry = deepcopy(self._pantry)
+        for used in inputs:
+            stock = next((row for row in pantry if row["id"] == used["itemId"]), None)
+            if not stock or stock.get("quantity") is None or stock["quantity"] < used["quantity"]:
+                raise RepositoryError("Not enough known pantry quantity")
+            stock["quantity"] = round(stock["quantity"] - used["quantity"], 3)
+        output_records = []
+        for output in outputs:
+            stock = {"id": str(uuid4()), **deepcopy(output), "quantityConfidence": "exact",
+                     "reference_quantity": output["quantity"],
+                     "provenance": {"sourceType": "plan_activity", "planItemId": item_id,
+                                    "recipeId": item.get("recipeId")}}
+            pantry.append(stock)
+            output_records.append({"itemId": stock["id"], **deepcopy(output)})
+        completed = datetime.now(UTC).isoformat()
+        item["completedAt"] = completed
+        if kind == "task":
+            item["stockOutputs"] = output_records
+        activity = {"itemId": item_id, "kind": kind, "completedAt": completed,
+                    "inputs": deepcopy(inputs), "outputs": output_records}
+        self._pantry, self._meal_plans[week_start], self._activities[item_id] = pantry, plan, activity
+        return {"plan": deepcopy(plan), "activity": deepcopy(activity)}
+
+    async def receive_shopping_item(self, item_id: str, quantity: float, unit: str, storage_location: str) -> dict:
+        if item_id in self._receipts:
+            return deepcopy(self._receipts[item_id])
+        item = next((row for row in self._shopping_list["items"] if row["id"] == item_id), None)
+        if not item:
+            raise RepositoryError("Shopping item was not found")
+        stock = await self.update_pantry_item({"name": item["name"], "quantity": quantity, "unit": unit,
+                                               "storageLocation": storage_location, "quantityConfidence": "exact",
+                                               "acquiredAt": datetime.now(UTC).date().isoformat(),
+                                               "provenance": {"sourceType": "shopping_receipt", "shoppingItemId": item_id}})
+        item.update({"purchased": True, "purchasedQuantity": quantity, "receivedPantryItemId": stock["id"]})
+        result = {"item": deepcopy(item), "pantryItem": stock}
+        self._receipts[item_id] = result
+        return deepcopy(result)
+
     async def get_meal_plan_rules(self, revision_id: str | None = None) -> dict[str, Any] | None:
         if revision_id:
             return deepcopy(next((item for item in self._rule_revisions if item["id"] == revision_id), None))
@@ -963,7 +1030,18 @@ class DemoRepository:
         return deepcopy(saved)
 
     async def save_shopping_list(self, shopping_list: dict[str, Any]) -> dict[str, Any]:
-        self._shopping_list = {"id": shopping_list.get("id") or str(uuid4()), **deepcopy(shopping_list)}
+        values = deepcopy(shopping_list)
+        retained = [row for row in self._shopping_list["items"] if row.get("receivedPantryItemId")
+                    and row["id"] not in {item.get("id") for item in values["items"]}]
+        values["items"].extend(deepcopy(retained))
+        for row in values["items"]:
+            existing = next((item for item in self._shopping_list["items"] if item["id"] == row.get("id")), {})
+            if existing.get("receivedPantryItemId"):
+                row.update({"receivedPantryItemId": existing["receivedPantryItemId"], "purchased": True,
+                            "purchasedQuantity": existing.get("purchasedQuantity")})
+        self._shopping_list = {**values, "id": shopping_list.get("id") or str(uuid4())}
+        for item in self._shopping_list["items"]:
+            item["id"] = item.get("id") or str(uuid4())
         return deepcopy(self._shopping_list)
 
     async def get_shopping_list(self, list_id: str | None = None) -> dict[str, Any] | None:

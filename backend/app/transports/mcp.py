@@ -79,8 +79,15 @@ mcp = FastMCP(
         "Check coverage, restrictions, timing, variation, and batch reuse before showing the proposal. "
         "When saving a plan guided by rules, include plan.ruleRevisionId from mealPlanRules.id. "
         "Save explicitly requested rule changes with save_meal_plan_rules after reading the current revision. "
-        "Do not assume a weekly plan is dinner-only. Give each saved entry an explicit slot such as breakfast, "
-        "lunch, snack, dinner, or prep, and keep repeated breakfasts and packed lunches simple unless variety is requested. "
+        "Use household.mealSlots: meals have household slot IDs, dates, and components; prep is a separate task, never a meal slot. "
+        "Tasks have optional dates, recipeId, servings, mealIds, and notes. Meal links are optional. "
+        "Components have name, quantity, unit, source (ready, cook, task, external), action (cook, heat, serve), "
+        "and optional recipeId, pantryItemId, or taskId. Bought food requires no recipe. "
+        "Use source task and taskId for batch reuse so its ingredients are counted once. "
+        "Use preview_plan_shopping for explicit quantities, review warnings and other-week commitments, then save the agreed list. "
+        "Planning does not consume stock. complete_plan_item records actual inputs in each pantry item's unit and optional outputs. "
+        "Checklist completion needs no stock changes. receive_shopping_item adds received stock once; marking purchased alone does not. "
+        "Keep repeated breakfasts and packed lunches simple unless variety is requested. "
         "Use confirmed household knowledge as preferences; treat suggestions and feedback only as evidence. "
         "When someone reports how a dish or week went, save atomic feedback linked to the meal occurrence, recipe, "
         "and week whenever those subjects are known. Use canonical tags for reusable themes and audiences, preserve "
@@ -336,8 +343,46 @@ async def apply_pantry_evidence(evidence_id: str, observed_items: list[dict[str,
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_meal_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    """Persist an approved weekly plan whose entries identify breakfast, lunch, snack, dinner, or prep slots."""
+    """Save an approved plan: weekStart (Monday), entries [{id?, date, slot: household slot ID, meal, servings?, notes?, components:[{id?, name, quantity?, unit?, source: ready|cook|task|external, action: cook|heat|serve, recipeId?, pantryItemId?, taskId?, notes?}]}], tasks [{id?, date?, title, notes?, recipeId?, servings?, mealIds?:[]}]. Tasks need no slot or meal link. Supply stable UUIDs when linking new items. Cook components require recipeId; task components require taskId. Saving never changes stock."""
     return await services_for_request().planning.save_meal_plan(plan)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def configure_meal_slots(slots: list[dict[str, Any]]) -> dict[str, Any]:
+    """Save ordered household eating slots [{id, name, enabled}]. Read context first; keep stable IDs when renaming/reordering, disable instead of deleting existing IDs. Prep belongs in tasks. Keep at least one enabled slot."""
+    return await services_for_request().household.configure_meal_slots(slots)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def update_plan_item(week_start: str, kind: str, item: dict[str, Any]) -> dict[str, Any]:
+    """Add or patch one meal or task without replacing other items. kind: meal|task. Omit item.id to add; supply its saved ID to edit. Meals use date, slot, meal, components; tasks use title, optional date, notes, recipeId, servings, mealIds. Completed items are history."""
+    return await services_for_request().planning.update_plan_item(week_start, kind, item)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def complete_plan_item(week_start: str, kind: str, item_id: str,
+                             inputs: list[dict[str, Any]] | None = None,
+                             outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Record a task done or a meal eaten. Inputs [{itemId, quantity}] are actual amounts USED in the pantry item's saved unit; outputs [{name, quantity, unit, storageLocation?}] create prepared stock. Ask for unknown actual amounts. Ordinary tasks can omit both. Atomic and safe to retry: each item completes once."""
+    return await services_for_request().planning.complete_item(week_start, kind, item_id, inputs, outputs)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def preview_plan_shopping(week_start: str) -> dict[str, Any]:
+    """Preview this week's remaining meal/task demand: scale recipe snapshots, count batches once, subtract exact stock once, and report unknown quantities/conversions. Does not save, reserve, buy, or consume food. Reconcile other-week commitments and English notes before saving the final shopping list."""
+    return await services_for_request().planning.preview_shopping(week_start)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_plan_shopping(week_start: str) -> dict[str, Any]:
+    """Save reviewed shopping suggestions for a week, recalculating from current stock. Replace only pending generated items for this week; preserve manual items and purchase history. Review preview_plan_shopping warnings first; for NLP adjustments use save_shopping_list with an explicitly reconciled list."""
+    return await services_for_request().planning.save_plan_shopping(week_start)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def receive_shopping_item(item_id: str, quantity: float, unit: str, storage_location: str = "pantry") -> dict[str, Any]:
+    """Record an actual shopping item received: mark purchased and add pantry stock in its actual quantity/unit (e.g. 20 pieces, not one pack). Safe to retry, one receipt per shopping line. Never places an order."""
+    return await services_for_request().shopping.receive_item(item_id, quantity, unit, storage_location)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
@@ -564,7 +609,7 @@ async def render_onboarding() -> dict[str, Any]:
 async def render_meal_plan(week_start: str | None = None) -> dict[str, Any]:
     """Render the final meal plan. Call get_meal_plan first when reasoning over the plan."""
     plan = await services_for_request().planning.get_meal_plan(week_start)
-    return {"kind": "meal_plan", "plan": plan}
+    return {"kind": "meal_plan", "plan": plan, "household": await services_for_request().household.get_context()}
 
 
 @mcp.tool(

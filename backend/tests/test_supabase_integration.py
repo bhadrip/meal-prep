@@ -1,16 +1,98 @@
 """Roundtrip checks against a disposable local Supabase stack."""
 
 import os
+import asyncio
 from uuid import uuid4
 
 import httpx
 import pytest
 
-from app.application.errors import RepositoryError
-from app.application.services import RecipePantryService
+from app.application.services import RecipePantryService, HouseholdService, PlanningService, ShoppingService
 from app.config import Settings
 from app.application.errors import RepositoryError, RevisionConflictError
 from app.infrastructure.repositories import SupabaseRepository
+
+
+@pytest.mark.asyncio
+async def test_local_supabase_unified_plan_activity_and_household_isolation():
+    url = os.environ.get("MEAL_PREP_TEST_SUPABASE_URL")
+    anon = os.environ.get("MEAL_PREP_TEST_ANON_KEY")
+    secret = os.environ.get("MEAL_PREP_TEST_SERVICE_ROLE_KEY")
+    if not all((url, anon, secret)):
+        pytest.skip("local Supabase test credentials are not configured")
+    admin = {"apikey": secret, "Authorization": f"Bearer {secret}"}
+    email, password = f"meal-plan-components-{uuid4()}@example.test", str(uuid4())
+    households = []
+    async with httpx.AsyncClient(base_url=url, timeout=20) as client:
+        created = await client.post('/auth/v1/admin/users', headers=admin,
+                                    json={"email": email, "password": password, "email_confirm": True})
+        assert created.status_code in (200, 201), created.text
+        user_id = created.json()["id"]
+        try:
+            login = await client.post('/auth/v1/token', params={"grant_type": "password"}, headers={"apikey": anon},
+                                      json={"email": email, "password": password})
+            assert login.status_code == 200
+            repo = SupabaseRepository(Settings(supabase_url=url, supabase_anon_key=anon, auth_required=True), login.json()["access_token"])
+            home = (await repo.get_household_context())["householdId"]
+            households.append(home)
+            household, food, planning, shopping = HouseholdService(repo), RecipePantryService(repo), PlanningService(repo), ShoppingService(repo)
+            slots = (await household.get_context())["mealSlots"]
+            await household.configure_meal_slots([{"id": "kids-am", "name": "Kids snack AM", "enabled": True}, *slots])
+            recipe = await food.save_recipe({"title": "Dal", "servings": 4, "ingredients": [{"name": "Lentils", "quantity": 200, "unit": "g"}]})
+            lentils = await food.update_pantry_item({"name": "Lentils", "quantity": 500, "unit": "g", "quantityConfidence": "exact"})
+            task_id, meal_id, week = str(uuid4()), str(uuid4()), "2030-02-04"
+            plan = await planning.save_meal_plan({"weekStart": week, "entries": [{"id": meal_id, "date": week, "slot": "kids-am", "meal": "Dal bowl",
+                "components": [{"name": "Dal", "quantity": 4, "unit": "servings", "source": "task", "taskId": task_id}]}],
+                "tasks": [{"id": task_id, "date": "2030-02-03", "title": "Cook dal", "recipeId": recipe["id"], "servings": 8}]})
+            assert plan["entries"][0]["id"] == meal_id
+            assert plan["tasks"][0]["recipeSnapshot"]["ingredients"][0]["quantity"] == 200
+            # Save keeps the entry row: existing occurrence/feedback references survive edits.
+            occurrence = await repo.request('POST', 'meal_occurrences', json={"household_id": home, "meal_plan_entry_id": meal_id, "title": "Dal bowl"})
+            await planning.update_plan_item(week, "meal", {"id": meal_id, "notes": "Serve warm"})
+            assert (await repo.request('GET', 'meal_occurrences', params={"id": f"eq.{occurrence[0]['id']}"}))[0]["meal_plan_entry_id"] == meal_id
+            # All stock changes roll back when an output fails after an input is applied.
+            with pytest.raises(RepositoryError):
+                await repo.complete_plan_item(week, "task", task_id, [{"itemId": lentils["id"], "quantity": 400}],
+                                               [{"name": "Dal", "quantity": -1, "unit": "servings"}])
+            assert (await repo.get_pantry())[0]["quantity"] == 500
+            cooked, retry = await asyncio.gather(*[repo.complete_plan_item(week, "task", task_id,
+                [{"itemId": lentils["id"], "quantity": 400}], [{"name": "Dal", "quantity": 7, "unit": "servings"}]) for _ in range(2)])
+            assert cooked["activity"] == retry["activity"]
+            pantry = await repo.get_pantry()
+            assert next(row["quantity"] for row in pantry if row["id"] == lentils["id"]) == 100
+            assert len([row for row in pantry if row["name"] == "Dal"]) == 1
+            dal_id = cooked["activity"]["outputs"][0]["itemId"]
+            eaten = await planning.complete_item(week, "meal", meal_id, [{"itemId": dal_id, "quantity": 4}])
+            assert eaten["plan"]["entries"][0]["completedAt"]
+            assert next(row["quantity"] for row in await repo.get_pantry() if row["id"] == dal_id) == 3
+            await planning.update_plan_item(week, "task", {"title": "Pack snacks"})
+            line = (await shopping.add_item({"name": "Rotis", "quantity": 1, "unit": "pack"}))["items"][0]
+            received, retry = await asyncio.gather(*[shopping.receive_item(line["id"], 20, "pieces") for _ in range(2)])
+            assert received["pantryItem"]["id"] == retry["pantryItem"]["id"]
+            assert len([row for row in await repo.get_pantry() if row["name"] == "Rotis"]) == 1
+            # A later list save keeps the receipt identity and cannot duplicate pantry stock.
+            saved_list = await repo.get_shopping_list()
+            await shopping.save(saved_list)
+            assert (await shopping.receive_item(line["id"], 20, "pieces"))["pantryItem"]["id"] == received["pantryItem"]["id"]
+            await repo.create_household("Other household")
+            other = (await repo.get_household_context())["householdId"]
+            households.append(other)
+            foreign_stock = await food.update_pantry_item({"name": "Private rotis", "quantity": 20, "unit": "pieces"})
+            foreign_recipe = await food.save_recipe({"title": "Private recipe"})
+            await repo.switch_household(home)
+            standalone = (await planning.update_plan_item(week, "task", {"title": "Unfinished task"}))["tasks"][-1]
+            with pytest.raises(RepositoryError, match="not found"):
+                await repo.complete_plan_item(week, "task", standalone["id"], [{"itemId": foreign_stock["id"], "quantity": 1}], [])
+            with pytest.raises(RepositoryError, match="household"):
+                await repo.save_meal_plan({**await repo.get_meal_plan(week), "tasks": [
+                    * (await repo.get_meal_plan(week))["tasks"], {"id": str(uuid4()), "title": "Foreign cooking", "recipeId": foreign_recipe["id"]}]})
+            assert not (await repo.get_meal_plan(week))["tasks"][-1]["completedAt"]
+        finally:
+            for household_id in households:
+                removed = await client.delete('/rest/v1/households', headers=admin, params={"id": f"eq.{household_id}"})
+                assert removed.status_code in (200, 204), removed.text
+            deleted = await client.delete(f'/auth/v1/admin/users/{user_id}', headers=admin)
+            assert deleted.status_code in (200, 204), deleted.text
 
 
 @pytest.mark.asyncio

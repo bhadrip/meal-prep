@@ -137,7 +137,7 @@ test('weekly rhythm and planned meal can be added, edited, and removed', async (
   await saveEditor(page);
   await expect(content(page).locator('.day-card').first()).toContainText('busy');
   const meal = unique('Playwright dinner');
-  await content(page).getByRole('button', { name: 'Add meal or prep' }).click();
+  await content(page).getByRole('button', { name: 'Add meal', exact: true }).click();
   await editor(page).locator('[name="date"]').fill(week);
   await editor(page).locator('[name="meal"]').fill(meal);
   await choose(page, 'slot', 'dinner');
@@ -185,7 +185,7 @@ test('an empty week can be planned from its day card without losing the previous
   await expect(content(page)).toContainText(meal);
 });
 
-test('day form supports prep, linked recipes, and guards the selected week', async ({ page }) => {
+test('day form supports recipe components and guards the selected week', async ({ page }) => {
   await open(page, 'plan');
   const week = await page.locator('#week-picker').inputValue();
   const thursday = new Date(`${week}T12:00:00`);
@@ -194,13 +194,21 @@ test('day form supports prep, linked recipes, and guards the selected week', asy
   await page.setViewportSize({ width: 320, height: 720 });
   await content(page).getByRole('button', { name: 'Add meal to Thursday' }).click();
   await expect(editor(page).locator('[name="date"]')).toHaveValue(selectedDate);
-  await choose(page, 'slot', 'prep');
-  await choose(page, 'recipeId', '11111111-1111-1111-1111-111111111111');
+  await choose(page, 'slot', 'dinner');
+  const component = editor(page).locator('.component-row');
+  await component.getByLabel('Food or dish').fill('Paneer rice bowls');
+  const source = component.locator('input[name$="-source"]').locator('..');
+  await source.locator('.choice-trigger').click();
+  await source.locator('[data-choice-value="cook"]').click();
+  const recipe = component.locator('input[name$="-recipeId"]').locator('..');
+  await recipe.locator('.choice-trigger').click();
+  await recipe.locator('[data-choice-value="11111111-1111-1111-1111-111111111111"]').click();
   const meal = unique('Prep rice');
   await editor(page).locator('[name="meal"]').fill(meal);
   await saveEditor(page);
   const row = content(page).locator('.meal').filter({ hasText: meal });
-  await expect(row).toContainText('Prep');
+  await expect(row).toContainText('Dinner');
+  await expect(row).toContainText('Paneer rice bowls');
   await row.getByRole('button', { name: 'Edit' }).click();
   const outside = new Date(`${week}T12:00:00`);
   outside.setDate(outside.getDate() + 7);
@@ -570,8 +578,9 @@ test('sign-in code, email change, error, and sign-out UI with a mocked auth prov
 test('pantry freshness review, aligned columns, and inline remaining work on desktop and mobile', async ({ page }) => {
   await open(page, 'pantry');
   const name = unique('Mushrooms');
-  const purchased = new Date();
-  purchased.setDate(purchased.getDate() - 7);
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const purchased = new Date(`${today}T12:00:00Z`);
+  purchased.setUTCDate(purchased.getUTCDate() - 7);
   const purchaseDate = purchased.toISOString().slice(0, 10);
   await content(page).getByRole('button', { name: 'Add pantry item' }).click();
   await editor(page).locator('[name="name"]').fill(name);

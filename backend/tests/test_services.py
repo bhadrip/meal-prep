@@ -122,7 +122,7 @@ async def test_planning_service_requires_an_explicit_slot_for_every_entry():
     service = PlanningService(DemoRepository())
     plan = {
         "weekStart": "2026-09-28",
-        "entries": [{"day": "Monday", "meal": "Vegetable pasta"}],
+        "entries": [{"date": "2026-09-28", "meal": "Vegetable pasta"}],
     }
 
     with pytest.raises(ApplicationError, match="meal slot"):

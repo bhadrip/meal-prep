@@ -217,6 +217,8 @@ Data tools:
 - `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`
 - `get_household_memory`, `save_household_memory`, `review_household_memory`
 - `save_meal_plan`, `get_meal_plan`
+- `configure_meal_slots`, `update_plan_item`, `complete_plan_item`
+- `preview_plan_shopping`, `save_plan_shopping`, `receive_shopping_item`
 - `save_shopping_list`, `add_shopping_item`, `get_shopping_list`, `mark_item_purchased`
 
 Presentation tools:
@@ -228,6 +230,53 @@ Presentation tools:
 - `render_onboarding`
 - `render_meal_plan`
 - `render_shopping_list`
+
+## Meals and tasks
+
+Household context exposes ordered `mealSlots` (`id`, `name`, `enabled`). The
+website and MCP share `configure_meal_slots`; stable IDs survive renaming and
+reordering, and disabling a slot preserves existing meals. Prep is a task.
+
+`save_meal_plan` takes `weekStart`, `entries`, and `tasks`. Meals have stable UUIDs,
+dates within the selected week, a household slot ID, `meal`, optional servings
+and notes, and `components`. Components have UUIDs, a name, optional quantity/unit,
+`source` (`ready`, `cook`, `task`, `external`), `action` (`cook`, `heat`, `serve`),
+and optional `recipeId`, `pantryItemId`, or `taskId`. Cook components require a
+recipe; task components require a task from the same plan. Tasks have a UUID,
+title, optional date (including the preceding weekend), notes, optional recipe
+and batch servings, and optional `mealIds`. No date, slot, or meal link is required
+for a checklist task. `update_plan_item` patches one record and returns the plan.
+The saved recipe ingredient/yield snapshot stays fixed through later recipe edits.
+
+`preview_plan_shopping` calculates the selected week's remaining explicit demand.
+It expands unfinished cooking tasks once, scales recipe components in servings,
+and aggregates ready food before subtracting exact stock. It reports missing
+amounts, uncertain stock, unknown conversions, and overallocated batch portions.
+It supports explicit gram/kilogram and milliliter/liter conversions; packages are
+not guessed. It does not reserve food or interpret English rules/notes. MCP should
+reconcile other-week commitments and prose before saving the final list.
+`save_plan_shopping` refreshes that week's pending generated lines, retaining
+manual items and purchased history. Item `source.reasons` identifies its meals
+or cooking tasks. The website exposes these operations through Shopping needs.
+
+`complete_plan_item` atomically records a task completed or meal eaten. Explicit
+inputs `{itemId, quantity}` consume actual quantities in each pantry item's unit;
+outputs `{name, quantity, unit, storageLocation}` create prepared pantry lots.
+No stock change is implied by a checklist. Each item has one immutable activity;
+repeated or concurrent completion requests return its first result. Completed
+items are history; correct pantry quantities separately if needed.
+`receive_shopping_item` marks a line purchased and creates one pantry lot using
+the actual received quantity/unit, safely on concurrent retries. The existing
+purchase checkbox alone records shopping progress. Repeat purchases need separate
+shopping lines. All stock/plan references are checked against the active household.
+
+HTTP uses `PUT /api/meal-slots`, `PATCH /api/meal-plan/items`,
+`POST /api/meal-plan/complete`, `GET /api/meal-plan/shopping-preview`,
+`POST /api/meal-plan/shopping`, and `POST /api/shopping-list/receive`.
+Migration `202610020001_unified_planning.sql` adds task/component storage, actual
+activity, and receipt functions. Plan saves upsert meal entries rather than
+recreating their IDs, preserving occurrence and feedback links. The MCP App renders
+components and tasks and can record task/cooking/meal completion through data tools.
 
 ## English planning rules
 

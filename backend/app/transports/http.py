@@ -162,6 +162,38 @@ async def get_household(services: WebServices) -> dict:
     return await services.household.get_context()
 
 
+@router.put("/api/meal-slots")
+async def configure_meal_slots(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.household.configure_meal_slots(payload.get("slots"))
+
+
+@router.patch("/api/meal-plan/items")
+async def update_plan_item(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.update_plan_item(payload.get("weekStart"), payload.get("kind"), payload.get("item", {}))
+
+
+@router.post("/api/meal-plan/complete")
+async def complete_plan_item(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.complete_item(payload.get("weekStart"), payload.get("kind"), payload.get("itemId"),
+                                                  payload.get("inputs"), payload.get("outputs"))
+
+
+@router.get("/api/meal-plan/shopping-preview")
+async def preview_plan_shopping(week_start: str, services: WebServices) -> dict:
+    return await services.planning.preview_shopping(week_start)
+
+
+@router.post("/api/meal-plan/shopping")
+async def save_plan_shopping(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.save_plan_shopping(payload.get("weekStart"))
+
+
+@router.post("/api/shopping-list/receive")
+async def receive_shopping_item(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.shopping.receive_item(payload.get("itemId"), payload.get("quantity"), payload.get("unit"),
+                                                payload.get("storageLocation", "pantry"))
+
+
 @router.patch("/api/household")
 async def update_household(payload: dict[str, Any], services: WebServices) -> dict:
     return await services.household.update_preferences(

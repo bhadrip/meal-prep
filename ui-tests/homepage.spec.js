@@ -54,8 +54,7 @@ test('the actionable homepage fits desktop and mobile and opens today’s weekly
     const fixtures = {
       mealPlan: { weekStart: '2026-09-28', entries: [
         { id: 'soup', date: '2026-10-01', slot: 'dinner', meal: 'Lentil soup & roasted vegetables', notes: 'Use the spinach from the fridge.' },
-        { id: 'prep', date: '2026-10-01', slot: 'prep', meal: 'Prep tomorrow’s lunch', notes: 'Pack two leftover portions after dinner.' },
-      ] },
+      ], tasks: [{ id: 'prep', date: '2026-10-01', title: 'Prep tomorrow’s lunch', notes: 'Pack two leftover portions after dinner.' }] },
       shoppingList: { items: [
         { id: 'milk', name: 'Milk', quantity: 1, unit: 'gallon', store: 'Costco', purchased: false },
         { id: 'rice', name: 'Rice', quantity: 1, unit: 'bag', store: 'Safeway', purchased: false },
@@ -124,17 +123,15 @@ test('home actions save today’s prep and shopping progress to the backend', as
   });
   const prep = `Homepage prep ${Date.now()}`;
   await page.goto('/app');
-  await home(page, 'mealPlan').getByRole('button', { name: 'Add a meal for today' }).click();
+  await home(page, 'mealPlan').getByRole('button', { name: 'Add a task for today' }).click();
   const editor = page.locator('#editor-dialog');
   await expect(editor.locator('[name="date"]')).toHaveValue('2026-10-01');
-  await editor.locator('[name="meal"]').fill(prep);
-  await editor.locator('[name="slot"]').locator('..').locator('.choice-trigger').click();
-  await editor.locator('[data-choice-value="prep"]').click();
+  await editor.locator('[name="title"]').fill(prep);
   await editor.locator('#dialog-save').click();
   await expect(editor).toBeHidden();
   await expect(home(page, 'mealPlan')).toContainText(prep);
   const savedPlan = (await (await page.request.get('/api/meal-plan?week_start=2026-09-28')).json()).plan;
-  expect(savedPlan.entries).toContainEqual(expect.objectContaining({ meal: prep, date: '2026-10-01', slot: 'prep' }));
+  expect(savedPlan.tasks).toContainEqual(expect.objectContaining({ title: prep, date: '2026-10-01', mealIds: [] }));
   await home(page, 'shoppingList').getByRole('checkbox', { name: `Mark ${grocery} purchased`, exact: true }).check();
   await expect(page.locator('#toast')).toHaveText('Shopping progress saved.');
   await expect(home(page, 'shoppingList')).not.toContainText(grocery);
