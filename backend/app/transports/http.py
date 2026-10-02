@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from html import escape
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
@@ -52,8 +53,9 @@ WebServices = Annotated[MealPrepServices, Depends(web_services)]
 
 
 @router.get("/", include_in_schema=False)
-async def website_home() -> FileResponse:
-    return FileResponse(STATIC_DIR / "landing.html")
+async def website_home() -> HTMLResponse:
+    html = (STATIC_DIR / "landing.html").read_text(encoding="utf-8")
+    return HTMLResponse(html.replace("{{MCP_URL}}", escape(get_settings().mcp_resource_url)))
 
 
 @router.get("/app", include_in_schema=False)

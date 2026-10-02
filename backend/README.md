@@ -41,7 +41,7 @@ The website requests `/api/app/bootstrap?include_sections=false` for lightweight
 ## Deployed resources
 
 - Source repository: `https://github.com/bhadrip/meal-prep`
-- Production app and MCP server: `https://meal-prep-swart.vercel.app`
+- Production app and MCP server: `https://meal-prep.madhavan-padmaja.dev`
 - Supabase project: `svdcbpcndqmocecyymav` in `bhadrip's Org`
 
 These resources are owned by the personal `bhadrip` accounts and are separate from Magik Mindz.
@@ -185,11 +185,17 @@ columns aligned in `supabase migration list --linked`.
 Create the Vercel project from the repository and set its Root Directory to `backend`. Configure:
 
 ```dotenv
-APP_BASE_URL=https://YOUR_PROJECT.vercel.app
+APP_BASE_URL=https://meal-prep.madhavan-padmaja.dev
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=YOUR_ANON_KEY
 AUTH_REQUIRED=true
 ```
+
+`APP_BASE_URL` is the public origin advertised by OAuth protected-resource
+metadata and the landing page's MCP copy button. Use the same origin as
+`plugin/mcp.json`; a Vercel deployment hostname and a custom domain are not
+interchangeable OAuth resource identifiers. For another deployment, update both
+the environment setting and the portable plugin endpoint.
 
 Deploy, then verify:
 

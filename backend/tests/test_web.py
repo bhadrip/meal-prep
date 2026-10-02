@@ -113,7 +113,7 @@ def test_website_uses_plugin_logo_and_self_hosted_type():
     assert landing.status_code == 200
     assert "Connect the MCP server" in landing.text
     assert 'href="/app"' in landing.text
-    assert "https://meal-prep-swart.vercel.app/mcp" in landing.text
+    assert http.get_settings().mcp_resource_url in landing.text
     assert 'id="copy-mcp"' in landing.text
     html = client.get("/app").text
     assert '/static/meal-prep-icon.svg' in html
@@ -168,6 +168,18 @@ def test_pantry_evidence_api_requires_a_session(monkeypatch):
     ))
     assert TestClient(app).get("/api/pantry/evidence").status_code == 401
     assert TestClient(app).get("/api/app/snapshot?sections=pantry").status_code == 401
+
+
+def test_landing_escapes_mcp_url_instead_of_rendering_configured_markup(monkeypatch):
+    monkeypatch.setattr(http, "get_settings", lambda: SimpleNamespace(
+        mcp_resource_url='https://example.com/<script>alert("bad config")</script>',
+    ))
+    response = TestClient(app).get("/")
+    assert response.status_code == 200
+    endpoint = response.text.split('<code id="mcp-url">', 1)[1].split('</code>', 1)[0]
+    assert '<script>' not in endpoint
+    assert '&lt;script&gt;' in endpoint
+    assert '&quot;bad config&quot;' in endpoint
 
 
 def test_retired_weekly_review_api_is_not_exposed():
