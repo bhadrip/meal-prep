@@ -371,3 +371,18 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
   .pantry-table .table-row.header { display: none; }
   .pantry-table .pantry-actions { grid-column: 1 / -1; }
 }
+.meal-components { padding-left: 16px; margin: 8px 0; font-size: 12px; }
+.day-tasks { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.day-tasks h4, .editor-components h3 { margin-bottom: 8px; }
+.plan-task { padding: 10px 0; }
+.plan-task .check-row { align-items: start; padding: 0; }
+.plan-task .check-row strong { overflow-wrap: anywhere; }
+.completed { opacity: .72; }
+.component-row, .stock-editor-row { padding: 14px 0; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.component-reference[hidden] { display: none; }
+.slot-editor-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 8px 0; }
+.slot-editor-row .field { flex: 1; min-width: 140px; }
+.task-meal-links { border: 0; padding: 0; }
+.other-tasks { margin-top: 20px; }
+.shopping-needs .row { flex-wrap: wrap; gap: 6px; }
+.shopping-needs .row small { flex-basis: 100%; }

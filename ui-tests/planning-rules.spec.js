@@ -51,7 +51,7 @@ test('unavailable planning rules leave the plan usable and retry from the rules 
   await expect(rulesCard(page).locator('.planning-text')).toHaveText('Keep Tuesday dinner quick.');
   await page.getByRole('tab', { name: 'Plan', exact: true }).click();
   await expect(page.locator('#week-picker')).toBeVisible();
-  await page.getByRole('button', { name: 'Add meal or prep', exact: true }).click();
+  await page.getByRole('button', { name: 'Add meal', exact: true }).click();
   await editor(page).locator('[name="meal"]').fill('Dinner after retry');
   await editor(page).locator('#dialog-save').click();
   await expect(editor(page)).toBeHidden();

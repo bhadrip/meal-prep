@@ -647,3 +647,26 @@ def test_mcp_browses_typed_categories_and_rejects_unknown_filters(client):
     invalid = call('browse_recipe_library', {"filters": {"healthy": ["yes"]}})
     assert invalid["isError"] is True and 'valid recipe filter' in str(invalid["content"])
     assert call('get_recipe', {"recipe_id": recipe["id"]})["structuredContent"]["meal_types"] == ["dinner"]
+
+
+def test_mcp_and_http_share_custom_slots_components_tasks_and_failures(client):
+    WEEK = "2030-02-04"
+    demo_repository.cache_clear()
+    try:
+        def call(name, arguments):
+            response = client.post('/mcp', headers={"Accept": "application/json, text/event-stream"},
+                json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
+            return response.json()["result"]
+        slots = client.get('/api/household').json()["mealSlots"]
+        slots.insert(0, {"id": "parents-am", "name": "Parents snack AM", "enabled": True})
+        assert call("configure_meal_slots", {"slots": slots})["structuredContent"]["mealSlots"][0]["id"] == "parents-am"
+        created = call("save_meal_plan", {"plan": {"weekStart": WEEK, "entries": [{"date": WEEK, "slot": "parents-am", "meal": "Popcorn", "components": [{"name": "Popcorn", "quantity": 2, "unit": "portions"}]}], "tasks": [{"title": "Pack snacks"}]}})["structuredContent"]
+        assert client.get(f'/api/meal-plan?week_start={WEEK}').json()["plan"] == created
+        assert call("get_planning_context", {"week_start": WEEK})["structuredContent"]["household"]["mealSlots"][0]["id"] == "parents-am"
+        assert call("preview_plan_shopping", {"week_start": WEEK})["structuredContent"]["items"][0]["quantity"] == 2
+        failed = call("update_plan_item", {"week_start": WEEK, "kind": "meal", "item": {"id": created["entries"][0]["id"], "slot": "prep"}})
+        assert failed["isError"] and "enabled" in str(failed["content"])
+        done = call("complete_plan_item", {"week_start": WEEK, "kind": "task", "item_id": created["tasks"][0]["id"]})["structuredContent"]
+        assert client.get(f'/api/meal-plan?week_start={WEEK}').json()["plan"]["tasks"][0]["completedAt"] == done["activity"]["completedAt"]
+    finally:
+        demo_repository.cache_clear()

@@ -29,7 +29,22 @@ sidebarToggle.addEventListener('click', () => {
 });
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const SLOTS = ['breakfast', 'lunch', 'snack', 'dinner', 'prep'];
+function mealSlots() { return household().mealSlots || []; }
+function slotName(entry) { return mealSlots().find((slot) => slot.id === entry.slot)?.name || entry.slotName || entry.slot; }
+function slotOrder(entry) { const i = mealSlots().findIndex((slot) => slot.id === entry.slot); return i < 0 ? 99 : i; }
+function planPayload(changes = {}) { return { ...state.plan, weekStart: state.weekStart, entries: arr(state.plan?.entries), tasks: arr(state.plan?.tasks), ...changes }; }
+
+function componentSummary(entry) {
+  return arr(entry.components).map((item) => `<li>${item.recipeId ? `<button type="button" class="text-button" data-action="today-recipe" data-id="${esc(item.recipeId)}">${esc(item.name)}</button>` : esc(item.name)}${item.quantity !== null && item.quantity !== undefined ? ` · ${esc(item.quantity)} ${esc(item.unit)}` : ''}${item.taskId ? ` · ${esc(arr(state.plan?.tasks).find((task) => task.id === item.taskId)?.title || 'Prepared task')}` : ''}</li>`).join('');
+}
+
+function mealMarkup(entry) {
+  return `<div class="meal ${entry.completedAt ? 'completed' : ''}" data-meal-id="${esc(entry.id)}"><small>${esc(slotName(entry))}${entry.completedAt ? ' · Eaten' : ''}</small><strong>${esc(entry.meal)}</strong>${entry.components?.length ? `<ul class="meal-components">${componentSummary(entry)}</ul>` : ''}${entry.notes ? `<p class="tiny">${esc(entry.notes)}</p>` : ''}${entry.completedAt ? '' : `<div class="meal-actions">${action('Edit', 'edit-meal', entry.id)}${action('Remove', 'remove-meal', entry.id)}${action('Record eaten', 'eat-meal', entry.id)}</div>`}</div>`;
+}
+
+function taskMarkup(task) {
+  return `<div class="plan-task ${task.completedAt ? 'completed' : ''}" data-task-id="${esc(task.id)}"><label class="check-row"><input type="checkbox" data-complete-task="${esc(task.id)}" aria-label="Complete ${esc(task.title)}" ${task.completedAt ? 'checked disabled' : ''} /><strong>${esc(task.title)}</strong></label>${task.notes ? `<p class="tiny">${esc(task.notes)}</p>` : ''}${task.mealIds?.length ? `<p class="tiny">For: ${task.mealIds.map((id) => esc(arr(state.plan?.entries).find((meal) => meal.id === id)?.meal || 'Meal')).join(', ')}</p>` : ''}${task.completedAt ? '<small>Completed</small>' : `<div class="meal-actions">${action('Edit task', 'edit-task', task.id)}${action('Remove task', 'remove-task', task.id)}${task.recipeId ? action('Record cooking', 'cook-task', task.id) : ''}</div>`}</div>`;
+}
 const FOCUS = ['breakfasts', 'lunches', 'snacks', 'dinners', 'weekend-prep', 'pantry', 'shopping'];
 const PANTRY_CATEGORIES = [['all', 'All items'], ['fruits', 'Fruits'], ['vegetables', 'Vegetables'], ['snacks', 'Snacks'], ['frozen', 'Frozen'], ['dry_goods', 'Dry goods'], ['condiments', 'Condiments'], ['uncategorized', 'Uncategorized']];
 const CARD_IDS = ['food-rules', 'planning-defaults', 'stores', 'schedule', 'meal-plan', 'shopping-list', 'pantry', 'recipes', 'feedback', 'memories'];
@@ -342,14 +357,15 @@ function renderToday() {
   const dayName = DAYS[(new Date().getDay() + 6) % 7];
   const plan = section('mealPlan');
   const meals = arr(plan?.entries).filter((entry) => entry.date === today || (!entry.date && entry.day === dayName))
-    .sort((a, b) => SLOTS.indexOf(a.slot || 'dinner') - SLOTS.indexOf(b.slot || 'dinner'));
+    .sort((a, b) => slotOrder(a) - slotOrder(b));
+  const todayTasks = arr(plan?.tasks).filter((task) => task.date === today);
   const groceries = arr(section('shoppingList')?.items).filter((item) => !item.purchased);
   const soonDate = dateForDay(today, 3);
   const useSoon = arr(section('pantry')).filter((item) => {
     const date = pick(item, 'use_by_date', 'useByDate');
     return ((date && date <= soonDate) || item.freshness?.status === 'review_age') && (item.quantity === null || item.quantity === undefined || Number(item.quantity) > 0);
   }).sort((a, b) => String(pick(a, 'use_by_date', 'useByDate')).localeCompare(String(pick(b, 'use_by_date', 'useByDate'))));
-  const mealBody = meals.length ? `<div class="today-meals">${meals.map((entry) => `<div class="today-meal"><span class="pill">${esc(label(entry.slot || 'dinner'))}</span><div><h3>${esc(entry.meal || entry.title)}</h3>${entry.notes ? `<p class="muted tiny">${esc(entry.notes)}</p>` : ''}</div><div class="today-meal-actions">${entry.recipeId ? action('View recipe', 'today-recipe', entry.recipeId) : ''}${action('Edit', 'edit-meal', entry.id || `${entry.day}:${entry.slot}`)}</div></div>`).join('')}</div>` : '<p class="muted">No meals or prep planned for today. Add one to get started.</p>';
+  const mealBody = `<div class="today-meals">${meals.length ? meals.map(mealMarkup).join('') : '<p class="muted">No meals planned for today.</p>'}${todayTasks.length ? `<h4>Tasks</h4>${todayTasks.map(taskMarkup).join('')}` : ''}</div>`;
   const mealReady = ['ready', 'empty'].includes(sectionStatus('mealPlan'));
   const shoppingBody = groceries.length ? `<p class="muted tiny">${groceries.length} ${groceries.length === 1 ? 'item' : 'items'} left to pick up</p><div class="stack">${groceries.slice(0, 5).map((item) => `<label class="check-row"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}${item.store ? ` · ${esc(item.store)}` : ''}</small></span></label>`).join('')}</div>` : '<p class="muted">Nothing left on your shopping list.</p>';
   const pantryBody = useSoon.length ? `<p class="muted tiny">Recorded dates coming up, and produce purchased at least 7 days ago.</p><div class="stack">${useSoon.slice(0, 5).map((item) => {
@@ -357,7 +373,7 @@ function renderToday() {
     return row(item.name, `${!date ? `Review first · purchased ${item.freshness.ageDays} days ago` : date < today ? 'Past recorded date' : date === today ? 'Use-by today' : `Use-by ${date}`} · ${item.quantity ?? 'Amount unknown'} ${item.unit || ''}`, action('Review', 'edit-pantry', item.id));
   }).join('')}</div>` : '<p class="muted">No recorded dates or produce ages need review today. Open Pantry to check missing dates.</p>';
   return `<section class="today-heading"><div><p class="eyebrow">${esc(household().householdName || 'Your kitchen')} · ${esc(new Date(`${today}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }))}</p><h2>What’s on today?</h2></div>${action('Open weekly plan', 'plan', '', 'primary')}</section>
-    <article class="card today-plan" data-home-section="mealPlan"><div class="card-head"><h3>Today’s meals & prep</h3>${mealReady ? action('Add a meal for today', 'add-meal', today) : ''}</div>${sectionContent('mealPlan', mealBody)}</article>
+    <article class="card today-plan" data-home-section="mealPlan"><div class="card-head"><h3>Today’s meals & tasks</h3>${mealReady ? `<div>${action('Add a meal for today', 'add-meal', today)}${action('Add a task for today', 'add-task', today)}</div>` : ''}</div>${sectionContent('mealPlan', mealBody)}</article>
     <div class="home-attention-grid"><article class="card" data-home-section="shoppingList"><div class="card-head"><h3>Still to shop</h3>${action('Open list', 'shopping')}</div>${sectionContent('shoppingList', shoppingBody)}</article><article class="card" data-home-section="pantry"><div class="card-head"><h3>Use soon</h3>${action('View pantry', 'pantry')}</div>${sectionContent('pantry', pantryBody)}</article></div>
     <div class="home-shortcuts">${action('Browse recipes', 'recipes')}${action('View reviews', 'reviews')}${action('Customize dashboard', 'settings')}</div>`;
 }
@@ -381,7 +397,7 @@ function renderOverview() {
     'planning-defaults': card('Planning defaults', '⌁', `<div class="stack">${row('Household size', h.householdSize ? `${h.householdSize} people` : 'Not set')}${row('Weeknight cooking', prefs.weeknightMaxMinutes ? `${prefs.weeknightMaxMinutes} minutes maximum` : 'Not set')}${row('Lunch leftovers', prefs.leftoversForLunch === undefined ? 'Not set' : prefs.leftoversForLunch ? 'Yes' : 'No')}</div>`),
     stores: card('Preferred stores', '◇', arr(h.storePriority).length ? `<div class="stack">${arr(h.storePriority).sort((a, b) => a.priority - b.priority).map((store) => row(store.store, `Priority ${store.priority}`)).join('')}</div>` : '<p class="muted tiny">No stores recorded yet.</p>'),
     schedule: card('Weekly rhythm', '◷', state.schedule ? `<div class="stack">${arr(state.schedule.days).slice(0, 3).map((day) => row(day.day, label(day.mode || 'Flexible'))).join('')}</div>` : '<p class="muted tiny">No weekly schedule saved.</p>', `<div style="margin-top:20px">${action('Open plan', 'plan')}</div>`),
-    'meal-plan': card('Weekly plan', '▦', `<div class="metric">${arr(plan?.entries).length}</div><p class="muted tiny">planned meals and prep tasks</p>`, `<div style="margin-top:20px">${action('View plan', 'plan')}</div>`),
+    'meal-plan': card('Weekly plan', '▦', `<div class="metric">${arr(plan?.entries).length}</div><p class="muted tiny">meals · ${arr(plan?.tasks).length} tasks</p>`, `<div style="margin-top:20px">${action('View plan', 'plan')}</div>`),
     'shopping-list': card('Shopping', '✓', `<div class="metric">${pending}</div><p class="muted tiny">items left to pick up</p>`, `<div style="margin-top:20px">${action('Open list', 'shopping')}</div>`),
     pantry: card('Pantry', '□', `<div class="metric">${pantry.length}</div><p class="muted tiny">${pantry.length === 1 ? 'item' : 'items'} on hand</p>`, `<div style="margin-top:20px">${action('View pantry', 'pantry')}</div>`),
     recipes: card('Recent recipes', '◇', recipes.length ? `<div class="stack">${recipes.slice(0, 3).map((recipe) => row(recipe.title, `${recipe.total_minutes || '—'} min · ${recipe.servings || '—'} servings`)).join('')}</div>` : '<p class="muted tiny">No recipes saved yet.</p>', `<div style="margin-top:20px">${action('Browse recipes', 'recipes')}</div>`),
@@ -434,17 +450,20 @@ function renderPlan() {
   const plan = state.plan;
   const schedule = state.schedule;
   const count = arr(plan?.entries).length;
-  let html = `<div class="toolbar plan-toolbar"><label class="field">Week of<input id="week-picker" type="date" value="${esc(state.weekStart)}" /></label><div class="plan-actions">${action('Edit weekly rhythm', 'edit-schedule')}${action('Add meal or prep', 'add-meal', '', 'primary')}</div></div>
-    <div class="plan-summary"><p>${esc(label(plan?.status || 'Draft'))} · ${count} ${count === 1 ? 'meal or prep task' : 'meals and prep tasks'}</p>${plan?.ruleRevision ? `<button type="button" class="text-button" id="plan-rule-source" data-action="view-rule-revision" data-id="${esc(plan.ruleRevision.id)}">Rules used: version ${esc(plan.ruleRevision.revision)}</button>` : ''}</div>
+  let html = `<div class="toolbar plan-toolbar"><label class="field">Week of<input id="week-picker" type="date" value="${esc(state.weekStart)}" /></label><div class="plan-actions">${action('Edit weekly rhythm', 'edit-schedule')}${action('Shopping needs', 'shopping-preview')}${action('Add task', 'add-task')}${action('Add meal', 'add-meal', '', 'primary')}</div></div>
+    <div class="plan-summary"><p>${esc(label(plan?.status || 'Draft'))} · ${count} meals · ${arr(plan?.tasks).length} tasks</p>${plan?.ruleRevision ? `<button type="button" class="text-button" id="plan-rule-source" data-action="view-rule-revision" data-id="${esc(plan.ruleRevision.id)}">Rules used: version ${esc(plan.ruleRevision.revision)}</button>` : ''}</div>
     <div class="week-notes-row"><details id="week-notes"><summary>Notes for this week${schedule?.notes ? '<span class="notes-indicator">Added</span>' : ''}</summary><p class="planning-text">${esc(schedule?.notes || 'Add guests, ingredients to use, or other changes for this week.')}</p></details>${action('Edit notes', 'edit-week-notes')}</div>`;
   if (!plan && !schedule) html += '<p class="muted tiny open-week">This week is open. Add a meal or set your weekly rhythm to begin.</p>';
   html += `<div class="week-grid">${DAYS.map((day, index) => {
     const date = dateForDay(state.weekStart, index);
     const rhythm = arr(schedule?.days).find((entry) => entry.day === day);
-    const entries = arr(plan?.entries).filter((entry) => entry.date === date || (!entry.date && entry.day === day));
+    const entries = arr(plan?.entries).filter((entry) => entry.date === date).sort((a, b) => slotOrder(a) - slotOrder(b));
+    const tasks = arr(plan?.tasks).filter((task) => task.date === date);
     const displayDate = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(displayDate)} · ${esc(rhythm?.mode || 'Flexible')}</span>${entries.length ? entries.map((entry) => `<div class="meal"><small>${esc(label(entry.slot || 'dinner'))}</small><strong>${esc(entry.meal || entry.title)}</strong><div class="meal-actions">${action('Edit', 'edit-meal', entry.id || `${day}:${entry.slot}`)}${action('Remove', 'remove-meal', entry.id || `${day}:${entry.slot}`)}</div></div>`).join('') : '<p class="muted tiny">Nothing planned</p>'}<button class="button ghost small day-add" data-action="add-meal" data-id="${esc(date)}" aria-label="Add meal to ${day}">+ Add meal</button></div>`;
+    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(displayDate)} · ${esc(rhythm?.mode || 'Flexible')}</span>${entries.length ? entries.map(mealMarkup).join('') : '<p class="muted tiny">No meals planned</p>'}<button class="button ghost small day-add" data-action="add-meal" data-id="${esc(date)}" aria-label="Add meal to ${day}">+ Add meal</button><div class="day-tasks"><h4>Tasks</h4>${tasks.map(taskMarkup).join('')}<button class="button ghost small" data-action="add-task" data-id="${esc(date)}" aria-label="Add task to ${day}">+ Add task</button></div></div>`;
   }).join('')}</div>`;
+  const otherTasks = arr(plan?.tasks).filter((task) => !task.date || task.date < state.weekStart || task.date > dateForDay(state.weekStart, 6));
+  if (otherTasks.length) html += `<article class="card other-tasks"><h3>Other dates & unscheduled tasks</h3>${otherTasks.map((task) => `<p class="tiny">${esc(task.date || 'No date set')}</p>${taskMarkup(task)}`).join('')}</article>`;
   return `${tabs}<section id="planning-panel" role="tabpanel" aria-labelledby="planning-tab-plan">${html}</section>`;
 }
 
@@ -564,7 +583,7 @@ function renderShopping() {
   if (sectionStatus('shoppingList') === 'unavailable') return html + empty('Shopping list unavailable', 'Try refreshing this page.');
   if (!items.length) return html + empty('No grocery items yet', 'Add an item to start a list.');
   const stores = [...new Set(items.map((item) => item.store || 'No store selected'))];
-  html += `<div class="store-groups">${stores.map((store) => `<article class="card"><div class="card-head"><h3>${esc(store)}</h3><span class="pill">${items.filter((item) => (item.store || 'No store selected') === store).length} items</span></div>${items.filter((item) => (item.store || 'No store selected') === store).map((item) => `<div class="check-row ${item.purchased ? 'done' : ''}"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" ${item.purchased ? 'checked' : ''} /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}</small>${item.store ? `<span class="pill store-tag" aria-label="Generally buy at ${esc(item.store)}">Usually: ${esc(item.store)}</span>` : ''}</span><div style="display:flex;gap:4px">${action('Edit', 'edit-shopping', item.id)}${action('Remove', 'remove-shopping', item.id)}</div></div>`).join('')}</article>`).join('')}</div>`;
+  html += `<div class="store-groups">${stores.map((store) => `<article class="card"><div class="card-head"><h3>${esc(store)}</h3><span class="pill">${items.filter((item) => (item.store || 'No store selected') === store).length} items</span></div>${items.filter((item) => (item.store || 'No store selected') === store).map((item) => `<div class="check-row ${item.purchased ? 'done' : ''}"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" ${item.purchased ? 'checked' : ''} ${item.receivedPantryItemId ? 'disabled' : ''} /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}</small>${arr(item.source?.reasons).length ? `<small>For: ${item.source.reasons.map((reason) => esc(reason.title)).join(', ')}</small>` : ''}${item.store ? `<span class="pill store-tag" aria-label="Generally buy at ${esc(item.store)}">Usually: ${esc(item.store)}</span>` : ''}</span><div style="display:flex;gap:4px">${item.receivedPantryItemId ? '<span class="tiny">Added to pantry</span>' : action('Add to pantry', 'receive-shopping', item.id)}${item.receivedPantryItemId ? '' : action('Edit', 'edit-shopping', item.id) + action('Remove', 'remove-shopping', item.id)}</div></div>`).join('')}</article>`).join('')}</div>`;
   return html;
 }
 
@@ -620,6 +639,7 @@ function renderSettings() {
         <div class="field wide"><button class="button primary" type="submit">Save household setup</button></div>
       </form>
     </article>
+    <article class="card"><div class="card-head"><h3>Meal slots</h3>${action('Edit meal slots', 'edit-meal-slots')}</div><p class="muted tiny">${mealSlots().map((slot) => `${esc(slot.name)}${slot.enabled ? '' : ' (disabled)'}`).join(' → ')}</p></article>
     <article class="card"><div class="card-head"><h3>Dashboard cards</h3><span class="card-icon">▦</span></div>
       <p class="muted tiny" style="margin-bottom:14px">Choose the cards and order under “More from your household” and in the chat dashboard.</p>
       <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save dashboard</button></form>
@@ -705,6 +725,69 @@ function field(name, title, value = '', options = {}) {
   return `<label class="field ${options.wide ? 'wide' : ''}">${esc(title)}${input}</label>`;
 }
 
+function componentEditor(item = {}) {
+  const key = item.id || crypto.randomUUID();
+  const source = item.source || 'ready';
+  const choices = (rows, title) => [{ value: '', label: title }, ...rows];
+  return `<div class="component-row form-grid" data-component="${key}">${field(`${key}-name`, 'Food or dish', item.name, { wide: true })}${field(`${key}-quantity`, 'Amount', item.quantity, { type: 'number', min: 0.001, step: 0.001 })}${field(`${key}-unit`, 'Unit', item.unit)}${field(`${key}-source`, 'Where it comes from', source, { choices: [{ value: 'ready', label: 'Bought / ready food' }, { value: 'cook', label: 'Cook a recipe' }, { value: 'task', label: 'From a task' }, { value: 'external', label: 'Takeout / eating out' }] })}${field(`${key}-action`, 'Preparation', item.action || 'serve', { choices: [{ value: 'serve', label: 'Serve' }, { value: 'heat', label: 'Heat' }, { value: 'cook', label: 'Cook' }] })}<div class="wide component-reference" data-source="cook" ${source === 'cook' ? '' : 'hidden'}>${field(`${key}-recipeId`, 'Recipe', item.recipeId, { choices: choices(arr(section('recipes')).map((row) => ({ value: row.id, label: row.title })), 'Choose a recipe') })}</div><div class="wide component-reference" data-source="ready" ${source === 'ready' ? '' : 'hidden'}>${field(`${key}-pantryItemId`, 'Pantry item (optional)', item.pantryItemId, { choices: choices(arr(section('pantry')).map((row) => ({ value: row.id, label: `${row.name} · ${row.quantity ?? '?'} ${row.unit || ''}` })), 'No pantry link') })}</div><div class="wide component-reference" data-source="task" ${source === 'task' ? '' : 'hidden'}>${field(`${key}-taskId`, 'Prepared by', item.taskId, { choices: choices(arr(state.plan?.tasks).map((row) => ({ value: row.id, label: row.title })), 'Choose a task') })}</div>${field(`${key}-notes`, 'Component notes', item.notes, { wide: true })}<button type="button" class="button ghost small" data-editor-action="remove-row">Remove component</button></div>`;
+}
+
+function slotEditor(slot) {
+  return `<div class="slot-editor-row" data-slot-id="${esc(slot.id)}">${field(`${slot.id}-name`, 'Slot name', slot.name, { required: true })}<label class="check-row"><input type="checkbox" name="${esc(slot.id)}-enabled" ${slot.enabled ? 'checked' : ''} />Enabled</label><div><button type="button" class="button ghost small" data-editor-action="slot-up" aria-label="Move ${esc(slot.name)} up">↑</button><button type="button" class="button ghost small" data-editor-action="slot-down" aria-label="Move ${esc(slot.name)} down">↓</button></div></div>`;
+}
+
+function stockInputEditor(input = {}) {
+  const key = crypto.randomUUID();
+  const stock = arr(section('pantry')).find((row) => row.id === input.itemId);
+  return `<div class="stock-editor-row form-grid" data-stock-input="${key}">${field(`${key}-itemId`, 'Pantry food', input.itemId, { choices: [{ value: '', label: 'Choose pantry food' }, ...arr(section('pantry')).map((row) => ({ value: row.id, label: `${row.name} · ${row.quantity ?? '?'} ${row.unit || ''} left` }))] })}${field(`${key}-quantity`, 'Actual amount used', input.quantity, { type: 'number', min: 0.001, step: 0.001, required: true })}<p class="wide tiny stock-input-unit">${stock ? `Amounts in ${esc(stock.unit || 'the pantry item’s unit')}` : 'Choose food to see its tracked unit.'}</p><button type="button" class="button ghost small" data-editor-action="remove-row">Remove food used</button></div>`;
+}
+
+function stockOutputEditor(output = {}) {
+  const key = crypto.randomUUID();
+  return `<div class="stock-editor-row form-grid" data-stock-output="${key}">${field(`${key}-name`, 'Prepared food name', output.name, { required: true, wide: true })}${field(`${key}-quantity`, 'Actual quantity remaining', output.quantity, { type: 'number', min: 0.001, step: 0.001, required: true })}${field(`${key}-unit`, 'Output unit', output.unit, { required: true })}${field(`${key}-location`, 'Storage location', output.storageLocation || 'fridge', { choices: ['pantry', 'fridge', 'freezer', 'other'] })}<button type="button" class="button ghost small" data-editor-action="remove-row">Remove prepared food</button></div>`;
+}
+
+fields.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-editor-action]');
+  if (!button) return;
+  event.preventDefault();
+  const action = button.dataset.editorAction;
+  if (action === 'add-component') fields.querySelector('#component-rows').insertAdjacentHTML('beforeend', componentEditor());
+  if (action === 'add-slot') fields.querySelector('#slot-rows').insertAdjacentHTML('beforeend', slotEditor({ id: crypto.randomUUID(), name: '', enabled: true }));
+  if (action === 'add-stock-input') fields.querySelector('#stock-inputs').insertAdjacentHTML('beforeend', stockInputEditor());
+  if (action === 'add-stock-output') fields.querySelector('#stock-outputs').insertAdjacentHTML('beforeend', stockOutputEditor());
+  if (action === 'remove-row') button.closest('[data-component], [data-stock-input], [data-stock-output]').remove();
+  const slot = button.closest('[data-slot-id]');
+  if (action === 'slot-up' && slot.previousElementSibling) slot.previousElementSibling.before(slot);
+  if (action === 'slot-down' && slot.nextElementSibling) slot.nextElementSibling.after(slot);
+});
+
+fields.addEventListener('change', (event) => {
+  const row = event.target.closest('[data-component]');
+  if (row) {
+    const key = row.dataset.component;
+    if (event.target.name === `${key}-source`) {
+      row.querySelectorAll('[data-source]').forEach((field) => { field.hidden = field.dataset.source !== event.target.value; });
+    }
+    const name = row.querySelector(`[name="${key}-name"]`);
+    if (event.target.name === `${key}-recipeId`) {
+      const recipe = arr(section('recipes')).find((item) => item.id === event.target.value);
+      if (recipe && !name.value) name.value = recipe.title;
+      if (recipe && !row.querySelector(`[name="${key}-unit"]`).value) row.querySelector(`[name="${key}-unit"]`).value = 'servings';
+    }
+    if (event.target.name === `${key}-pantryItemId`) {
+      const stock = arr(section('pantry')).find((item) => item.id === event.target.value);
+      if (stock && !name.value) name.value = stock.name;
+      if (stock && !row.querySelector(`[name="${key}-unit"]`).value) row.querySelector(`[name="${key}-unit"]`).value = stock.unit || '';
+    }
+  }
+  const input = event.target.closest('[data-stock-input]');
+  if (input && event.target.name.endsWith('-itemId')) {
+    const stock = arr(section('pantry')).find((row) => row.id === event.target.value);
+    input.querySelector('.stock-input-unit').textContent = stock ? `Amounts in ${stock.unit || 'the pantry item’s unit'}` : 'Choose pantry food.';
+  }
+});
+
 function openEditor(kind, item = null, selectedDate = null) {
   state.editor = { kind, item };
   errorBox.hidden = true;
@@ -719,9 +802,33 @@ function openEditor(kind, item = null, selectedDate = null) {
     title = `Use ${item.name}`;
     markup = `<p class="muted tiny wide">${esc(item.quantity)} ${esc(item.unit || '')} remaining</p>` + field('quantity', `Amount used (${item.unit || 'units'})`, '', { type: 'number', min: 0.001, max: item.quantity, step: 0.001, required: true }) + field('recipeId', 'Saved recipe (optional)', '', { choices: [{ value: '', label: 'No recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('mealTitle', 'Meal (optional)', '', { placeholder: 'e.g. Tuesday dinner', wide: true });
   } else if (kind === 'meal') {
-    title = item ? 'Edit planned meal' : 'Add meal or prep task';
+    title = item ? 'Edit planned meal' : 'Add meal';
     const date = item?.date || selectedDate || state.weekStart;
-    markup = field('date', 'Date', date, { type: 'date', required: true }) + field('slot', 'Meal slot', item?.slot || 'dinner', { choices: SLOTS }) + field('meal', 'Meal or task', item?.meal || item?.title, { required: true, wide: true }) + field('servings', 'Servings', item?.servings, { type: 'number', min: 1 }) + field('recipeId', 'Saved recipe', item?.recipeId || '', { choices: [{ value: '', label: 'No linked recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true });
+    const slots = mealSlots().filter((slot) => slot.enabled || slot.id === item?.slot);
+    markup = field('date', 'Date', date, { type: 'date', required: true }) + field('slot', 'Meal slot', item?.slot || slots.find((slot) => slot.id === 'dinner')?.id || slots[0]?.id, { choices: slots.map((slot) => ({ value: slot.id, label: slot.name + (slot.enabled ? '' : ' (disabled)') })) }) + field('meal', 'Meal name', item?.meal, { required: true, wide: true }) + field('servings', 'People / servings', item?.servings, { type: 'number', min: 0.001, step: 0.001 }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true }) + `<section class="wide editor-components"><h3>What’s in this meal?</h3><p class="muted tiny">Combine bought food, recipes, or food prepared by a task.</p><div id="component-rows">${(item?.components?.length ? item.components : [{}]).map(componentEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-component">Add component</button></section>`;
+  } else if (kind === 'task') {
+    title = item ? 'Edit task' : 'Add task';
+    markup = field('title', 'Task name', item?.title, { required: true, wide: true }) + field('date', 'Date (optional)', item?.date || selectedDate, { type: 'date' }) + field('recipeId', 'Recipe to prepare (optional)', item?.recipeId, { choices: [{ value: '', label: 'No recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('servings', 'Batch servings (if cooking)', item?.servings, { type: 'number', min: 0.001, step: 0.001 }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true }) + `<fieldset class="wide task-meal-links"><legend>Supports these meals (optional)</legend>${arr(state.plan?.entries).map((meal) => `<label class="check-row"><input type="checkbox" name="mealIds" value="${esc(meal.id)}" ${item?.mealIds?.includes(meal.id) ? 'checked' : ''} /><span>${esc(meal.date)} · ${esc(slotName(meal))} · ${esc(meal.meal)}</span></label>`).join('') || '<p class="muted tiny">You can add links after planning meals.</p>'}</fieldset>`;
+  } else if (kind === 'meal-slots') {
+    title = 'Household meal slots';
+    markup = `<p class="wide muted tiny">Name and order your household’s eating occasions. Disable a slot to keep its past meals. Prep belongs in tasks.</p><div id="slot-rows" class="wide">${mealSlots().map(slotEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-slot">Add slot</button>`;
+  } else if (kind === 'activity') {
+    title = item.kind === 'meal' ? `Record eaten: ${item.meal}` : `Complete: ${item.title}`;
+    const inputs = arr(item.components).flatMap((row) => {
+      const outputs = arr(arr(state.plan?.tasks).find((task) => task.id === row.taskId)?.stockOutputs);
+      const output = outputs.find((value) => value.name.toLowerCase() === row.name.toLowerCase()) || (outputs.length === 1 ? outputs[0] : null);
+      const itemId = row.pantryItemId || output?.itemId;
+      const stock = arr(section('pantry')).find((value) => value.id === itemId);
+      return stock ? [{ itemId, quantity: stock.unit === row.unit ? row.quantity : null }] : [];
+    });
+    const output = item.kind === 'task' && item.recipeId ? { name: item.recipeSnapshot?.title || item.title, quantity: item.servings, unit: 'servings', storageLocation: 'fridge' } : null;
+    markup = `<p class="wide muted tiny">Record actual amounts. Only the stock listed below will change; leave both sections empty for a simple checklist task.</p><section class="wide"><h3>Pantry food used</h3><div id="stock-inputs">${inputs.map(stockInputEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-stock-input">Add food used</button></section><section class="wide"><h3>Prepared food remaining</h3><div id="stock-outputs">${output ? stockOutputEditor(output) : ''}</div><button type="button" class="button ghost small" data-editor-action="add-stock-output">Add prepared food</button></section>`;
+  } else if (kind === 'receive') {
+    title = `Add ${item.name} to pantry`;
+    markup = `<p class="wide muted tiny">Enter the amount received in the unit you’ll track in the pantry, such as 20 pieces for a pack of rotis.</p>` + field('quantity', 'Quantity received', item.quantity, { type: 'number', min: 0.001, step: 0.001, required: true }) + field('unit', 'Pantry unit', item.unit, { required: true }) + field('storageLocation', 'Storage location', 'pantry', { choices: ['pantry', 'fridge', 'freezer', 'other'] });
+  } else if (kind === 'shopping-preview') {
+    title = 'Shopping needs for this week';
+    markup = `<p class="wide muted tiny">Suggestions for unfinished meals and tasks in this week. Review other weeks and household notes before saving.</p><div class="wide shopping-needs">${item.items.map((row) => `<div class="row"><strong>${esc(row.name)}</strong><span>${esc(row.quantity)} ${esc(row.unit)}</span><small>${row.source.reasons.map((reason) => esc(reason.title)).join(', ')}</small></div>`).join('') || '<p>No additional food needed from the known quantities.</p>'}${item.warnings.length ? `<h3>Check before shopping</h3><ul>${item.warnings.map((warning) => `<li>${esc(warning)}</li>`).join('')}</ul>` : ''}</div>`;
   } else if (kind === 'shopping') {
     title = item ? 'Edit grocery item' : 'Add grocery item';
     markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0.001, step: 'any' }) + field('unit', 'Unit', item?.unit) + field('store', 'Where do you generally buy this? (optional)', item?.store || '', { placeholder: 'Costco, Trader Joe’s…', wide: true }) + (item ? field('listName', 'List name', section('shoppingList')?.name || 'Weekly groceries', { wide: true }) : '');
@@ -745,7 +852,7 @@ function openEditor(kind, item = null, selectedDate = null) {
     markup = field('content', 'What should be remembered?', item?.content, { type: 'textarea', required: true, wide: true }) + field('scope', 'Scope', item?.scope || 'persistent', { choices: ['persistent', 'this_week'] }) + (item ? field('action', 'Action', 'update', { choices: ['update', 'forget'] }) : '<p class="muted tiny">New memories are saved as suggestions until confirmed.</p>');
   }
   document.querySelector('#dialog-title').textContent = title;
-  document.querySelector('#dialog-save').textContent = kind === 'pantry-use' ? 'Record use' : 'Save';
+  document.querySelector('#dialog-save').textContent = kind === 'pantry-use' ? 'Record use' : kind === 'activity' ? 'Record completion' : kind === 'receive' ? 'Record received' : kind === 'shopping-preview' ? 'Update shopping list' : 'Save';
   fields.innerHTML = markup;
   dialog.showModal();
   fields.querySelector('input,textarea,select')?.focus();
@@ -768,11 +875,28 @@ async function submitEditor(data) {
     await save('/api/pantry/use', 'POST', { itemId: item.id, quantity: Number(value('quantity')), recipeId: value('recipeId') || null, mealTitle: value('mealTitle') || null });
   } else if (kind === 'meal') {
     if (monday(`${value('date')}T12:00:00`) !== state.weekStart) throw new Error('Choose a date in the selected week.');
-    const existing = arr(state.plan?.entries);
-    const key = item?.id || `${item?.day}:${item?.slot}`;
-    const entries = item ? existing.filter((entry) => (entry.id || `${entry.day}:${entry.slot}`) !== key) : [...existing];
-    entries.push({ id: item?.id || crypto.randomUUID(), date: value('date'), day: DAYS[(new Date(`${value('date')}T12:00:00`).getDay() + 6) % 7], slot: value('slot'), meal: value('meal'), servings: numberOrNull(value('servings')), recipeId: value('recipeId') || null, notes: value('notes') });
-    await save('/api/meal-plan', 'PUT', { id: state.plan?.id, weekStart: state.weekStart, status: state.plan?.status || 'draft', entries });
+    const components = [...fields.querySelectorAll('[data-component]')].map((row) => {
+      const key = row.dataset.component;
+      const read = (name) => String(data.get(`${key}-${name}`) || '').trim();
+      const source = read('source');
+      return { id: key, name: read('name'), quantity: numberOrNull(read('quantity')), unit: read('unit'), source, action: read('action'),
+        recipeId: source === 'cook' ? read('recipeId') || null : null, pantryItemId: source === 'ready' ? read('pantryItemId') || null : null,
+        taskId: source === 'task' ? read('taskId') || null : null, notes: read('notes') };
+    }).filter((row) => row.name || row.recipeId || row.pantryItemId || row.taskId || row.quantity !== null);
+    await save('/api/meal-plan/items', 'PATCH', { weekStart: state.weekStart, kind: 'meal', item: { id: item?.id, date: value('date'), slot: value('slot'), meal: value('meal'), servings: numberOrNull(value('servings')), notes: value('notes'), components } });
+  } else if (kind === 'task') {
+    await save('/api/meal-plan/items', 'PATCH', { weekStart: state.weekStart, kind: 'task', item: { id: item?.id, title: value('title'), date: value('date') || null, notes: value('notes'), recipeId: value('recipeId') || null, servings: numberOrNull(value('servings')), mealIds: data.getAll('mealIds') } });
+  } else if (kind === 'meal-slots') {
+    const slots = [...fields.querySelectorAll('[data-slot-id]')].map((row) => ({ id: row.dataset.slotId, name: String(data.get(`${row.dataset.slotId}-name`) || '').trim(), enabled: data.has(`${row.dataset.slotId}-enabled`) }));
+    await save('/api/meal-slots', 'PUT', { slots });
+  } else if (kind === 'activity') {
+    const inputs = [...fields.querySelectorAll('[data-stock-input]')].map((row) => ({ itemId: value(`${row.dataset.stockInput}-itemId`), quantity: Number(value(`${row.dataset.stockInput}-quantity`)) }));
+    const outputs = [...fields.querySelectorAll('[data-stock-output]')].map((row) => { const key = row.dataset.stockOutput; return { name: value(`${key}-name`), quantity: Number(value(`${key}-quantity`)), unit: value(`${key}-unit`), storageLocation: value(`${key}-location`) }; });
+    await save('/api/meal-plan/complete', 'POST', { weekStart: state.weekStart, kind: item.kind, itemId: item.id, inputs, outputs });
+  } else if (kind === 'receive') {
+    await save('/api/shopping-list/receive', 'POST', { itemId: item.id, quantity: Number(value('quantity')), unit: value('unit'), storageLocation: value('storageLocation') });
+  } else if (kind === 'shopping-preview') {
+    await save('/api/meal-plan/shopping', 'POST', { weekStart: state.weekStart });
   } else if (kind === 'shopping') {
     const list = section('shoppingList');
     const updated = { ...item, name: value('name'), quantity: numberOrNull(value('quantity')), unit: value('unit') || null, store: value('store') || null, purchased: item?.purchased || false };
@@ -813,7 +937,8 @@ async function handleAction(actionName, id) {
     return render();
   }
   // Editors that link recipes fetch the library only when it is needed.
-  if (['add-meal', 'edit-meal', 'use-pantry', 'add-feedback'].includes(actionName)) await loadSection('recipes');
+  if (['add-meal', 'edit-meal', 'add-task', 'edit-task', 'use-pantry', 'add-feedback'].includes(actionName)) await loadSection('recipes');
+  if (['add-meal', 'edit-meal', 'eat-meal', 'cook-task'].includes(actionName)) await loadSection('pantry');
   const recipes = arr(section('recipes'));
   const pantry = arr(section('pantry'));
   const shopping = arr(section('shoppingList')?.items);
@@ -914,7 +1039,7 @@ async function handleAction(actionName, id) {
     fields.querySelector('[name=quantity]').value = '';
     fields.querySelector('[name=quantity]').required = true;
     fields.querySelector('[name=quantity]').min = '0.001';
-    fields.querySelector('[name=acquiredAt]').value = new Date().toLocaleDateString('en-CA');
+    fields.querySelector('[name=acquiredAt]').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
     fields.querySelector('[name=useByDate]').value = '';
     fields.querySelector('[name=freshnessBasis]').value = '';
     fields.querySelector('[name=quantity]').focus();
@@ -939,12 +1064,31 @@ async function handleAction(actionName, id) {
   if (actionName === 'edit-pantry') return openEditor('pantry', pantry.find((item) => item.id === id));
   if (actionName === 'use-pantry') return openEditor('pantry-use', pantry.find((item) => item.id === id));
   if (actionName === 'add-meal') return openEditor('meal', null, id || state.weekStart);
+  if (actionName === 'edit-meal-slots') return openEditor('meal-slots');
+  if (actionName === 'add-task') return openEditor('task', null, id || null);
+  if (actionName === 'edit-task') return openEditor('task', arr(state.plan?.tasks).find((task) => task.id === id));
+  if (actionName === 'remove-task') {
+    const task = arr(state.plan?.tasks).find((task) => task.id === id);
+    if (!task || !confirm(`Remove ${task.title}?`)) return;
+    await save('/api/meal-plan', 'PUT', planPayload({ tasks: arr(state.plan?.tasks).filter((row) => row.id !== id) }));
+    return refresh('Task removed.');
+  }
+  if (actionName === 'eat-meal' || actionName === 'cook-task') {
+    const item = (actionName === 'eat-meal' ? plan : arr(state.plan?.tasks)).find((row) => row.id === id);
+    if (item) return openEditor('activity', { ...item, kind: actionName === 'eat-meal' ? 'meal' : 'task' });
+  }
+  if (actionName === 'shopping-preview') {
+    const preview = await api(`/api/meal-plan/shopping-preview?week_start=${state.weekStart}`);
+    return openEditor('shopping-preview', preview);
+  }
+  if (actionName === 'receive-shopping') return openEditor('receive', shopping.find((item) => item.id === id));
   if (actionName === 'edit-meal' || actionName === 'remove-meal') {
     const item = plan.find((entry) => (entry.id || `${entry.day}:${entry.slot}`) === id);
     if (!item) return;
     if (actionName === 'edit-meal') return openEditor('meal', item);
     if (!confirm(`Remove ${item.meal || item.title} from this plan?`)) return;
-    await save('/api/meal-plan', 'PUT', { id: state.plan?.id, weekStart: state.weekStart, status: state.plan?.status || 'draft', entries: plan.filter((entry) => entry !== item) });
+    const tasks = arr(state.plan?.tasks).map((task) => ({ ...task, mealIds: arr(task.mealIds).filter((mealId) => mealId !== item.id) }));
+    await save('/api/meal-plan', 'PUT', planPayload({ entries: plan.filter((entry) => entry !== item), tasks }));
     await refresh('Meal removed.');
     return;
   }
@@ -1034,6 +1178,20 @@ content.addEventListener('change', async (event) => {
   if (event.target.id === 'week-picker') {
     try { await loadWeek(event.target.value); writeRoute(); }
     catch (error) { showToast(error.message); }
+  }
+  const taskCheck = event.target.closest('[data-complete-task]');
+  if (taskCheck) {
+    const task = arr(state.plan?.tasks).find((row) => row.id === taskCheck.dataset.completeTask);
+    if (task.recipeId) {
+      taskCheck.checked = false;
+      await loadSection('pantry');
+      openEditor('activity', { ...task, kind: 'task' });
+    } else {
+      taskCheck.disabled = true;
+      try { await save('/api/meal-plan/complete', 'POST', { weekStart: state.weekStart, kind: 'task', itemId: task.id }); await refresh('Task completed.'); }
+      catch (error) { taskCheck.checked = false; taskCheck.disabled = false; showToast(error.message); }
+    }
+    return;
   }
   const checkbox = event.target.closest('[data-purchase-id]');
   if (!checkbox) return;

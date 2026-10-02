@@ -13,6 +13,7 @@ from .errors import ApplicationError, RepositoryError, StorageNotInstalledError
 from .pantry_photos import compact_photo, download_chatgpt_photo, normalize_observations
 from .pantry_categories import PANTRY_CATEGORIES, infer_pantry_category
 from .pantry_freshness import pantry_freshness
+from .planning_model import meal_slots, validate_slots, component, identifier, text, positive, iso_date
 
 
 DASHBOARD_CARD_IDS = (
@@ -66,6 +67,8 @@ class MealPrepRepository(Protocol):
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]: ...
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None: ...
     async def get_recent_meal_plans(self, before_week: str, limit: int = 2) -> list[dict[str, Any]]: ...
+    async def complete_plan_item(self, week_start: str, kind: str, item_id: str, inputs: list[dict], outputs: list[dict]) -> dict: ...
+    async def receive_shopping_item(self, item_id: str, quantity: float, unit: str, storage_location: str) -> dict: ...
     async def get_meal_plan_rules(self, revision_id: str | None = None) -> dict[str, Any] | None: ...
     async def get_meal_plan_rule_history(self, limit: int = 20) -> list[dict[str, Any]]: ...
     async def save_meal_plan_rules(self, text: str, expected_revision: int) -> dict[str, Any]: ...
@@ -110,7 +113,16 @@ class HouseholdService:
         self.repository = repository
 
     async def get_context(self) -> dict[str, Any]:
-        return await self.repository.get_household_context()
+        household = await self.repository.get_household_context()
+        return {**household, "mealSlots": meal_slots(household)}
+
+    async def configure_meal_slots(self, slots: list[dict]) -> dict:
+        household = await self.repository.get_household_context()
+        cleaned = validate_slots(slots, meal_slots(household))
+        preferences = household.get("planningPreferences") or {}
+        updated = await self.repository.update_household_preferences(
+            {"planningPreferences": {**preferences, "mealSlots": cleaned}}, context=household)
+        return {**updated, "mealSlots": cleaned}
 
     async def list_households(self) -> dict[str, Any]:
         return await self.repository.list_households()
@@ -130,6 +142,12 @@ class HouseholdService:
         planning_preferences: dict[str, Any] | None = None,
         complete_onboarding: bool = False,
     ) -> dict[str, Any]:
+        if planning_preferences is not None:
+            household = await self.repository.get_household_context()
+            if "mealSlots" in planning_preferences:
+                planning_preferences = {**planning_preferences, "mealSlots": validate_slots(
+                    planning_preferences["mealSlots"], meal_slots(household))}
+            planning_preferences = {**(household.get("planningPreferences") or {}), **planning_preferences}
         if complete_onboarding:
             missing = []
             if household_size is None:
@@ -238,7 +256,7 @@ class HouseholdService:
             if unknown:
                 raise ApplicationError(f"Unknown snapshot sections: {', '.join(sorted(unknown))}")
             loaders = {name: loaders[name] for name in dict.fromkeys(sections)}
-        household = await self.repository.get_household_context()
+        household = await self.get_context()
         values = await asyncio.gather(*(section(loader) for loader in loaders.values()))
         return {
             "household": household,
@@ -454,7 +472,7 @@ class PlanningService:
     async def get_context(self, week_start: str | None = None) -> dict[str, Any]:
         if week_start:
             self._week(week_start)
-        household = await self.repository.get_household_context()
+        household = await HouseholdService(self.repository).get_context()
         plan = await self.repository.get_meal_plan(week_start)
         before_week = week_start or (plan or {}).get("weekStart")
         if not before_week:
@@ -524,12 +542,192 @@ class PlanningService:
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
         if not plan.get("weekStart") or not isinstance(plan.get("entries"), list):
             raise ApplicationError("plan.weekStart and plan.entries are required")
-        missing_slot = [entry for entry in plan["entries"] if not entry.get("slot")]
-        if missing_slot:
-            raise ApplicationError("Every plan entry must include a meal slot")
+        week = self._week(plan["weekStart"])
+        if len(plan["entries"]) > 150 or not isinstance(plan.get("tasks", []), list) or len(plan.get("tasks", [])) > 150:
+            raise ApplicationError("A plan may contain at most 150 meals and 150 tasks")
+        existing = await self.repository.get_meal_plan(plan["weekStart"]) or {}
+        if plan.get("id") and existing.get("id") != plan["id"]:
+            raise ApplicationError("Plan ID does not belong to this week")
+        slots = {slot["id"]: slot for slot in meal_slots(await self.repository.get_household_context())}
+        previous = {item["id"]: item for item in [*existing.get("entries", []), *existing.get("tasks", [])]}
+        previous_recipes = {**previous, **{row["id"]: row for meal in existing.get("entries", []) for row in meal.get("components", [])}}
+        ids, component_ids = set(), set()
+        recipes = {}
+        pantry = {item["id"]: item for item in await self.repository.get_pantry()}
+
+        async def recipe_snapshot(item):
+            recipe_id = item.get("recipeId")
+            if not recipe_id:
+                return
+            old = previous_recipes.get(item["id"], {})
+            if old.get("recipeId") == recipe_id and old.get("recipeSnapshot"):
+                item["recipeSnapshot"] = old["recipeSnapshot"]
+                return
+            if recipe_id not in recipes:
+                recipes[recipe_id] = await self.repository.get_recipe(recipe_id)
+            recipe = recipes[recipe_id]
+            if not recipe or recipe.get("archived_at"):
+                raise ApplicationError("Recipe was not found in this household")
+            item["recipeSnapshot"] = {key: recipe.get(key) for key in ("title", "servings", "ingredients")}
+
+        def identity(item):
+            item_id = identifier(item.get("id"))
+            if item_id in ids:
+                raise ApplicationError("Plan item IDs must be unique")
+            ids.add(item_id)
+            return item_id
+
+        tasks = []
+        for value in plan.get("tasks", existing.get("tasks", [])):
+            if not isinstance(value, dict):
+                raise ApplicationError("Every task must be an object")
+            task_id = identity(value)
+            old = previous.get(task_id, {})
+            linked = value.get("mealIds", [])
+            if not isinstance(linked, list) or not all(isinstance(link, str) for link in linked) or len(linked) != len(set(linked)):
+                raise ApplicationError("Task mealIds must be a list of unique meal IDs")
+            if value.get("recipeId") is not None and not isinstance(value["recipeId"], str):
+                raise ApplicationError("Task recipeId must be an ID string")
+            task = {"id": task_id, "date": iso_date(value.get("date"), optional=True),
+                    "title": text(value.get("title"), "Task title", 180),
+                    "notes": text(value.get("notes"), "Task notes", optional=True),
+                    "recipeId": value.get("recipeId") or None,
+                    "servings": positive(value.get("servings"), "Servings", optional=True),
+                    "mealIds": linked, "completedAt": old.get("completedAt"),
+                    "stockOutputs": old.get("stockOutputs", [])}
+            await recipe_snapshot(task)
+            tasks.append(task)
+        task_lookup = {task["id"]: task for task in tasks}
+        entries = []
+        for value in plan["entries"]:
+            if not isinstance(value, dict) or not value.get("slot"):
+                raise ApplicationError("Every plan entry must include a meal slot")
+            entry_id = identity(value)
+            old = previous.get(entry_id, {})
+            slot = slots.get(text(value["slot"], "Meal slot", 80))
+            if not slot or (not slot["enabled"] and old.get("slot") != slot["id"]):
+                raise ApplicationError("Choose an enabled household meal slot")
+            day = iso_date(value.get("date"))
+            if not week <= date.fromisoformat(day) < week + timedelta(days=7):
+                raise ApplicationError("Meal date must be in the selected week")
+            values = value.get("components", [])
+            if not isinstance(values, list) or len(values) > 30:
+                raise ApplicationError("Meal components must be a list of at most 30 items")
+            components = []
+            for raw in values:
+                item = component(raw)
+                if item["id"] in component_ids:
+                    raise ApplicationError("Component IDs must be unique")
+                component_ids.add(item["id"])
+                if item["pantryItemId"] and item["pantryItemId"] not in pantry:
+                    raise ApplicationError("Pantry item was not found in this household")
+                if item["taskId"]:
+                    task = task_lookup.get(item["taskId"])
+                    if not task:
+                        raise ApplicationError("Component task was not found in this plan")
+                    if task["date"] and task["date"] > day:
+                        raise ApplicationError("A meal cannot use a task scheduled after the meal")
+                await recipe_snapshot(item)
+                components.append(item)
+            entries.append({"id": entry_id, "date": day, "day": date.fromisoformat(day).strftime("%A"),
+                            "slot": slot["id"], "slotName": old.get("slotName", slot["name"]) if old.get("completedAt") else slot["name"],
+                            "meal": text(value.get("meal"), "Meal name", 180),
+                            "servings": positive(value.get("servings"), "Servings", optional=True),
+                            "notes": text(value.get("notes"), "Meal notes", optional=True),
+                            "components": components, "completedAt": old.get("completedAt")})
+        entry_ids = {entry["id"] for entry in entries}
+        if any(set(task["mealIds"]) - entry_ids for task in tasks):
+            raise ApplicationError("Task meal link was not found in this plan")
+        # Completed records are history. Edit future intentions without rewriting actual activity.
+        for item in [*entries, *tasks]:
+            old = previous.get(item["id"])
+            if old and old.get("completedAt") and item != old:
+                raise ApplicationError("Completed plan items cannot be edited")
+        if any(old.get("completedAt") and old["id"] not in ids for old in previous.values()):
+            raise ApplicationError("Completed plan items cannot be removed")
         if plan.get("ruleRevisionId"):
             await self.get_rules(plan["ruleRevisionId"])
-        return await self.repository.save_meal_plan(plan)
+        return await self.repository.save_meal_plan({**plan, "entries": entries, "tasks": tasks})
+
+    async def update_plan_item(self, week_start: str, kind: str, item: dict) -> dict:
+        self._week(week_start)
+        if kind not in ("meal", "task"):
+            raise ApplicationError("Item kind must be meal or task")
+        if not isinstance(item, dict):
+            raise ApplicationError("Plan item must be an object")
+        plan = await self.repository.get_meal_plan(week_start) or {"weekStart": week_start, "entries": [], "tasks": []}
+        key = "entries" if kind == "meal" else "tasks"
+        current = next((row for row in plan.get(key, []) if row["id"] == item.get("id")), None)
+        if item.get("id") and not current:
+            raise ApplicationError("Plan item was not found")
+        replacement = {**(current or {}), **item}
+        plan[key] = [replacement if row is current else row for row in plan.get(key, [])]
+        if current is None:
+            plan[key].append(replacement)
+        return await self.save_meal_plan(plan)
+
+    async def complete_item(self, week_start: str, kind: str, item_id: str, inputs: list | None = None,
+                            outputs: list | None = None) -> dict:
+        self._week(week_start)
+        if kind not in ("meal", "task"):
+            raise ApplicationError("Item kind must be meal or task")
+        plan = await self.repository.get_meal_plan(week_start)
+        item = next((row for row in (plan or {}).get("entries" if kind == "meal" else "tasks", []) if row["id"] == item_id), None)
+        if not item:
+            raise ApplicationError("Plan item was not found")
+        if item.get("completedAt"):
+            return await self.repository.complete_plan_item(week_start, kind, item_id, [], [])
+        inputs = [] if inputs is None else inputs
+        outputs = [] if outputs is None else outputs
+        if not isinstance(inputs, list) or not isinstance(outputs, list) or len(inputs) > 50 or len(outputs) > 30:
+            raise ApplicationError("Activity inputs and outputs must be lists")
+        pantry = {row["id"]: row for row in await self.repository.get_pantry()}
+        cleaned_inputs, used_ids = [], set()
+        for row in inputs:
+            if not isinstance(row, dict) or row.get("itemId") not in pantry:
+                raise ApplicationError("Pantry item was not found")
+            if row["itemId"] in used_ids:
+                raise ApplicationError("Combine repeated pantry inputs into one quantity")
+            used_ids.add(row["itemId"])
+            quantity = positive(row.get("quantity"))
+            stock = pantry[row["itemId"]]
+            if stock.get("quantity") is None or quantity > stock["quantity"]:
+                raise ApplicationError("Not enough known pantry quantity; correct stock or actual use first")
+            cleaned_inputs.append({"itemId": row["itemId"], "quantity": quantity})
+        cleaned_outputs = []
+        for row in outputs:
+            if not isinstance(row, dict):
+                raise ApplicationError("Each output must be an object")
+            location = row.get("storageLocation", "fridge")
+            if location not in ("pantry", "fridge", "freezer", "other"):
+                raise ApplicationError("Invalid output storage location")
+            if row.get("category") and row["category"] not in PANTRY_CATEGORIES:
+                raise ApplicationError("Invalid output category")
+            cleaned_outputs.append({"name": text(row.get("name"), "Output name", 160),
+                                    "quantity": positive(row.get("quantity")),
+                                    "unit": text(row.get("unit"), "Output unit", 40),
+                                    "storageLocation": location,
+                                    "category": row.get("category") or "uncategorized"})
+        return await self.repository.complete_plan_item(week_start, kind, item_id, cleaned_inputs, cleaned_outputs)
+
+    async def preview_shopping(self, week_start: str) -> dict:
+        from .planning_demand import shopping_demand
+        self._week(week_start)
+        plan = await self.repository.get_meal_plan(week_start)
+        if not plan:
+            raise ApplicationError("Save a plan before calculating shopping needs")
+        return shopping_demand(plan, await self.repository.get_pantry())
+
+    async def save_plan_shopping(self, week_start: str) -> dict:
+        preview = await self.preview_shopping(week_start)
+        existing = await self.repository.get_shopping_list() or {}
+        # Replace only pending suggestions for this week. Manual and purchased lines survive.
+        keep = [row for row in existing.get("items", []) if row.get("purchased") or
+                not ((row.get("source") or {}).get("generated") and (row.get("source") or {}).get("weekStart") == week_start)]
+        saved = await self.repository.save_shopping_list({"id": existing.get("id"),
+            "name": existing.get("name", "Weekly groceries"), "status": existing.get("status", "draft"),
+            "mealPlanId": preview["mealPlanId"], "items": keep + preview["items"]})
+        return {"shoppingList": saved, "warnings": preview["warnings"]}
 
 
 class FeedbackService:
@@ -829,6 +1027,13 @@ class ShoppingService:
         purchased_quantity: float | None = None,
     ) -> dict[str, Any]:
         return await self.repository.mark_item_purchased(item_id, purchased, purchased_quantity)
+
+    async def receive_item(self, item_id: str, quantity: float, unit: str, storage_location: str = "pantry") -> dict:
+        amount = positive(quantity)
+        unit = text(unit, "Received unit", 40)
+        if storage_location not in ("pantry", "fridge", "freezer", "other"):
+            raise ApplicationError("Invalid storage location")
+        return await self.repository.receive_shopping_item(item_id, amount, unit, storage_location)
 
 
 @dataclass(frozen=True)

@@ -48,10 +48,12 @@ account and selects it.
    `recipe_id` when they name a saved recipe and `meal_title` when they identify
    a particular meal. The tool subtracts the used amount; do not pass the
    amount remaining. Ask for an amount when it is unclear.
-3. Create and reason over the meal plan in the model. Cover the requested
-   planning areas without assuming the request is dinner-only. Give every saved
-   meal-plan entry an explicit `slot`, such as `breakfast`, `lunch`, `snack`,
-   `dinner`, or `prep`. Prefer weeknight meals within the saved time limit,
+3. Create and reason over meals and tasks in the model. Use the household's
+   ordered `household.mealSlots`, with each meal entry's `slot` set to an enabled
+   slot ID. Never put prep in an eating slot. Save prep and other work in
+   `plan.tasks`; tasks need a title and may have a date, recipeId, servings,
+   notes, and optional mealIds. Standalone packing, chopping, and thawing tasks
+   are useful without a recipe or meal link. Prefer weeknight meals within the saved time limit,
    deliberate leftovers when requested, and pantry items with earlier use-by
    ranges. Keep recurring breakfasts, packed lunches, and prep intentionally
    simple when the household has not asked for daily variety.
@@ -60,8 +62,10 @@ account and selects it.
    recurring document. Preserve existing manual choices unless asked to change
    them. Use recent plans and feedback to vary newly cooked recipes; intentional
    leftovers from a planned batch are allowed. Choose batch recipes first,
-   then identify reheating or repurposing and its source date/meal in entry
-   `notes`, including the preceding weekend when relevant. Check coverage,
+   then create one cooking task per batch. Put a preceding weekend task in the
+   week it supplies, with its actual earlier date. Describe preparation and
+   reuse in English notes; add structured component taskId references when
+   quantities should be counted reliably. Check coverage,
    restrictions, timing, variation, pantry quantities, lessons, and batch reuse
    before showing the proposal. Explain conflicts, unavailable recipes, and
    unknown leftover amounts; ask for needed information instead of silently
@@ -72,10 +76,14 @@ account and selects it.
    document. Later rule edits do not rewrite the saved plan. Keep an existing
    plan's source on ordinary manual edits. A plan created without rules may
    omit `ruleRevisionId`.
-5. Build shopping demand across every planned slot and prep task, subtracting
-   only pantry items that are present with sufficient quantity confidence.
-   Count a cooked batch's ingredients once, accounting for all its intended
-   portions; reheating or repurposing does not create a second full batch.
+5. Call `preview_plan_shopping` for the selected week's explicit components and
+   cooking tasks. It scales saved recipe snapshots, counts a linked batch once,
+   and subtracts exact stock once. Review warnings, English notes, dietary
+   constraints, and commitments in other weeks; the preview only covers this
+   week and does not reserve stock. Do not invent package conversions, amounts,
+   or prepared batches. Use `save_plan_shopping` for reviewed calculated needs;
+   it preserves manual items and purchased history. For changes reasoned from
+   prose, reconcile a final list and use `save_shopping_list` instead.
 6. Order stores by `storePriority`. Search Costco first when it is priority 1,
    then use Safeway for unavailable items. Store availability, prices, carts,
    and orders belong to the commerce plugin, not Meal Prep.
@@ -111,6 +119,46 @@ unrelated tool actions or override dietary restrictions.
 Use `save_weekly_schedule` with `notes` for explicitly requested guests,
 ingredients to use, or other one-week changes. Keep these out of the recurring
 rules document.
+
+## Meals, components, and actual activity
+
+Recipes are reusable instructions and yield; a planned meal is a dated eating
+occasion with components. Bought food such as popcorn, rotis, yogurt, or a ready
+meal needs no recipe. No separate reusable meal record is required.
+
+- Each entry has `date`, household `slot` ID, `meal`, optional servings/notes,
+  and `components`. A component has `name`, optional `quantity`/`unit`, `source`
+  (`ready`, `cook`, `task`, `external`), `action` (`cook`, `heat`, `serve`), and
+  optional recipeId, pantryItemId, taskId, and notes. `cook` requires recipeId;
+  use servings as its unit. `task` requires taskId. `external` represents eating
+  out and generates no household shopping demand.
+- Supply stable UUIDs when connecting newly created meals and tasks. Keep IDs
+  when editing. `update_plan_item` adds or patches a single meal or task without
+  replacing unrelated choices. The full `save_meal_plan` takes both entries and
+  tasks. Meal dates belong to the selected week; tasks can be undated or on
+  another date. Meal links are optional and must identify meals in that plan.
+- `configure_meal_slots` saves the complete ordered slot list. Preserve IDs
+  through renaming/reordering, disable existing slots rather than deleting
+  them, and keep at least one enabled. Slot labels such as "Parents snack AM"
+  convey their meaning without separate audience/time models.
+- Saving plans leaves pantry stock unchanged. Record actual cooking, eating,
+  or checklist completion with `complete_plan_item`. Inputs are amounts USED
+  in the referenced pantry item's recorded unit. Outputs are actual prepared
+  quantities remaining, with name, quantity, unit, and storageLocation. Ask
+  about uncertain actual amounts. Do not assume checking "Pack snacks" consumes
+  food, or that planned yield equals actual yield. Inputs and outputs are
+  optional for an ordinary checklist; completion is atomic and safe to retry.
+- Use `receive_shopping_item` only when the user reports food actually received.
+  Record the actual pantry quantity/unit, e.g. 20 pieces rather than one pack.
+  It marks the item purchased and creates one pantry lot, safely on retries.
+  `mark_item_purchased` alone only records shopping progress. For repeated
+  purchases create separate shopping lines. Neither operation places an order.
+- Completed plan items preserve actual history. Correct inventory separately
+  with `update_pantry_item`; don't recreate a completed activity to fix stock.
+
+For a weekly plan guided by English rules, interpret and propose in the model;
+persist agreed dates, quantities, IDs, and completion in the app. Optional links
+support reliable arithmetic without requiring users to manage relationships.
 
 ## Dashboard workflow
 

@@ -60,7 +60,9 @@ def test_lightweight_bootstrap_skips_dashboard_reads(monkeypatch):
     monkeypatch.setattr(http, "services_for_request", lambda: SimpleNamespace(household=HouseholdService(repository)))
     response = TestClient(app).get("/api/app/bootstrap?include_sections=false")
     assert response.status_code == 200
-    assert response.json()["snapshot"] == {"household": {"householdId": "home-1"}, "sections": {}}
+    assert response.json()["snapshot"]["household"]["householdId"] == "home-1"
+    assert response.json()["snapshot"]["sections"] == {}
+    assert response.json()["snapshot"]["household"]["mealSlots"][0]["id"] == "breakfast"
     for name in ("get_pantry", "search_recipes", "get_weekly_schedule", "get_feedback", "get_household_memory", "get_meal_plan", "get_shopping_list", "get_meal_plan_rules"):
         getattr(repository, name).assert_not_awaited()
     repository.get_household_context.side_effect = RepositoryError("private database failure")

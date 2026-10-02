@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "meal-prep",
-  "version": "0.7.0+codex.20261001173626",
+  "version": "0.8.0+codex.20261002013053",
   "description": "Coordinate the household food week across meals, prep, pantry inventory, and shopping.",
   "author": {
     "name": "BhadriP",

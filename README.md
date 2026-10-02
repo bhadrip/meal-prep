@@ -4,6 +4,22 @@ Meal Prep is a household food-planning app available as a website and a hosted M
 
 The website offers direct, manual access to household setup, planning, recipes, pantry, shopping, and feedback. The installable plugin supplies workflow guidance and the MCP connection. Both use the same application services and Supabase household data. The website has no AI features.
 
+Households configure their ordered eating occasions in **Settings → Meal slots**.
+The weekly plan keeps dated meals separate from tasks. Meals can combine bought
+food, recipes, and food prepared by a task; popcorn or pre-cooked rotis need no
+recipe. Tasks support optional dates, recipes, batch servings, notes, and meal
+links. **Shopping needs** scales explicit quantities, counts each linked batch
+once, subtracts exact stock once, and reports missing quantities or conversions.
+Review other-week commitments and English notes before saving the suggestions.
+Manual shopping items and purchase history survive regeneration.
+
+Planning leaves inventory unchanged. **Add to pantry** on a shopping line records
+the quantity actually received. **Record cooking** and **Record eaten** record
+actual food used and prepared stock remaining; ordinary tasks are checklists.
+Each receipt/completion can be retried without adding or consuming stock twice.
+Apply `202610020001_unified_planning.sql` after the existing migrations to enable
+the shared website and MCP storage.
+
 The website also has a personal notification inbox for household invitations and activity. Alerts stay in the website; they do not send email or push messages. The inbox shows activity from households you still belong to, and opening an alert switches to its household when needed.
 
 ```text

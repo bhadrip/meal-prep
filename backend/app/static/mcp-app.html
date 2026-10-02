@@ -262,6 +262,8 @@
       let recipeSearchSequence = 0;
       let activeRecipeTag = '';
       let shoppingList = null;
+      let currentPlan = null;
+      let planHousehold = null;
       let activePantryItemId = null;
       let pantryNotice = '';
       let pantryCategory = 'all';
@@ -288,8 +290,14 @@
 
       function renderPlan(plan) {
         if (!plan) return '<div class="empty">No meal plan has been saved yet.</div>';
-        const entries = (plan.entries || []).map((entry) => `<article class="day"><small>${escapeHtml(entry.day || entry.date)}</small><strong>${escapeHtml(entry.meal || entry.title)}</strong><span>${escapeHtml(entry.servings || '')}${entry.servings ? ' servings' : ''}</span></article>`).join('');
-        return `<header><div><h1>Weekly meal plan</h1><p>Week of ${escapeHtml(plan.weekStart || plan.week_start || '')}</p></div></header><section class="grid">${entries}</section>`;
+        const slots = planHousehold?.mealSlots || [];
+        const entries = (plan.entries || []).map((entry) => `<article class="day" data-plan-meal="${escapeHtml(entry.id)}"><small>${escapeHtml(entry.date)} · ${escapeHtml(slots.find((slot) => slot.id === entry.slot)?.name || entry.slotName || entry.slot)}</small><strong>${escapeHtml(entry.meal)}</strong><span>${escapeHtml(entry.servings || '')}${entry.servings ? ' servings' : ''}</span><ul>${(entry.components || []).map((item) => `<li>${escapeHtml(item.name)}${item.quantity != null ? ` · ${escapeHtml(item.quantity)} ${escapeHtml(item.unit)}` : ''}${item.taskId ? ` · ${escapeHtml(plan.tasks?.find((task) => task.id === item.taskId)?.title || 'Prepared task')}` : ''}</li>`).join('')}</ul>${entry.notes ? `<p>${escapeHtml(entry.notes)}</p>` : ''}${entry.completedAt ? '<span>Eaten</span>' : `<button type="button" data-plan-complete="${escapeHtml(entry.id)}" data-kind="meal">Record eaten</button>`}</article>`).join('');
+        const tasks = (plan.tasks || []).map((task) => `<article class="day" data-plan-task="${escapeHtml(task.id)}"><small>${escapeHtml(task.date || 'Unscheduled')}</small><strong>${escapeHtml(task.title)}</strong>${task.notes ? `<p>${escapeHtml(task.notes)}</p>` : ''}${task.mealIds?.length ? `<p>For: ${task.mealIds.map((id) => escapeHtml(plan.entries.find((meal) => meal.id === id)?.meal || 'Meal')).join(', ')}</p>` : ''}${task.completedAt ? '<span>Completed</span>' : `<button type="button" data-plan-complete="${escapeHtml(task.id)}" data-kind="task">${task.recipeId ? 'Record cooking' : 'Complete task'}</button>`}</article>`).join('');
+        return `<header><div><h1>Weekly meal plan</h1><p>Week of ${escapeHtml(plan.weekStart)}</p></div></header><h2>Meals</h2><section class="grid">${entries || '<p>No meals planned.</p>'}</section><h2>Tasks</h2><section class="grid">${tasks || '<p>No tasks planned.</p>'}</section><p class="form-error" id="plan-error" role="alert" hidden></p><section id="plan-activity"></section>`;
+      }
+
+      function actualUseRow(pantry, index) {
+        return `<div class="form-grid" data-actual-use><div><span id="actual-item-${index}">Pantry food</span>${MealPrepChoices.markup({name: `item-${index}`, value: '', labelId: `actual-item-${index}`, choices: [{value: '', label: 'Choose food (optional)'}, ...pantry.map((row) => ({value: row.id, label: `${row.name} · ${row.quantity ?? '?'} ${row.unit || ''} left`}))]})}</div><label>Actual amount used (in pantry unit)<input name="quantity-${index}" type="number" min="0.001" step="0.001"></label></div>`;
       }
 
       function renderShopping(list) {
@@ -690,7 +698,10 @@
           shoppingList = data.shoppingList;
           root.innerHTML = renderShopping(shoppingList);
         }
-        else if (data.kind === 'meal_plan') root.innerHTML = renderPlan(data.plan);
+        else if (data.kind === 'meal_plan') {
+          currentPlan = data.plan; planHousehold = data.household;
+          root.innerHTML = renderPlan(currentPlan);
+        }
         else if (data.onboardingCompletedAt) root.innerHTML = renderOnboardingSuccess(data);
       }
 
@@ -717,6 +728,37 @@
       });
 
       root.addEventListener('click', async (event) => {
+        const complete = event.target.closest('[data-plan-complete]');
+        if (complete) {
+          const kind = complete.dataset.kind;
+          const item = (kind === 'task' ? currentPlan.tasks : currentPlan.entries).find((row) => row.id === complete.dataset.planComplete);
+          const error = root.querySelector('#plan-error');
+          error.hidden = true; complete.disabled = true;
+          try {
+            if (kind === 'task' && !item.recipeId) {
+              const result = await rpc('tools/call', {name: 'complete_plan_item', arguments: {week_start: currentPlan.weekStart, kind, item_id: item.id}});
+              if (result?.isError) throw new Error(result.content?.find((row) => row.type === 'text')?.text || 'Could not complete task.');
+              currentPlan = (result.structuredContent || result).plan;
+              root.innerHTML = renderPlan(currentPlan);
+            } else {
+              const result = await rpc('tools/call', {name: 'get_pantry', arguments: {}});
+              if (result?.isError) throw new Error('Could not load pantry.');
+              const pantry = (result.structuredContent || result).items || [];
+              const area = root.querySelector('#plan-activity');
+              area._pantry = pantry;
+              area.innerHTML = `<form id="plan-completion-form" data-kind="${kind}" data-id="${escapeHtml(item.id)}"><h2>${kind === 'task' ? 'Record cooking' : 'Record eaten'}: ${escapeHtml(item.title || item.meal)}</h2><p>Enter actual amounts. Only listed food will change in the pantry.</p><div id="actual-use-rows">${actualUseRow(pantry, 0)}</div><button type="button" data-add-actual-use>Add food used</button><h3>Prepared food remaining (optional)</h3><div class="form-grid"><label>Food name<input name="outputName" value="${kind === 'task' ? escapeHtml(item.recipeSnapshot?.title || item.title) : ''}"></label><label>Actual quantity remaining<input name="outputQuantity" type="number" min="0.001" step="0.001"></label><label>Unit<input name="outputUnit" value="servings"></label></div><button type="submit">Record completion</button><p class="form-error" role="alert" hidden></p></form>`;
+              area.querySelector('input')?.focus();
+            }
+          } catch (reason) { error.textContent = reason.message; error.hidden = false; }
+          finally { complete.disabled = false; }
+          return;
+        }
+        if (event.target.closest('[data-add-actual-use]')) {
+          const area = root.querySelector('#plan-activity');
+          const rows = area.querySelector('#actual-use-rows');
+          rows.insertAdjacentHTML('beforeend', actualUseRow(area._pantry, rows.children.length));
+          return;
+        }
         if (event.target.closest('[data-explore-connections]')) { mountRecipeGraph(); return; }
         if (event.target.closest('[data-graph-cards]')) {
           if (modernLibrary) { mountRecipeBrowser(); return; }
@@ -859,6 +901,23 @@
       });
 
       root.addEventListener('submit', async (event) => {
+        if (event.target.matches('#plan-completion-form')) {
+          event.preventDefault();
+          const form = event.target;
+          const data = new FormData(form);
+          const error = form.querySelector('.form-error');
+          const button = form.querySelector('[type="submit"]');
+          button.disabled = true; error.hidden = true;
+          try {
+            const inputs = [...form.querySelectorAll('[data-actual-use]')].map((row) => ({itemId: row.querySelector('input[name^="item-"]').value, quantity: Number(row.querySelector('input[type="number"]').value)})).filter((row) => row.itemId || row.quantity);
+            const outputs = data.get('outputQuantity') ? [{name: String(data.get('outputName') || '').trim(), quantity: Number(data.get('outputQuantity')), unit: String(data.get('outputUnit') || '').trim(), storageLocation: 'fridge'}] : [];
+            const result = await rpc('tools/call', {name: 'complete_plan_item', arguments: {week_start: currentPlan.weekStart, kind: form.dataset.kind, item_id: form.dataset.id, inputs, outputs}});
+            if (result?.isError) throw new Error(result.content?.find((row) => row.type === 'text')?.text || 'Could not record completion.');
+            currentPlan = (result.structuredContent || result).plan;
+            root.innerHTML = renderPlan(currentPlan);
+          } catch (reason) { error.textContent = reason.message; error.hidden = false; button.disabled = false; }
+          return;
+        }
         if (event.target.matches('#pantry-use-form')) {
           event.preventDefault();
           const formElement = event.target;
