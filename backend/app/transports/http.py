@@ -375,8 +375,8 @@ async def delete_recipe_relationship(relationship_id: str, services: WebServices
 
 
 @router.get("/api/recipes/{recipe_id}")
-async def get_recipe(recipe_id: str, services: WebServices) -> dict:
-    return await services.food.get_recipe(recipe_id)
+async def get_recipe(recipe_id: str, services: WebServices, variation: str | None = None) -> dict:
+    return await services.food.get_recipe(recipe_id, variation)
 
 
 @router.put("/api/recipes")
@@ -452,8 +452,8 @@ async def get_meal_plan(services: WebServices, week_start: str | None = None) ->
 
 
 @router.get("/api/meal-plan/nutrition")
-async def get_weekly_nutrition(services: WebServices, week_start: str | None = None) -> dict:
-    return await services.planning.get_weekly_nutrition(week_start)
+async def get_weekly_nutrition(services: WebServices, week_start: str | None = None, variation: str | None = None) -> dict:
+    return await services.planning.get_weekly_nutrition(week_start, variation)
 
 
 @router.get("/api/meal-plan-rules")

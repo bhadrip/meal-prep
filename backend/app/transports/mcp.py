@@ -272,9 +272,9 @@ async def delete_recipe_relationship(relationship_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
-async def get_recipe(recipe_id: str) -> dict[str, Any]:
-    """Get one recipe by its UUID."""
-    return await services_for_request().food.get_recipe(recipe_id)
+async def get_recipe(recipe_id: str, variation: str | None = None) -> dict[str, Any]:
+    """Get one recipe by its UUID. Optional variation selects one named nutrition view; unknown names fail without changing the recipe."""
+    return await services_for_request().food.get_recipe(recipe_id, variation)
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
@@ -457,9 +457,9 @@ async def get_meal_plan(week_start: str | None = None) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
-async def get_weekly_nutrition(week_start: str | None = None) -> dict[str, Any]:
-    """Totals of known numbers for one stated plate per variation per planned meal, with meal coverage for each nutrient. Partial data is not a complete weekly total or household consumption."""
-    return await services_for_request().planning.get_weekly_nutrition(week_start)
+async def get_weekly_nutrition(week_start: str | None = None, variation: str | None = None) -> dict[str, Any]:
+    """Totals of known numbers for one stated plate per variation per planned meal, with meal coverage for each nutrient. Optional variation selects one named view. Partial data is not a complete weekly total or household consumption."""
+    return await services_for_request().planning.get_weekly_nutrition(week_start, variation)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)

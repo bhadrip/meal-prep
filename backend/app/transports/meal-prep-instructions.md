@@ -390,3 +390,9 @@ stated serving; omitting it on update preserves it, and null clears it. Show it
 on recipe details in both the website and MCP App. Recipe numbers do not silently
 become numbers for a mixed meal: supply explicit meal variations for the planned
 portions and additions. Weekly totals use those planned meal variations.
+
+Rendered recipe, meal, and weekly nutrition cards show one variation at a time
+with a named toggle (Standard first when available). Switching changes the view
+only and does not edit saved portions or nutrients. Direct clients can make the
+same choice with the optional `variation` argument on `get_recipe` and
+`get_weekly_nutrition`; names match case-insensitively and unknown names fail.

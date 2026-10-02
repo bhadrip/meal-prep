@@ -117,3 +117,15 @@ def weekly_nutrition(plan):
 
 def with_weekly_nutrition(plan):
     return {**plan, 'nutritionSummary': weekly_nutrition(plan)} if plan is not None else None
+
+
+def select_variation(nutrition, variation):
+    """Direct clients can choose the same view as the rendered variation toggle."""
+    if variation is None:
+        return nutrition
+    name = text(variation, 'Nutrition variation', 80).casefold()
+    matches = [profile for profile in (nutrition or {}).get('profiles', [])
+               if profile['name'].casefold() == name]
+    if not matches:
+        raise ApplicationError('Nutrition variation was not found')
+    return {**nutrition, 'profiles': matches}

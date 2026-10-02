@@ -147,3 +147,29 @@ async def test_preparation_variations_are_freeform_and_rename_without_losing_num
     with pytest.raises(ApplicationError, match='unique'):
         await service.update_plan_item(WEEK, 'meal', {'id': saved['entries'][0]['id'], 'nutrition': invalid})
     assert (await service.get_weekly_nutrition(WEEK))['profiles'] == profiles
+
+
+@pytest.mark.asyncio
+async def test_direct_clients_select_one_variation_without_mutating_saved_data():
+    from app.application.services import RecipePantryService
+    repo = DemoRepository()
+    food, planning = RecipePantryService(repo), PlanningService(repo)
+    guide = {'basis': 'Estimate', 'profiles': [
+        {'name': 'Standard', 'serving': 'Original', 'portion': '1 bowl', 'amounts': {'protein': 14}},
+        {'name': 'Protein-heavy', 'serving': 'Add tofu', 'portion': '1 bowl', 'amounts': {'protein': 35}}]}
+    recipe = await food.save_recipe({'title': 'Toggle test', 'nutrition': guide})
+    selected = await food.get_recipe(recipe['id'], 'protein-HEAVY')
+    assert len(selected['nutrition']['profiles']) == 1
+    assert selected['nutrition']['profiles'][0]['amounts']['protein'] == 35
+    saved = await planning.save_meal_plan({'weekStart': WEEK, 'entries': [
+        {'date': WEEK, 'slot': 'dinner', 'meal': 'Toggle test', 'nutrition': guide}]})
+    summary = await planning.get_weekly_nutrition(WEEK, 'Standard')
+    assert len(summary['profiles']) == 1
+    assert summary['profiles'][0]['amounts']['protein']['total'] == 14
+    for invalid in ('Missing', ''):
+        with pytest.raises(ApplicationError):
+            await food.get_recipe(recipe['id'], invalid)
+        with pytest.raises(ApplicationError):
+            await planning.get_weekly_nutrition(WEEK, invalid)
+    assert (await food.get_recipe(recipe['id']))['nutrition'] == recipe['nutrition']
+    assert await planning.get_meal_plan(WEEK) == saved

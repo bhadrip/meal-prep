@@ -3,7 +3,7 @@
 .nutrition-card > p { font-size: .85rem; margin-bottom: 12px; }
 .nutrition-details { margin-top: 12px; }
 .nutrition-details summary { cursor: pointer; font-size: .8rem; font-weight: 650; }
-.nutrition-profiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px; margin-top: 12px; }
+.nutrition-profiles { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 12px; }
 .nutrition-profile { min-width: 0; padding: 16px; border-radius: 12px; border: 1px solid #d4dfd7; background: #fff; color: #263b32; }
 .nutrition-profile h4 { margin: 0 0 8px; font-size: .95rem; }
 .nutrition-serving { font-size: .8rem; line-height: 1.6; margin: 0 0 15px; }
@@ -30,3 +30,9 @@
 .weekly-nutrition-numbers dt { font-size: .75rem; }
 .weekly-nutrition-numbers dd { margin: 5px 0; font-weight: 700; font-size: 1.1rem; }
 .weekly-nutrition-numbers small { font-size: .65rem; color: #64746b; }
+
+.nutrition-profile[hidden] { display: none; }
+.nutrition-toggle { display: flex; flex-wrap: wrap; gap: 4px; margin: 14px 0 0; padding: 4px; width: fit-content; border-radius: 12px; background: #e9f0e9; }
+.nutrition-toggle button { padding: 8px 14px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #3c5848; font: inherit; font-size: .8rem; font-weight: 650; cursor: pointer; }
+.nutrition-toggle button[aria-pressed="true"] { background: #fff; border-color: #c7d7cb; box-shadow: 0 1px 3px #263b3214; }
+.nutrition-toggle button:focus-visible { outline: 2px solid #3c5848; outline-offset: 2px; }

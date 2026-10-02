@@ -17,7 +17,7 @@ from .pantry_freshness import pantry_freshness
 from .planning_model import meal_slots, validate_slots, component, identifier, text, positive, iso_date
 from .meal_library import MealLibrary, copy_components, components_from_plan
 from .circles import CircleService
-from .nutrition import normalize_nutrition, weekly_nutrition, with_weekly_nutrition
+from .nutrition import normalize_nutrition, weekly_nutrition, with_weekly_nutrition, select_variation
 
 
 DASHBOARD_CARD_IDS = (
@@ -373,10 +373,12 @@ class RecipePantryService:
             raise ApplicationError("Relationship was not found")
         return {"id": relationship_id, "deleted": True}
 
-    async def get_recipe(self, recipe_id: str) -> dict[str, Any]:
+    async def get_recipe(self, recipe_id: str, variation: str | None = None) -> dict[str, Any]:
         recipe = await self.repository.get_recipe(recipe_id)
         if not recipe:
             raise ApplicationError("Recipe was not found")
+        if variation is not None:
+            recipe = {**recipe, "nutrition": select_variation(recipe.get("nutrition"), variation)}
         try:
             feedback = await self.repository.get_feedback(recipe_id=recipe_id, limit=25)
         except StorageNotInstalledError as exc:
@@ -645,10 +647,10 @@ class PlanningService:
     async def get_plan_view(self, week_start: str | None = None):
         return with_weekly_nutrition(await self.get_meal_plan(week_start))
 
-    async def get_weekly_nutrition(self, week_start: str | None = None):
+    async def get_weekly_nutrition(self, week_start: str | None = None, variation: str | None = None):
         if week_start:
             self._week(week_start)
-        return weekly_nutrition(await self.get_meal_plan(week_start))
+        return select_variation(weekly_nutrition(await self.get_meal_plan(week_start)), variation)
 
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
         plan = {key: value for key, value in plan.items() if key != "nutritionSummary"}

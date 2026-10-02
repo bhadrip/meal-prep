@@ -9,6 +9,8 @@ test('serving variations save macro amounts and food sources, reject invalid amo
   await page.request.put('/api/meal-plan', {data: {weekStart: week, entries: [], tasks: []}});
   await page.goto(`/app?view=plan&week=${week}`);
   await page.locator('.nutrition-example summary').click();
+  await expect(page.locator('.nutrition-example .nutrition-profile:visible')).toHaveCount(1);
+  await page.locator('.nutrition-example').getByRole('button', {name:'Protein-heavy', exact:true}).click();
   await expect(page.locator('.nutrition-example [data-nutrient="protein"][data-level="high"]')).toBeVisible();
   await page.locator('.nutrition-card').filter({has: page.locator('.nutrition-example')}).screenshot({path: '/tmp/meal-nutrition-preview.png'});
   await page.getByRole('button', {name: 'Add meal', exact: true}).click();
@@ -38,6 +40,12 @@ test('serving variations save macro amounts and food sources, reject invalid amo
   await page.reload();
   const meal = page.locator('.meal').filter({hasText: 'Teriyaki noodles'});
   await meal.locator('.nutrition-details summary').click();
+  const guide = meal.locator('.nutrition-guide');
+  await expect(guide.locator('.nutrition-profile:visible')).toHaveCount(1);
+  await expect(guide.locator('.nutrition-profile').filter({hasText:'Protein-heavy'})).toBeHidden();
+  await guide.getByRole('button', {name:'Protein-heavy', exact:true}).click();
+  await expect(guide.locator('.nutrition-profile').filter({hasText:'Standard'})).toBeHidden();
+
   await expect(meal.locator('.nutrition-profile').filter({hasText: 'Protein-heavy'}).locator('[data-nutrient="protein"]')).toHaveAttribute('data-level', 'high');
   await expect(meal.locator('.nutrition-profile').filter({hasText: 'Standard'}).locator('[data-nutrient="carbs"]')).toHaveAttribute('data-level', 'high');
   await expect(meal).toContainText('Broccoli');
@@ -56,6 +64,9 @@ test('serving variations save macro amounts and food sources, reject invalid amo
   await editor.locator('#dialog-save').click();
   await expect(editor).toBeHidden();
   await expect(page.locator('[data-weekly-profile="Quick"]')).toBeVisible();
+  await page.locator('.weekly-nutrition').getByRole('button', {name:'Protein-heavy',exact:true}).click();
+  await expect(page.locator('[data-weekly-profile="Quick"]')).toBeHidden();
+
   await expect(page.locator('[data-weekly-profile="Protein-heavy"] [data-weekly-amount="protein"]')).toHaveText('35.5 g');
   await meal.getByRole('button', {name:'Edit', exact:true}).click();
 
@@ -69,6 +80,7 @@ test('serving variations save macro amounts and food sources, reject invalid amo
 
 test('self-contained MCP App shows the saved plates and preserves nutrition when recording eaten', async ({page}) => {
   const nutrition = {basis:'Ingredient estimate', profiles:[{name:'Protein-heavy', serving:'Add tofu', portion:'1 labeled serving', valueType:'label', amounts:{calories:400, protein:28, fat:0}, macros:{protein:'high'}, micronutrients:[{nutrient:'Iron', source:'Tofu', amount:3, unit:'mg'}]}]};
+  nutrition.profiles.push({name:'Standard', serving:'Original noodles', portion:'1 bowl', valueType:'estimated', amounts:{protein:12}, micronutrients:[]});
   const response = await page.request.put('/api/meal-plan', {data:{weekStart:week, entries:[{date:week, slot:'dinner', meal:'MCP noodles', nutrition}], tasks:[]}});
   expect(response.ok()).toBeTruthy(); const plan = await response.json();
   const resource = await page.request.post('/mcp', {headers:{Accept:'application/json, text/event-stream'}, data:{jsonrpc:'2.0', id:1, method:'resources/read', params:{uri:'ui://meal-prep/meal-plan-v2.html'}}});
@@ -86,22 +98,31 @@ test('self-contained MCP App shows the saved plates and preserves nutrition when
   await page.evaluate(plan => document.querySelector('iframe').contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{kind:'meal_plan',plan}}},'*'),plan);
   const frame=page.frameLocator('iframe');
   await frame.locator('.nutrition-details summary').click();
-  await expect(frame.locator('[data-nutrient="protein"]')).toHaveAttribute('data-level','high');
-  await expect(frame.locator('.nutrition-profile')).toContainText('Iron · 3 mg · Tofu');
-  await expect(frame.locator('[data-amount="protein"]')).toHaveText('28 g');
-  await expect(frame.locator('[data-amount="fat"]')).toHaveText('0 g');
-  await expect(frame.locator('[data-amount="carbs"]')).toHaveText('Unknown');
-  await expect(frame.locator('.nutrition-numbers')).toContainText('From label · 1 labeled serving');
+  const guide = frame.locator('.nutrition-guide');
+  await expect(guide.locator('.nutrition-profile:visible')).toHaveCount(1);
+  await expect(guide.locator('.nutrition-profile:visible [data-amount="protein"]')).toHaveText('≈ 12 g');
+  await guide.getByRole('button', {name:'Protein-heavy',exact:true}).press('Enter');
+  await expect(guide.getByRole('button', {name:'Protein-heavy',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(guide.locator('.nutrition-profile:visible')).toHaveCount(1);
+
+  await expect(frame.locator('.nutrition-profile:visible [data-nutrient="protein"]')).toHaveAttribute('data-level','high');
+  await expect(frame.locator('.nutrition-profile:visible')).toContainText('Iron · 3 mg · Tofu');
+  await expect(frame.locator('.nutrition-profile:visible [data-amount="protein"]')).toHaveText('28 g');
+  await expect(frame.locator('.nutrition-profile:visible [data-amount="fat"]')).toHaveText('0 g');
+  await expect(frame.locator('.nutrition-profile:visible [data-amount="carbs"]')).toHaveText('Unknown');
+  await expect(frame.locator('.nutrition-profile:visible .nutrition-numbers')).toContainText('From label · 1 labeled serving');
   await frame.getByRole('button',{name:'Record eaten',exact:true}).click();
   await frame.getByRole('button',{name:'Record completion',exact:true}).click();
   await expect(frame.locator('[data-plan-meal]')).toContainText('Eaten');
   const saved=(await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan;
   expect(saved.entries[0].nutrition).toEqual(plan.entries[0].nutrition);
-  await expect(frame.locator('[data-weekly-amount="protein"]')).toHaveText('28 g');
+  await frame.locator('.weekly-nutrition').getByRole('button',{name:'Protein-heavy',exact:true}).click();
+  await expect(frame.locator('.weekly-nutrition .nutrition-profile:visible [data-weekly-amount="protein"]')).toHaveText('28 g');
   const recipe = await (await page.request.put('/api/recipes', {data:{title:'MCP recipe numbers', nutrition}})).json();
   await page.evaluate(recipe => document.querySelector('iframe').contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{kind:'recipe_library',recipes:[recipe]}}},'*'),recipe);
   await frame.getByRole('button',{name:'Open MCP recipe numbers'}).click();
-  await expect(frame.locator('.recipe-nutrition [data-amount="protein"]')).toHaveText('28 g');
+  await frame.locator('.recipe-nutrition').getByRole('button',{name:'Protein-heavy',exact:true}).click();
+  await expect(frame.locator('.recipe-nutrition .nutrition-profile:visible [data-amount="protein"]')).toHaveText('28 g');
   await expect(frame.locator('.recipe-nutrition')).toContainText('Iron · 3 mg · Tofu');
 });
 
@@ -160,4 +181,24 @@ test('recipe nutrition edits persist, reject invalid units, and clear without ch
   await expect(editor).toBeHidden();
   await expect(section).toContainText('Nutrition not added yet');
   await expect(page.getByRole('heading',{name:saved.title,exact:true})).toBeVisible();
+});
+
+test('recipe variation toggle shows exactly one plate and leaves saved numbers unchanged', async ({page}) => {
+  const nutrition = {basis:'Estimates for test',profiles:[
+    {name:'Standard',serving:'Original noodles',portion:'1 bowl',amounts:{protein:14}},
+    {name:'Protein-heavy',serving:'Add tofu',portion:'1 bowl',amounts:{protein:35}}]};
+  const recipe = await (await page.request.put('/api/recipes', {data:{title:'Toggle recipe',nutrition}})).json();
+  await page.goto(`/app?view=recipes&recipe=${recipe.id}`);
+  const card=page.locator('.recipe-nutrition');
+  await expect(card.locator('.nutrition-profile:visible')).toHaveCount(1);
+  await expect(card.locator('.nutrition-profile:visible [data-amount="protein"]')).toHaveText('≈ 14 g');
+  await card.getByRole('button',{name:'Protein-heavy',exact:true}).click();
+  await expect(card.locator('.nutrition-profile:visible')).toHaveCount(1);
+  await expect(card.locator('.nutrition-profile:visible [data-amount="protein"]')).toHaveText('≈ 35 g');
+  await expect(card.getByRole('button',{name:'Standard',exact:true})).toHaveAttribute('aria-pressed','false');
+  await card.getByRole('button',{name:'Standard',exact:true}).press('Enter');
+  await expect(card.locator('.nutrition-profile:visible [data-amount="protein"]')).toHaveText('≈ 14 g');
+  expect((await (await page.request.get(`/api/recipes/${recipe.id}`)).json()).nutrition).toEqual(recipe.nutrition);
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
