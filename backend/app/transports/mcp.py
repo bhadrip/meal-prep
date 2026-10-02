@@ -17,6 +17,18 @@ from ..container import services_for_request
 
 settings = get_settings()
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+
+
+def mcp_app_html() -> str:
+    """MCP resources are self-contained because hosts need not allow static asset URLs."""
+    html = (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    for asset in ("recipe-graph", "recipe-browser"):
+        css = (STATIC_DIR / f"{asset}.css").read_text(encoding="utf-8")
+        script = (STATIC_DIR / f"{asset}.js").read_text(encoding="utf-8")
+        html = html.replace(f'<link rel="stylesheet" href="/static/{asset}.css" />', f"<style>{css}</style>").replace(
+            f'<script src="/static/{asset}.js"></script>', f"<script>{script}</script>")
+    return html
+
 MEAL_PLAN_UI_URI = "ui://meal-prep/meal-plan-v2.html"
 SHOPPING_UI_URI = "ui://meal-prep/shopping-list-v2.html"
 HOUSEHOLD_UI_URI = "ui://meal-prep/household-dashboard-v4.html"
@@ -150,6 +162,31 @@ async def list_recipe_tags() -> dict[str, Any]:
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_recipe_graph(query: str = "", filters: dict[str, list[str]] | None = None,
+                           max_minutes: int | None = None) -> dict[str, Any]:
+    """Explore search results with the same cuisine/goal/meal/diet/tag filters as browsing.
+    Includes matching recipes and directly linked variations or serving partners; isMatch marks the search matches.
+    No filters returns all active recipes. Related recipes can be outside the search filters.
+    """
+    return await services_for_request().food.get_recipe_graph(query, filters, max_minutes)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_recipe_relationship(relationship: dict[str, Any]) -> dict[str, Any]:
+    """Add or edit a recipe detail. Supply sourceRecipeId and type, plus id to edit.
+    Types cuisine/goal/meal/diet/tag use label; variant_of/pairs_with use targetRecipeId.
+    variant_of points from variation to base recipe. Categories are explicit household labels.
+    """
+    return await services_for_request().food.save_recipe_relationship(relationship)
+
+
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def delete_recipe_relationship(relationship_id: str) -> dict[str, Any]:
+    """Remove a recipe connection by its id."""
+    return await services_for_request().food.delete_recipe_relationship(relationship_id)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_recipe(recipe_id: str) -> dict[str, Any]:
     """Get one recipe by its UUID."""
     return await services_for_request().food.get_recipe(recipe_id)
@@ -157,7 +194,10 @@ async def get_recipe(recipe_id: str) -> dict[str, Any]:
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
-    """Create or update a household recipe. Include tags as a list of reusable labels such as sickness-friendly or guest-friendly."""
+    """Create or update a household recipe. Category lists: cuisines, eating_goals, meal_types, diets, tags.
+    Use kind recipe or ready_food. Ready food has heating/serving instructions and no ingredient demand.
+    Omitted typed categories retain saved values. Use totalMinutes for total cooking time.
+    """
     return await services_for_request().food.save_recipe(recipe)
 
 
@@ -244,8 +284,82 @@ async def apply_pantry_evidence(evidence_id: str, observed_items: list[dict[str,
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_meal_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    """Persist an approved weekly plan whose entries identify breakfast, lunch, snack, dinner, or prep slots."""
+    """Save an approved plan: weekStart (Monday), entries [{id?, date, slot: household slot ID, meal, servings?, notes?, components:[{id?, name, quantity?, unit?, source: ready|cook|task|external, action: cook|heat|serve, recipeId?, pantryItemId?, taskId?, notes?}]}], tasks [{id?, date?, title, notes?, recipeId?, servings?, mealIds?:[]}]. Tasks need no slot or meal link. Supply stable UUIDs when linking new items. Cook components require recipeId; task components require taskId. Saving never changes stock."""
     return await services_for_request().planning.save_meal_plan(plan)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def configure_meal_slots(slots: list[dict[str, Any]]) -> dict[str, Any]:
+    """Save ordered household eating slots [{id, name, enabled}]. Read context first; keep stable IDs when renaming/reordering, disable instead of deleting existing IDs. Prep belongs in tasks. Keep at least one enabled slot."""
+    return await services_for_request().household.configure_meal_slots(slots)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def search_meals(query: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    """Search active reusable meals by name, notes, or components in this household. Return items/total/offset/limit. Saved meals combine recipes and ready food independently of dates."""
+    return await services_for_request().planning.meals.search(query, limit, offset)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_meal(meal_id: str) -> dict[str, Any]:
+    """Read one reusable meal, including an archived meal referenced by history."""
+    return await services_for_request().planning.meals.get(meal_id)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def save_meal(meal: dict[str, Any]) -> dict[str, Any]:
+    """Save a reusable combination: {id? for editing, name, servings: default people/servings, notes?, components:[{id?,name,quantity?,unit?,source:ready|cook|external,action:cook|heat|serve,recipeId?,notes?}]}. Cook requires an active household recipe. No dates, task IDs, or pantry-lot IDs. Library edits never rewrite planned copies."""
+    return await services_for_request().planning.meals.save(meal)
+
+
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def archive_meal(meal_id: str) -> dict[str, Any]:
+    """Archive a reusable meal from future choices. Existing planned meals and stock stay unchanged."""
+    return await services_for_request().planning.meals.archive(meal_id)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def plan_saved_meal(week_start: str, meal_id: str, planned_date: str, slot: str, servings: float | None = None) -> dict[str, Any]:
+    """Add a dated copy of a reusable meal to a week without replacing other choices. Scale component quantities from default servings; snapshot current recipe ingredients and saved-meal revision. Stock stays unchanged. Use an enabled household slot."""
+    return await services_for_request().planning.plan_saved_meal(week_start, meal_id, planned_date, slot, servings)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def save_planned_meal(week_start: str, item_id: str, name: str | None = None, servings: float | None = None) -> dict[str, Any]:
+    """Save a planned meal as a new reusable combination. Keep component amounts, strip pantry-lot and task links, resolve recipe batches to cook components. Default servings use the planned servings or 1 if unknown; specify the correct basis when unknown."""
+    return await services_for_request().planning.save_planned_meal(week_start, item_id, name, servings)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def update_plan_item(week_start: str, kind: str, item: dict[str, Any]) -> dict[str, Any]:
+    """Add or patch one meal or task without replacing other items. kind: meal|task. Omit item.id to add; supply its saved ID to edit. Meals use date, slot, meal, components; tasks use title, optional date, notes, recipeId, servings, mealIds. Completed items are history."""
+    return await services_for_request().planning.update_plan_item(week_start, kind, item)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def complete_plan_item(week_start: str, kind: str, item_id: str,
+                             inputs: list[dict[str, Any]] | None = None,
+                             outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Record a task done or a meal eaten. Inputs [{itemId, quantity}] are actual amounts USED in the pantry item's saved unit; outputs [{name, quantity, unit, storageLocation?}] create prepared stock. Ask for unknown actual amounts. Ordinary tasks can omit both. Atomic and safe to retry: each item completes once."""
+    return await services_for_request().planning.complete_item(week_start, kind, item_id, inputs, outputs)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def preview_plan_shopping(week_start: str) -> dict[str, Any]:
+    """Preview this week's remaining meal/task demand: scale recipe snapshots, count batches once, subtract exact stock once, and report unknown quantities/conversions. Does not save, reserve, buy, or consume food. Reconcile other-week commitments and English notes before saving the final shopping list."""
+    return await services_for_request().planning.preview_shopping(week_start)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_plan_shopping(week_start: str) -> dict[str, Any]:
+    """Save reviewed shopping suggestions for a week, recalculating from current stock. Replace only pending generated items for this week; preserve manual items and purchase history. Review preview_plan_shopping warnings first; for NLP adjustments use save_shopping_list with an explicitly reconciled list."""
+    return await services_for_request().planning.save_plan_shopping(week_start)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def receive_shopping_item(item_id: str, quantity: float, unit: str, storage_location: str = "pantry") -> dict[str, Any]:
+    """Record an actual shopping item received: mark purchased and add pantry stock in its actual quantity/unit (e.g. 20 pieces, not one pack). Safe to retry, one receipt per shopping line. Never places an order."""
+    return await services_for_request().shopping.receive_item(item_id, quantity, unit, storage_location)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
@@ -253,6 +367,24 @@ async def get_meal_plan(week_start: str | None = None) -> dict[str, Any]:
     """Return the meal plan for a week, or the latest plan when no week is supplied."""
     plan = await services_for_request().planning.get_meal_plan(week_start)
     return {"plan": plan}
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_meal_plan_rules(revision_id: str | None = None) -> dict[str, Any]:
+    """Read the current English planning rules, or an immutable revision by ID. Null means no rules saved."""
+    return {"rules": await services_for_request().planning.get_rules(revision_id)}
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_meal_plan_rule_history(limit: int = 20) -> dict[str, Any]:
+    """Read saved English rule revisions, newest first, for the active household."""
+    return {"items": await services_for_request().planning.get_rule_history(limit)}
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_meal_plan_rules(text: str, expected_revision: int) -> dict[str, Any]:
+    """Save a user-requested English rules document as a new revision. Read current rules first; pass its revision, or 0 if none. Blank text clears recurring rules while preserving history. A stale revision fails; reread and reconcile with the user."""
+    return await services_for_request().planning.save_rules(text, expected_revision)
 
 
 @mcp.tool(annotations=WRITE, structured_output=True)
@@ -292,7 +424,7 @@ async def get_weekly_schedule(week_start: str | None = None) -> dict[str, Any]:
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_planning_context(week_start: str | None = None) -> dict[str, Any]:
-    """Load the complete durable context needed before drafting or revising a weekly meal plan."""
+    """Load rules, current plan, two earlier saved weeks, pantry, recipe tags, week notes, feedback and preferences. Search saved recipes and their feedback summaries before drafting; no plan is generated or saved by this read."""
     return await services_for_request().planning.get_context(week_start)
 
 
@@ -374,17 +506,49 @@ async def render_household_snapshot() -> dict[str, Any]:
     return {"kind": "household_snapshot", **snapshot}
 
 
+@mcp.tool(annotations=READ_ONLY, meta={"ui": {"resourceUri": RECIPE_LIBRARY_UI_URI}}, structured_output=True)
+async def render_meal_library(query: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    """Open the shared recipe library with the Meals type filter selected."""
+    return await render_recipe_library(query=query, limit=limit, item_type="meals", offset=offset)
+
+
 @mcp.tool(
     annotations=READ_ONLY,
     meta={"ui": {"resourceUri": RECIPE_LIBRARY_UI_URI}},
     structured_output=True,
 )
-async def render_recipe_library(query: str = "", limit: int = 50, tag: str = "") -> dict[str, Any]:
-    """Render saved recipes as a visual library; filter by a tag when requested."""
+async def render_recipe_library(query: str = "", limit: int = 50, tag: str = "", filters: dict[str, list[str]] | None = None,
+                                max_minutes: int | None = None, item_type: str = "all", offset: int = 0) -> dict[str, Any]:
+    """Search recipes and reusable meals together. Filter item_type by all, recipes, ready_food, or meals.
+    Recipe filters match recipes inside meals. Open component recipes with get_recipe.
+    """
     service = services_for_request().food
-    recipes = await service.search_recipes(query=query, limit=limit, tag=tag)
-    tags = await service.list_recipe_tags()
-    return {"kind": "recipe_library", "recipes": recipes, "tags": tags, "query": query, "tag": tag, "count": len(recipes)}
+    selected = {**(filters or {})}
+    if tag: selected["tag"] = [tag]
+    data = await service.browse_recipe_library(query, selected, max_minutes, limit, offset, item_type)
+    return {"kind": "recipe_library", **data, "exploreOpen": False, "recipes": data["items"], "tag": tag,
+            "tags": [{"tag": item["label"], "recipe_count": item["count"]} for item in data["facets"]["tag"]],
+            "household": await services_for_request().household.get_context()}
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def browse_recipe_library(query: str = "", filters: dict[str, list[str]] | None = None,
+                                max_minutes: int | None = None, limit: int = 25, offset: int = 0, item_type: str = "recipes") -> dict[str, Any]:
+    """Filter active household recipes and meals (item_type: all, recipes, ready_food, meals). Filter keys: cuisine, goal, meal, diet, tag. OR within a key, AND across keys.
+    Categories are household-entered labels, not verified nutrition. Use get_recipe_graph for variations and serving pairings.
+    """
+    return await services_for_request().food.browse_recipe_library(query, filters, max_minutes, limit, offset, item_type)
+
+
+@mcp.tool(
+    annotations=READ_ONLY,
+    meta={"ui": {"resourceUri": RECIPE_LIBRARY_UI_URI}},
+    structured_output=True,
+)
+async def render_recipe_graph(query: str = "", filters: dict[str, list[str]] | None = None,
+                              max_minutes: int | None = None) -> dict[str, Any]:
+    """Render recipe search with its Explore results panel open. Categories and recipe links remain editable."""
+    return {"kind": "recipe_graph", "graph": await services_for_request().food.get_recipe_graph(query, filters, max_minutes)}
 
 
 @mcp.tool(
@@ -431,7 +595,7 @@ async def render_onboarding() -> dict[str, Any]:
 async def render_meal_plan(week_start: str | None = None) -> dict[str, Any]:
     """Render the final meal plan. Call get_meal_plan first when reasoning over the plan."""
     plan = await services_for_request().planning.get_meal_plan(week_start)
-    return {"kind": "meal_plan", "plan": plan}
+    return {"kind": "meal_plan", "plan": plan, "household": await services_for_request().household.get_context()}
 
 
 @mcp.tool(
@@ -445,6 +609,18 @@ async def render_shopping_list(list_id: str | None = None) -> dict[str, Any]:
     return {"kind": "shopping_list", "shoppingList": value}
 
 
+def _ui_resource() -> str:
+    """Keep embedded controls self-contained in hosts that disallow asset requests."""
+    html = mcp_app_html()
+    css = (STATIC_DIR / "choices.css").read_text(encoding="utf-8")
+    script = (STATIC_DIR / "choices.js").read_text(encoding="utf-8")
+    return html.replace(
+        '<link rel="stylesheet" href="/static/choices.css?v=1" />', f"<style>{css}</style>",
+    ).replace(
+        '<script src="/static/choices.js?v=1" defer></script>', f"<script>{script}</script>",
+    )
+
+
 @mcp.resource(
     MEAL_PLAN_UI_URI,
     name="meal-plan-ui",
@@ -454,7 +630,7 @@ async def render_shopping_list(list_id: str | None = None) -> dict[str, Any]:
     meta={"ui": {"prefersBorder": True}},
 )
 def meal_plan_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -466,7 +642,7 @@ def meal_plan_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def shopping_list_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -478,7 +654,7 @@ def shopping_list_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def household_snapshot_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -490,19 +666,19 @@ def household_snapshot_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def onboarding_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
     RECIPE_LIBRARY_UI_URI,
     name="recipe-library-ui",
     title="Recipe library",
-    description="A visual, searchable library of saved household recipes.",
+    description="A visual, searchable library of household recipes and reusable meals.",
     mime_type="text/html;profile=mcp-app",
     meta={"ui": {"prefersBorder": True}},
 )
 def recipe_library_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -514,7 +690,7 @@ def recipe_library_resource() -> str:
     meta={"ui": {"prefersBorder": True}},
 )
 def feedback_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 @mcp.resource(
@@ -526,7 +702,7 @@ def feedback_resource() -> str:
     meta={"ui": {"prefersBorder": True, "csp": {"resourceDomains": [settings.supabase_url.rstrip('/')] if settings.supabase_url else []}}},
 )
 def pantry_evidence_resource() -> str:
-    return (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
+    return _ui_resource()
 
 
 mcp_app = mcp.streamable_http_app()

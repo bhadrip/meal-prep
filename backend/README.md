@@ -34,10 +34,14 @@ The website has no model integration. Users edit their data directly there. The 
 
 Inbox entries are written by database triggers in the same transaction as household changes and are visible only to their recipient. Household entries become inaccessible when membership ends. The website loads the latest 100 entries when it opens or refreshes, and opening one marks it read and follows its destination. The database keeps at most 200 entries per person. There is no email, push, scheduler, or real-time subscription for this first version.
 
+The website bootstraps household identity and invitations first. Its homepage then loads the current week's plan, shopping list, and pantry independently through selected snapshots, so one slow section does not block the others. Notifications load separately. Recipes, reviews, and the expandable household dashboard load when opened. `/api/app/snapshot` still returns all sections when no `sections` filter is supplied; `sections=mealPlan&week_start=YYYY-MM-DD` requests just a particular week's plan.
+
+The website requests `/api/app/bootstrap?include_sections=false` for lightweight startup. The default bootstrap response retains all sections for older browser tabs.
+
 ## Deployed resources
 
 - Source repository: `https://github.com/bhadrip/meal-prep`
-- Production app and MCP server: `https://meal-prep-swart.vercel.app`
+- Production app and MCP server: `https://meal-prep.madhavan-padmaja.dev`
 - Supabase project: `svdcbpcndqmocecyymav` in `bhadrip's Org`
 
 These resources are owned by the personal `bhadrip` accounts and are separate from Magik Mindz.
@@ -181,11 +185,17 @@ columns aligned in `supabase migration list --linked`.
 Create the Vercel project from the repository and set its Root Directory to `backend`. Configure:
 
 ```dotenv
-APP_BASE_URL=https://YOUR_PROJECT.vercel.app
+APP_BASE_URL=https://meal-prep.madhavan-padmaja.dev
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=YOUR_ANON_KEY
 AUTH_REQUIRED=true
 ```
+
+`APP_BASE_URL` is the public origin advertised by OAuth protected-resource
+metadata and the landing page's MCP copy button. Use the same origin as
+`plugin/mcp.json`; a Vercel deployment hostname and a custom domain are not
+interchangeable OAuth resource identifiers. For another deployment, update both
+the environment setting and the portable plugin endpoint.
 
 Deploy, then verify:
 
@@ -203,6 +213,7 @@ Data tools:
 - `get_household_context`
 - `get_dashboard_layout`, `configure_dashboard`
 - `get_planning_context`
+- `get_meal_plan_rules`, `get_meal_plan_rule_history`, `save_meal_plan_rules`
 - `update_household_preferences`
 - `search_recipes`, `get_recipe`, `save_recipe`, `archive_recipe`
 - `create_recipe_share`, `list_recipe_shares`, `revoke_recipe_share`, `copy_shared_recipe`
@@ -211,7 +222,11 @@ Data tools:
 - `get_weekly_schedule`, `save_weekly_schedule`
 - `get_feedback`, `save_feedback`, `get_what_worked`, `get_recipe_feedback_summary`
 - `get_household_memory`, `save_household_memory`, `review_household_memory`
+- `search_meals`, `get_meal`, `save_meal`, `archive_meal`
+- `save_planned_meal`, `plan_saved_meal`, `render_meal_library`
 - `save_meal_plan`, `get_meal_plan`
+- `configure_meal_slots`, `update_plan_item`, `complete_plan_item`
+- `preview_plan_shopping`, `save_plan_shopping`, `receive_shopping_item`
 - `save_shopping_list`, `add_shopping_item`, `get_shopping_list`, `mark_item_purchased`
 
 Presentation tools:
@@ -223,6 +238,117 @@ Presentation tools:
 - `render_onboarding`
 - `render_meal_plan`
 - `render_shopping_list`
+
+## Meals and tasks
+
+Reusable Meals are stored separately from Recipes and weekly-plan entries.
+Recipes have `kind=recipe|ready_food`. Ready-food entries have preparation
+instructions and no ingredient demand. Their meal components use `source=ready`
+and may link to the library entry through `recipeId`. The same reference opens
+details in the website and MCP App.
+
+`/api/recipe-library?item_type=all|recipes|ready_food|meals` and
+`browse_recipe_library(item_type=...)` share search and pagination. Recipe
+filters also match recipes inside meals; they do not imply nutritional labels
+for the entire meal.
+`save_meal` requires a name, positive default servings, and 1–30 components
+(`ready`, `cook`, `external`); cooking components reference active household
+recipes. Library components have no task/pantry-lot IDs. `search_meals` searches
+names, notes, and components, with `limit` 1–100 and `offset` 0–10000; archived
+meals are excluded. `get_meal` also reads archived records for history.
+
+`plan_saved_meal` adds an independent dated copy, scales component quantities
+from default servings (rounding up to 0.001), snapshots current recipe
+ingredients, and records `sourceMeal: {id, name, revision}`. Library edits and
+archives preserve prior copies, which can still link actual stock or prep tasks.
+`save_planned_meal` detaches those references, resolving recipe batches to cook
+components. Missing plan servings default to 1; specify the quantity basis when
+it is known. None of these operations changes inventory.
+
+HTTP routes: `GET/PUT /api/meals`, `GET/DELETE /api/meals/{id}`,
+`POST /api/meals/{id}/plan`, `POST /api/meals/from-plan`. The rendered MCP App
+shares the Recipes library resource, with Recipes, Ready food, and Meals type filters, search, pagination, and a date/slot/servings form that
+uses the same MCP tools. `render_recipe_library(item_type="meals")` selects
+the Meals filter; `render_meal_library` is a convenience tool for that same
+resource. `202610020002_reusable_meals.sql` adds the `meals`
+table with RLS and JSON-reference validation, plus immutable plan provenance.
+Fresh local Supabase tests verify the entire migration chain, foreign-household
+rejection, direct-table validation, and edits after a library archive.
+
+Household context exposes ordered `mealSlots` (`id`, `name`, `enabled`). The
+website and MCP share `configure_meal_slots`; stable IDs survive renaming and
+reordering, and disabling a slot preserves existing meals. Prep is a task.
+
+`save_meal_plan` takes `weekStart`, `entries`, and `tasks`. Meals have stable UUIDs,
+dates within the selected week, a household slot ID, `meal`, optional servings
+and notes, and `components`. Components have UUIDs, a name, optional quantity/unit,
+`source` (`ready`, `cook`, `task`, `external`), `action` (`cook`, `heat`, `serve`),
+and optional `recipeId`, `pantryItemId`, or `taskId`. Cook components require a
+recipe; task components require a task from the same plan. Tasks have a UUID,
+title, optional date (including the preceding weekend), notes, optional recipe
+and batch servings, and optional `mealIds`. No date, slot, or meal link is required
+for a checklist task. `update_plan_item` patches one record and returns the plan.
+The saved recipe ingredient/yield snapshot stays fixed through later recipe edits.
+
+`preview_plan_shopping` calculates the selected week's remaining explicit demand.
+It expands unfinished cooking tasks once, scales recipe components in servings,
+and aggregates ready food before subtracting exact stock. It reports missing
+amounts, uncertain stock, unknown conversions, and overallocated batch portions.
+It supports explicit gram/kilogram and milliliter/liter conversions; packages are
+not guessed. It does not reserve food or interpret English rules/notes. MCP should
+reconcile other-week commitments and prose before saving the final list.
+`save_plan_shopping` refreshes that week's pending generated lines, retaining
+manual items and purchased history. Item `source.reasons` identifies its meals
+or cooking tasks. The website exposes these operations through Shopping needs.
+
+`complete_plan_item` atomically records a task completed or meal eaten. Explicit
+inputs `{itemId, quantity}` consume actual quantities in each pantry item's unit;
+outputs `{name, quantity, unit, storageLocation}` create prepared pantry lots.
+No stock change is implied by a checklist. Each item has one immutable activity;
+repeated or concurrent completion requests return its first result. Completed
+items are history; correct pantry quantities separately if needed.
+`receive_shopping_item` marks a line purchased and creates one pantry lot using
+the actual received quantity/unit, safely on concurrent retries. The existing
+purchase checkbox alone records shopping progress. Repeat purchases need separate
+shopping lines. All stock/plan references are checked against the active household.
+
+HTTP uses `PUT /api/meal-slots`, `PATCH /api/meal-plan/items`,
+`POST /api/meal-plan/complete`, `GET /api/meal-plan/shopping-preview`,
+`POST /api/meal-plan/shopping`, and `POST /api/shopping-list/receive`.
+Migration `202610020001_unified_planning.sql` adds task/component storage, actual
+activity, and receipt functions. Plan saves upsert meal entries rather than
+recreating their IDs, preserving occurrence and feedback links. The MCP App renders
+components and tasks and can record task/cooking/meal completion through data tools.
+
+## English planning rules
+
+Weekly plan has two tabs: **Plan** for the selected week’s meals, prep, and
+temporary notes, and **Planning rules** for recurring English instructions and
+version history. **Edit notes** changes only that week’s notes; **Edit weekly
+rhythm** sets the pace for each day. The plan’s **Rules used: version N** link
+opens its exact saved rules as a read-only document. Tab, week, and revision
+links survive reload and browser navigation. On phones, day cards stack vertically.
+Rules start empty. Each changed document creates an immutable household
+revision; clearing the text preserves history. Saves include the revision
+read by the editor so simultaneous changes cannot silently overwrite each other.
+
+ChatGPT reads `get_planning_context(week_start=...)` before planning. The result
+includes `mealPlanRules`, the current `mealPlan`, the two most recent earlier
+saved weeks in `recentPlans`, `pantry`, `recipeTags`, schedule `notes`, feedback,
+and household preferences. Candidate recipes and their lessons remain available
+through recipe search and feedback tools. Recent plans describe what was planned;
+feedback supplies evidence about what actually happened.
+
+`save_meal_plan_rules(text, expected_revision)` saves the full English document;
+pass 0 when none exists. `get_meal_plan_rules(revision_id=...)` reads an older
+version and `get_meal_plan_rule_history` lists versions. Plans guided by a
+document include `ruleRevisionId` when saved. Ordinary edits preserve that
+source; later rule changes do not alter existing plans. Migration
+`202610010003_meal_plan_rules.sql` installs the storage and history functions.
+
+ChatGPT interprets the English instructions and proposes a plan for review.
+The service stores data and checks identifiers and revisions; it does not
+evaluate a rule language or generate meals.
 
 ## Boundaries
 

@@ -3,13 +3,19 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 import re
 from typing import Any, Awaitable, Callable, Protocol
+from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from .errors import ApplicationError, RepositoryError, StorageNotInstalledError
 from .pantry_photos import compact_photo, download_chatgpt_photo, normalize_observations
 from .pantry_categories import PANTRY_CATEGORIES, infer_pantry_category
+from .pantry_freshness import pantry_freshness
+from .planning_model import meal_slots, validate_slots, component, identifier, text, positive, iso_date
+from .meal_library import MealLibrary, copy_components, components_from_plan
 
 
 DASHBOARD_CARD_IDS = (
@@ -37,6 +43,10 @@ def _dashboard_layout(preferences: dict[str, Any]) -> dict[str, list[str]]:
 
 
 class MealPrepRepository(Protocol):
+    async def search_meals(self, query: str, limit: int, offset: int) -> dict: ...
+    async def get_meal(self, meal_id: str) -> dict | None: ...
+    async def save_meal(self, meal: dict) -> dict: ...
+    async def archive_meal(self, meal_id: str) -> dict: ...
     async def get_household_context(self, *, create_if_missing: bool = True) -> dict[str, Any]: ...
     async def list_households(self) -> dict[str, Any]: ...
     async def switch_household(self, household_id: str) -> dict[str, Any]: ...
@@ -44,6 +54,9 @@ class MealPrepRepository(Protocol):
     async def update_household_preferences(self, patch: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, Any]: ...
     async def search_recipes(self, query: str = "", limit: int = 10, tag: str = "") -> list[dict[str, Any]]: ...
     async def list_recipe_tags(self) -> list[dict[str, Any]]: ...
+    async def get_recipe_graph_data(self) -> dict[str, Any]: ...
+    async def save_recipe_relationship(self, relationship: dict[str, Any]) -> dict[str, Any]: ...
+    async def delete_recipe_relationship(self, relationship_id: str) -> bool: ...
     async def get_recipe(self, recipe_id: str) -> dict[str, Any] | None: ...
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]: ...
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]: ...
@@ -55,10 +68,16 @@ class MealPrepRepository(Protocol):
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]: ...
     async def record_pantry_use(self, item_id: str, quantity: float, recipe_id: str | None = None, meal_title: str | None = None) -> dict[str, Any]: ...
     async def save_pantry_photo(self, *, image: bytes, width: int, height: int, file_id: str, note: str, observations: list[dict[str, Any]], apply_to_pantry: bool) -> dict[str, Any]: ...
-    async def get_pantry_photos(self, limit: int = 30) -> list[dict[str, Any]]: ...
+    async def get_pantry_photos(self, limit: int = 30, offset: int = 0) -> list[dict[str, Any]]: ...
     async def apply_pantry_photo(self, evidence_id: str, observations: list[dict[str, Any]] | None = None) -> dict[str, Any]: ...
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]: ...
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None: ...
+    async def get_recent_meal_plans(self, before_week: str, limit: int = 2) -> list[dict[str, Any]]: ...
+    async def complete_plan_item(self, week_start: str, kind: str, item_id: str, inputs: list[dict], outputs: list[dict]) -> dict: ...
+    async def receive_shopping_item(self, item_id: str, quantity: float, unit: str, storage_location: str) -> dict: ...
+    async def get_meal_plan_rules(self, revision_id: str | None = None) -> dict[str, Any] | None: ...
+    async def get_meal_plan_rule_history(self, limit: int = 20) -> list[dict[str, Any]]: ...
+    async def save_meal_plan_rules(self, text: str, expected_revision: int) -> dict[str, Any]: ...
     async def save_shopping_list(self, shopping_list: dict[str, Any]) -> dict[str, Any]: ...
     async def get_shopping_list(self, list_id: str | None = None) -> dict[str, Any] | None: ...
     async def add_shopping_item(self, item: dict[str, Any], list_id: str | None = None) -> dict[str, Any]: ...
@@ -100,7 +119,16 @@ class HouseholdService:
         self.repository = repository
 
     async def get_context(self) -> dict[str, Any]:
-        return await self.repository.get_household_context()
+        household = await self.repository.get_household_context()
+        return {**household, "mealSlots": meal_slots(household)}
+
+    async def configure_meal_slots(self, slots: list[dict]) -> dict:
+        household = await self.repository.get_household_context()
+        cleaned = validate_slots(slots, meal_slots(household))
+        preferences = household.get("planningPreferences") or {}
+        updated = await self.repository.update_household_preferences(
+            {"planningPreferences": {**preferences, "mealSlots": cleaned}}, context=household)
+        return {**updated, "mealSlots": cleaned}
 
     async def list_households(self) -> dict[str, Any]:
         return await self.repository.list_households()
@@ -120,6 +148,12 @@ class HouseholdService:
         planning_preferences: dict[str, Any] | None = None,
         complete_onboarding: bool = False,
     ) -> dict[str, Any]:
+        if planning_preferences is not None:
+            household = await self.repository.get_household_context()
+            if "mealSlots" in planning_preferences:
+                planning_preferences = {**planning_preferences, "mealSlots": validate_slots(
+                    planning_preferences["mealSlots"], meal_slots(household))}
+            planning_preferences = {**(household.get("planningPreferences") or {}), **planning_preferences}
         if complete_onboarding:
             missing = []
             if household_size is None:
@@ -202,7 +236,9 @@ class HouseholdService:
             "household": updated,
         }
 
-    async def snapshot(self) -> dict[str, Any]:
+    async def snapshot(
+        self, *, sections: list[str] | None = None, week_start: str | None = None,
+    ) -> dict[str, Any]:
         async def section(loader: Callable[[], Awaitable[Any]]) -> dict[str, Any]:
             try:
                 value = await loader()
@@ -211,16 +247,23 @@ class HouseholdService:
             empty = value is None or value == [] or value == {}
             return {"status": "empty" if empty else "ready", "value": value}
 
-        household = await self.repository.get_household_context()
         loaders = {
-            "pantry": self.repository.get_pantry,
+            "pantry": RecipePantryService(self.repository).get_pantry,
             "recipes": lambda: self.repository.search_recipes(query="", limit=25),
-            "schedule": self.repository.get_weekly_schedule,
+            "meals": lambda: MealLibrary(self.repository).search(),
+            "schedule": lambda: self.repository.get_weekly_schedule(week_start),
             "feedback": lambda: self.repository.get_feedback(limit=25),
             "memories": self.repository.get_household_memory,
-            "mealPlan": self.repository.get_meal_plan,
+            "mealPlan": lambda: self.repository.get_meal_plan(week_start),
+            "mealPlanRules": self.repository.get_meal_plan_rules,
             "shoppingList": self.repository.get_shopping_list,
         }
+        if sections is not None:
+            unknown = set(sections) - loaders.keys()
+            if unknown:
+                raise ApplicationError(f"Unknown snapshot sections: {', '.join(sorted(unknown))}")
+            loaders = {name: loaders[name] for name in dict.fromkeys(sections)}
+        household = await self.get_context()
         values = await asyncio.gather(*(section(loader) for loader in loaders.values()))
         return {
             "household": household,
@@ -237,6 +280,82 @@ class RecipePantryService:
 
     async def list_recipe_tags(self) -> list[dict[str, Any]]:
         return await self.repository.list_recipe_tags()
+
+    async def browse_recipe_library(self, query: str = "", filters: dict | None = None,
+                                   max_minutes: int | None = None, limit: int = 25, offset: int = 0,
+                                   item_type: str = "recipes") -> dict:
+        from .recipe_browsing import browse
+        if item_type not in {"all", "recipes", "ready_food", "meals"}:
+            raise ApplicationError("Library type must be all, recipes, ready_food, or meals")
+        graph = await self.repository.get_recipe_graph_data()
+        recipe_graph = {**graph, "recipes": [
+            r for r in graph["recipes"] if item_type not in {"recipes", "ready_food"}
+            or (r.get("kind", "recipe") == "ready_food") == (item_type == "ready_food")]}
+        recipes = browse(recipe_graph, query, filters, max_minutes, limit, offset)
+        if item_type in {"recipes", "ready_food"}:
+            return {**recipes, "itemType": item_type}
+        # Meal search remains household scoped and covers every page, including
+        # names, notes, and ready foods that have no recipe.
+        meals = []
+        while True:
+            page = await self.repository.search_meals(query, 100, len(meals))
+            meals.extend(page["items"])
+            if len(meals) >= page["total"]:
+                break
+        # Recipe facets also count matching meals through their linked dishes.
+        # Otherwise a search for a meal's name would disable all its recipe filters.
+        from .recipe_graph import CATEGORY_FIELDS
+        by_id = {r["id"]: r for r in graph["recipes"]}
+        facets = {}
+        for kind, options in recipes["facets"].items():
+            other_filters = {key: values for key, values in recipes["filters"].items() if key != kind}
+            eligible = set(browse(graph, "", other_filters, max_minutes)["matchingRecipeIds"])
+            facets[kind] = [{**option, "count": (option["count"] if item_type == "all" else 0) + sum(
+                any(row.get("recipeId") in eligible and option["label"] in
+                    (by_id[row["recipeId"]].get(CATEGORY_FIELDS[kind]) or []) for row in meal["components"])
+                for meal in meals)} for option in options]
+        if recipes["filters"] or max_minutes is not None:
+            eligible = set(browse(graph, "", filters, max_minutes)["matchingRecipeIds"])
+            meals = [meal for meal in meals if any(row.get("recipeId") in eligible for row in meal["components"])]
+        recipe_ids = set(recipes["matchingRecipeIds"])
+        items = [{**r, "itemType": "ready_food" if r.get("kind") == "ready_food" else "recipes"} for r in graph["recipes"] if r["id"] in recipe_ids] if item_type == "all" else []
+        # Keep variation information on recipe cards in the mixed result set.
+        variations = {}
+        for edge in graph["relationships"]:
+            if edge["type"] == "variant_of":
+                target = edge["targetRecipeId"]
+                variations[target] = variations.get(target, 0) + 1
+        items = [{**r, "variationCount": variations.get(r["id"], 0)} for r in items]
+        items.extend({**meal, "itemType": "meals"} for meal in meals)
+        # Alphabetical ordering makes paging stable across the two primitives.
+        items.sort(key=lambda row: ((row.get("title") or row["name"]).casefold(), row["id"]))
+        total_meals = (await self.repository.search_meals("", 1, 0))["total"]
+        return {**recipes, "items": items[offset:offset + limit], "count": len(items),
+                "totalCount": total_meals + (recipes["totalCount"] if item_type == "all" else 0),
+                "matchingRecipeIds": recipes["matchingRecipeIds"] if item_type == "all" else [],
+                "itemType": item_type, "facets": facets, "hasMore": offset + limit < len(items)}
+
+    async def get_recipe_graph(self, query: str = "", filters: dict | None = None,
+                               max_minutes: int | None = None) -> dict[str, Any]:
+        from .recipe_browsing import browse
+        from .recipe_graph import build_result_graph
+        data = await self.repository.get_recipe_graph_data()
+        results = browse(data, query, filters, max_minutes)
+        return {**build_result_graph(data, results["matchingRecipeIds"]),
+                "scope": {"query": results["query"], "filters": results["filters"], "maxMinutes": max_minutes}}
+
+    async def save_recipe_relationship(self, relationship: dict[str, Any]) -> dict[str, Any]:
+        from .recipe_graph import validate_relationship
+        clean = validate_relationship(relationship, await self.get_recipe_graph())
+        return await self.repository.save_recipe_relationship(clean)
+
+    async def delete_recipe_relationship(self, relationship_id: str) -> dict[str, Any]:
+        graph = await self.get_recipe_graph()
+        if not any(edge["id"] == relationship_id for edge in graph["edges"]):
+            raise ApplicationError("Relationship was not found")
+        if not await self.repository.delete_recipe_relationship(relationship_id):
+            raise ApplicationError("Relationship was not found")
+        return {"id": relationship_id, "deleted": True}
 
     async def get_recipe(self, recipe_id: str) -> dict[str, Any]:
         recipe = await self.repository.get_recipe(recipe_id)
@@ -257,6 +376,12 @@ class RecipePantryService:
     async def save_recipe(self, recipe: dict[str, Any]) -> dict[str, Any]:
         if not str(recipe.get("title", "")).strip():
             raise ApplicationError("recipe.title is required")
+        existing = await self.repository.get_recipe(recipe["id"]) if recipe.get("id") and "kind" not in recipe else None
+        kind = recipe.get("kind", (existing or {}).get("kind", "recipe"))
+        if not isinstance(kind, str) or kind not in {"recipe", "ready_food"}:
+            raise ApplicationError("Recipe kind must be recipe or ready_food")
+        if kind == "ready_food" and recipe.get("ingredients"):
+            raise ApplicationError("Ready food has no ingredient demand; save its preparation notes as instructions")
         values = recipe.get("tags", [])
         if not isinstance(values, list) or len(values) > 12:
             raise ApplicationError("recipe.tags must be a list of at most 12 tags")
@@ -267,7 +392,13 @@ class RecipePantryService:
             tag = " ".join(value.split()).casefold()
             if tag not in tags:
                 tags.append(tag)
-        return await self.repository.save_recipe({**recipe, "tags": tags})
+        from .recipe_browsing import normalize_categories
+        from .recipe_graph import CATEGORY_FIELDS
+        clean = {**recipe, "tags": tags, "kind": kind}
+        for field in CATEGORY_FIELDS.values():
+            if field != "tags" and field in recipe:
+                clean[field] = normalize_categories(recipe[field], field)
+        return await self.repository.save_recipe(clean)
 
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]:
         return await self.repository.archive_recipe(recipe_id)
@@ -296,16 +427,48 @@ class RecipePantryService:
         return {"recipeId": await self.repository.copy_shared_recipe(token)}
 
     async def get_pantry(self) -> list[dict[str, Any]]:
-        return await self.repository.get_pantry()
+        return [{**item, "freshness": pantry_freshness(item)} for item in await self.repository.get_pantry()]
 
     async def update_pantry_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        # Partial edits retain dates, provenance and the tracked stock baseline.
+        existing = None
+        if item.get("id"):
+            existing = next((row for row in await self.repository.get_pantry() if row.get("id") == item["id"]), None)
+        if item.get("id") and existing is None:
+            raise ApplicationError("Pantry item was not found")
+        merged = {**(existing or {}), **item}
+        defaults = {"storageLocation": "pantry", "quantityConfidence": "estimated"}
+        for camel, snake in (("storageLocation", "storage_location"), ("quantityConfidence", "quantity_confidence"),
+                            ("useByDate", "use_by_date"), ("acquiredAt", "acquired_at"), ("freshnessBasis", "freshness_basis")):
+            if camel not in item:
+                previous = (existing or {}).get(camel, (existing or {}).get(snake, defaults.get(camel)))
+                merged[camel] = item.get(snake, previous)
+        item = merged
         if not str(item.get("name", "")).strip():
             raise ApplicationError("item.name is required")
+        if item.get("quantity") is not None:
+            from decimal import Decimal, InvalidOperation
+            try:
+                amount = Decimal(str(item["quantity"]))
+            except (InvalidOperation, ValueError):
+                raise ApplicationError("quantity must be a nonnegative number") from None
+            if not amount.is_finite() or amount < 0 or amount.as_tuple().exponent < -3:
+                raise ApplicationError("quantity must be nonnegative with at most 3 decimal places")
+            item["quantity"] = float(amount)
+            if existing and existing.get("quantity") == 0 and amount > 0:
+                item["reference_quantity"] = float(amount)
+        for key in ("acquiredAt", "useByDate"):
+            if item.get(key):
+                try:
+                    date.fromisoformat(item[key])
+                except (ValueError, TypeError):
+                    raise ApplicationError(f"{key} must be a valid date") from None
+        if item.get("acquiredAt") and date.fromisoformat(item["acquiredAt"]) > datetime.now(ZoneInfo("America/Los_Angeles")).date():
+            raise ApplicationError("Purchase date cannot be in the future")
         category = item.get("category")
         if category is not None and category not in PANTRY_CATEGORIES:
             raise ApplicationError("Invalid pantry category")
         if category is None:
-            existing = next((row for row in await self.repository.get_pantry() if row.get("id") == item.get("id")), None) if item.get("id") else None
             item = {**item, "category": (existing or {}).get("category") or infer_pantry_category(
                 item["name"], item.get("storageLocation", item.get("storage_location", ""))
             )}
@@ -355,8 +518,8 @@ class RecipePantryService:
             note=note, observations=observations, apply_to_pantry=apply_to_pantry,
         )
 
-    async def get_pantry_photos(self, limit: int = 30) -> list[dict[str, Any]]:
-        return await self.repository.get_pantry_photos(limit)
+    async def get_pantry_photos(self, limit: int = 30, offset: int = 0) -> list[dict[str, Any]]:
+        return await self.repository.get_pantry_photos(limit, offset)
 
     async def apply_pantry_photo(self, evidence_id: str, observed_items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         if observed_items is not None:
@@ -367,15 +530,84 @@ class RecipePantryService:
 class PlanningService:
     def __init__(self, repository: MealPrepRepository):
         self.repository = repository
+        self.meals = MealLibrary(repository)
+
+    async def plan_saved_meal(self, week_start: str, meal_id: str, planned_date: str, slot: str, servings=None) -> dict:
+        self._week(week_start)
+        meal = await self.meals.get(meal_id)
+        if meal.get("archivedAt"):
+            raise ApplicationError("Archived meals cannot be added to a plan")
+        target = positive(servings if servings is not None else meal["servings"], "Servings")
+        components = copy_components(meal["components"], Decimal(str(target)) / Decimal(str(meal["servings"])))
+        return await self.update_plan_item(week_start, "meal", {"date": planned_date, "slot": slot,
+            "meal": meal["name"], "servings": target, "notes": meal["notes"], "components": components,
+            "sourceMeal": {"id": meal["id"], "name": meal["name"], "revision": meal["revision"]}})
+
+    async def save_planned_meal(self, week_start: str, item_id: str, name=None, servings=None) -> dict:
+        self._week(week_start)
+        plan = await self.repository.get_meal_plan(week_start) or {}
+        entry = next((item for item in plan.get("entries", []) if item["id"] == item_id), None)
+        if not entry:
+            raise ApplicationError("Planned meal was not found")
+        return await self.meals.save({"name": name if name is not None else entry["meal"],
+            "servings": servings if servings is not None else entry.get("servings") or 1,
+            "notes": entry["notes"], "components": components_from_plan(entry, plan.get("tasks", []))})
 
     async def get_context(self, week_start: str | None = None) -> dict[str, Any]:
-        return {
-            "household": await self.repository.get_household_context(),
-            "schedule": await self.repository.get_weekly_schedule(week_start),
-            "feedback": await self.repository.get_feedback(limit=25),
-            "memories": await self.repository.get_household_memory(),
-            "requestedWeekStart": week_start,
+        if week_start:
+            self._week(week_start)
+        household = await HouseholdService(self.repository).get_context()
+        plan = await self.repository.get_meal_plan(week_start)
+        before_week = week_start or (plan or {}).get("weekStart")
+        if not before_week:
+            today = date.today()
+            before_week = (today - timedelta(days=today.weekday())).isoformat()
+        loaders = {
+            "schedule": self.repository.get_weekly_schedule(week_start),
+            "feedback": self.repository.get_feedback(limit=25),
+            "memories": self.repository.get_household_memory(),
+            "mealPlanRules": self.repository.get_meal_plan_rules(),
+            "recentPlans": self.repository.get_recent_meal_plans(before_week, limit=2),
+            "pantry": RecipePantryService(self.repository).get_pantry(),
+            "recipeTags": self.repository.list_recipe_tags(),
+            "savedMeals": self.meals.search(),
         }
+        values = await asyncio.gather(*loaders.values())
+        return {"household": household, "mealPlan": plan, **dict(zip(loaders, values)),
+                "requestedWeekStart": week_start}
+
+    @staticmethod
+    def _week(value: str) -> date:
+        try:
+            week = date.fromisoformat(value)
+        except (TypeError, ValueError) as exc:
+            raise ApplicationError("weekStart must be an ISO date (YYYY-MM-DD)") from exc
+        if week.isoformat() != value or week.weekday() != 0:
+            raise ApplicationError("weekStart must be a Monday in YYYY-MM-DD format")
+        return week
+
+    async def get_rules(self, revision_id: str | None = None) -> dict[str, Any] | None:
+        if revision_id is not None:
+            try:
+                UUID(revision_id)
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise ApplicationError("Invalid meal plan rule revision ID") from exc
+        rules = await self.repository.get_meal_plan_rules(revision_id)
+        if revision_id and rules is None:
+            raise ApplicationError("Meal plan rule revision was not found")
+        return rules
+
+    async def get_rule_history(self, limit: int = 20) -> list[dict[str, Any]]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ApplicationError("limit must be between 1 and 100")
+        return await self.repository.get_meal_plan_rule_history(limit)
+
+    async def save_rules(self, text: str, expected_revision: int) -> dict[str, Any]:
+        if not isinstance(text, str) or len(text) > 10000:
+            raise ApplicationError("Rules must be English text of at most 10000 characters")
+        if isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 0:
+            raise ApplicationError("expectedRevision must be a nonnegative integer")
+        return await self.repository.save_meal_plan_rules(text.strip(), expected_revision)
 
     async def get_schedule(self, week_start: str | None = None) -> dict[str, Any] | None:
         return await self.repository.get_weekly_schedule(week_start)
@@ -383,6 +615,10 @@ class PlanningService:
     async def save_schedule(self, schedule: dict[str, Any]) -> dict[str, Any]:
         if not schedule.get("weekStart") or len(schedule.get("days", [])) != 7:
             raise ApplicationError("schedule.weekStart and seven schedule.days are required")
+        self._week(schedule["weekStart"])
+        notes = schedule.get("notes", "")
+        if not isinstance(notes, str) or len(notes) > 3000:
+            raise ApplicationError("Week notes must be text of at most 3000 characters")
         return await self.repository.save_weekly_schedule(schedule)
 
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None:
@@ -391,10 +627,201 @@ class PlanningService:
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
         if not plan.get("weekStart") or not isinstance(plan.get("entries"), list):
             raise ApplicationError("plan.weekStart and plan.entries are required")
-        missing_slot = [entry for entry in plan["entries"] if not entry.get("slot")]
-        if missing_slot:
-            raise ApplicationError("Every plan entry must include a meal slot")
-        return await self.repository.save_meal_plan(plan)
+        week = self._week(plan["weekStart"])
+        if len(plan["entries"]) > 150 or not isinstance(plan.get("tasks", []), list) or len(plan.get("tasks", [])) > 150:
+            raise ApplicationError("A plan may contain at most 150 meals and 150 tasks")
+        existing = await self.repository.get_meal_plan(plan["weekStart"]) or {}
+        if plan.get("id") and existing.get("id") != plan["id"]:
+            raise ApplicationError("Plan ID does not belong to this week")
+        slots = {slot["id"]: slot for slot in meal_slots(await self.repository.get_household_context())}
+        previous = {item["id"]: item for item in [*existing.get("entries", []), *existing.get("tasks", [])]}
+        previous_recipes = {**previous, **{row["id"]: row for meal in existing.get("entries", []) for row in meal.get("components", [])}}
+        ids, component_ids = set(), set()
+        recipes = {}
+        pantry = {item["id"]: item for item in await self.repository.get_pantry()}
+
+        async def recipe_snapshot(item):
+            recipe_id = item.get("recipeId")
+            if not recipe_id:
+                return
+            old = previous_recipes.get(item["id"], {})
+            if old.get("recipeId") == recipe_id and old.get("recipeSnapshot"):
+                item["recipeSnapshot"] = old["recipeSnapshot"]
+                return
+            if recipe_id not in recipes:
+                recipes[recipe_id] = await self.repository.get_recipe(recipe_id)
+            recipe = recipes[recipe_id]
+            if not recipe or recipe.get("archived_at"):
+                raise ApplicationError("Recipe was not found in this household")
+            item["recipeSnapshot"] = {key: recipe.get(key) for key in ("title", "servings", "ingredients", "kind")}
+
+        def identity(item):
+            item_id = identifier(item.get("id"))
+            if item_id in ids:
+                raise ApplicationError("Plan item IDs must be unique")
+            ids.add(item_id)
+            return item_id
+
+        tasks = []
+        for value in plan.get("tasks", existing.get("tasks", [])):
+            if not isinstance(value, dict):
+                raise ApplicationError("Every task must be an object")
+            task_id = identity(value)
+            old = previous.get(task_id, {})
+            linked = value.get("mealIds", [])
+            if not isinstance(linked, list) or not all(isinstance(link, str) for link in linked) or len(linked) != len(set(linked)):
+                raise ApplicationError("Task mealIds must be a list of unique meal IDs")
+            if value.get("recipeId") is not None and not isinstance(value["recipeId"], str):
+                raise ApplicationError("Task recipeId must be an ID string")
+            task = {"id": task_id, "date": iso_date(value.get("date"), optional=True),
+                    "title": text(value.get("title"), "Task title", 180),
+                    "notes": text(value.get("notes"), "Task notes", optional=True),
+                    "recipeId": value.get("recipeId") or None,
+                    "servings": positive(value.get("servings"), "Servings", optional=True),
+                    "mealIds": linked, "completedAt": old.get("completedAt"),
+                    "stockOutputs": old.get("stockOutputs", [])}
+            await recipe_snapshot(task)
+            tasks.append(task)
+        task_lookup = {task["id"]: task for task in tasks}
+        entries = []
+        for value in plan["entries"]:
+            if not isinstance(value, dict) or not value.get("slot"):
+                raise ApplicationError("Every plan entry must include a meal slot")
+            entry_id = identity(value)
+            old = previous.get(entry_id, {})
+            slot = slots.get(text(value["slot"], "Meal slot", 80))
+            if not slot or (not slot["enabled"] and old.get("slot") != slot["id"]):
+                raise ApplicationError("Choose an enabled household meal slot")
+            day = iso_date(value.get("date"))
+            if not week <= date.fromisoformat(day) < week + timedelta(days=7):
+                raise ApplicationError("Meal date must be in the selected week")
+            values = value.get("components", [])
+            if not isinstance(values, list) or len(values) > 30:
+                raise ApplicationError("Meal components must be a list of at most 30 items")
+            components = []
+            for raw in values:
+                item = component(raw)
+                if item["id"] in component_ids:
+                    raise ApplicationError("Component IDs must be unique")
+                component_ids.add(item["id"])
+                if item["pantryItemId"] and item["pantryItemId"] not in pantry:
+                    raise ApplicationError("Pantry item was not found in this household")
+                if item["taskId"]:
+                    task = task_lookup.get(item["taskId"])
+                    if not task:
+                        raise ApplicationError("Component task was not found in this plan")
+                    if task["date"] and task["date"] > day:
+                        raise ApplicationError("A meal cannot use a task scheduled after the meal")
+                await recipe_snapshot(item)
+                components.append(item)
+            source_meal = old.get("sourceMeal") if old else value.get("sourceMeal")
+            if source_meal is not None and not old:
+                if not isinstance(source_meal, dict):
+                    raise ApplicationError("sourceMeal must identify a saved meal")
+                origin = await self.meals.get(source_meal.get("id"))
+                if origin.get("archivedAt") or source_meal != {
+                        "id": origin["id"], "name": origin["name"], "revision": origin["revision"]}:
+                    raise ApplicationError("Saved meal changed; read it again before planning")
+            entries.append({"id": entry_id, "date": day, "day": date.fromisoformat(day).strftime("%A"),
+                            "sourceMeal": source_meal,
+                            "slot": slot["id"], "slotName": old.get("slotName", slot["name"]) if old.get("completedAt") else slot["name"],
+                            "meal": text(value.get("meal"), "Meal name", 180),
+                            "servings": positive(value.get("servings"), "Servings", optional=True),
+                            "notes": text(value.get("notes"), "Meal notes", optional=True),
+                            "components": components, "completedAt": old.get("completedAt")})
+        entry_ids = {entry["id"] for entry in entries}
+        if any(set(task["mealIds"]) - entry_ids for task in tasks):
+            raise ApplicationError("Task meal link was not found in this plan")
+        # Completed records are history. Edit future intentions without rewriting actual activity.
+        for item in [*entries, *tasks]:
+            old = previous.get(item["id"])
+            if old and old.get("completedAt") and item != old:
+                raise ApplicationError("Completed plan items cannot be edited")
+        if any(old.get("completedAt") and old["id"] not in ids for old in previous.values()):
+            raise ApplicationError("Completed plan items cannot be removed")
+        if plan.get("ruleRevisionId"):
+            await self.get_rules(plan["ruleRevisionId"])
+        return await self.repository.save_meal_plan({**plan, "entries": entries, "tasks": tasks})
+
+    async def update_plan_item(self, week_start: str, kind: str, item: dict) -> dict:
+        self._week(week_start)
+        if kind not in ("meal", "task"):
+            raise ApplicationError("Item kind must be meal or task")
+        if not isinstance(item, dict):
+            raise ApplicationError("Plan item must be an object")
+        plan = await self.repository.get_meal_plan(week_start) or {"weekStart": week_start, "entries": [], "tasks": []}
+        key = "entries" if kind == "meal" else "tasks"
+        current = next((row for row in plan.get(key, []) if row["id"] == item.get("id")), None)
+        if item.get("id") and not current:
+            raise ApplicationError("Plan item was not found")
+        replacement = {**(current or {}), **item}
+        plan[key] = [replacement if row is current else row for row in plan.get(key, [])]
+        if current is None:
+            plan[key].append(replacement)
+        return await self.save_meal_plan(plan)
+
+    async def complete_item(self, week_start: str, kind: str, item_id: str, inputs: list | None = None,
+                            outputs: list | None = None) -> dict:
+        self._week(week_start)
+        if kind not in ("meal", "task"):
+            raise ApplicationError("Item kind must be meal or task")
+        plan = await self.repository.get_meal_plan(week_start)
+        item = next((row for row in (plan or {}).get("entries" if kind == "meal" else "tasks", []) if row["id"] == item_id), None)
+        if not item:
+            raise ApplicationError("Plan item was not found")
+        if item.get("completedAt"):
+            return await self.repository.complete_plan_item(week_start, kind, item_id, [], [])
+        inputs = [] if inputs is None else inputs
+        outputs = [] if outputs is None else outputs
+        if not isinstance(inputs, list) or not isinstance(outputs, list) or len(inputs) > 50 or len(outputs) > 30:
+            raise ApplicationError("Activity inputs and outputs must be lists")
+        pantry = {row["id"]: row for row in await self.repository.get_pantry()}
+        cleaned_inputs, used_ids = [], set()
+        for row in inputs:
+            if not isinstance(row, dict) or row.get("itemId") not in pantry:
+                raise ApplicationError("Pantry item was not found")
+            if row["itemId"] in used_ids:
+                raise ApplicationError("Combine repeated pantry inputs into one quantity")
+            used_ids.add(row["itemId"])
+            quantity = positive(row.get("quantity"))
+            stock = pantry[row["itemId"]]
+            if stock.get("quantity") is None or quantity > stock["quantity"]:
+                raise ApplicationError("Not enough known pantry quantity; correct stock or actual use first")
+            cleaned_inputs.append({"itemId": row["itemId"], "quantity": quantity})
+        cleaned_outputs = []
+        for row in outputs:
+            if not isinstance(row, dict):
+                raise ApplicationError("Each output must be an object")
+            location = row.get("storageLocation", "fridge")
+            if location not in ("pantry", "fridge", "freezer", "other"):
+                raise ApplicationError("Invalid output storage location")
+            if row.get("category") and row["category"] not in PANTRY_CATEGORIES:
+                raise ApplicationError("Invalid output category")
+            cleaned_outputs.append({"name": text(row.get("name"), "Output name", 160),
+                                    "quantity": positive(row.get("quantity")),
+                                    "unit": text(row.get("unit"), "Output unit", 40),
+                                    "storageLocation": location,
+                                    "category": row.get("category") or "uncategorized"})
+        return await self.repository.complete_plan_item(week_start, kind, item_id, cleaned_inputs, cleaned_outputs)
+
+    async def preview_shopping(self, week_start: str) -> dict:
+        from .planning_demand import shopping_demand
+        self._week(week_start)
+        plan = await self.repository.get_meal_plan(week_start)
+        if not plan:
+            raise ApplicationError("Save a plan before calculating shopping needs")
+        return shopping_demand(plan, await self.repository.get_pantry())
+
+    async def save_plan_shopping(self, week_start: str) -> dict:
+        preview = await self.preview_shopping(week_start)
+        existing = await self.repository.get_shopping_list() or {}
+        # Replace only pending suggestions for this week. Manual and purchased lines survive.
+        keep = [row for row in existing.get("items", []) if row.get("purchased") or
+                not ((row.get("source") or {}).get("generated") and (row.get("source") or {}).get("weekStart") == week_start)]
+        saved = await self.repository.save_shopping_list({"id": existing.get("id"),
+            "name": existing.get("name", "Weekly groceries"), "status": existing.get("status", "draft"),
+            "mealPlanId": preview["mealPlanId"], "items": keep + preview["items"]})
+        return {"shoppingList": saved, "warnings": preview["warnings"]}
 
 
 class FeedbackService:
@@ -694,6 +1121,13 @@ class ShoppingService:
         purchased_quantity: float | None = None,
     ) -> dict[str, Any]:
         return await self.repository.mark_item_purchased(item_id, purchased, purchased_quantity)
+
+    async def receive_item(self, item_id: str, quantity: float, unit: str, storage_location: str = "pantry") -> dict:
+        amount = positive(quantity)
+        unit = text(unit, "Received unit", 40)
+        if storage_location not in ("pantry", "fridge", "freezer", "other"):
+            raise ApplicationError("Invalid storage location")
+        return await self.repository.receive_shopping_item(item_id, amount, unit, storage_location)
 
 
 @dataclass(frozen=True)

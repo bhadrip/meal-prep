@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/choices.css?v=1" />
+    <script src="/static/choices.js?v=1" defer></script>
     <style>
       :root {
         color-scheme: light dark;
@@ -241,7 +243,19 @@
         .form-grid,.choice-grid { grid-template-columns:1fr; }
         .snapshot-head { align-items:start; }
       }
+      .food-library-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+      .meal-library-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; margin: 14px 0; }
+      .meal-library-cards h2 { font-size: 1rem; overflow-wrap: anywhere; }
+      .meal-library-cards ul { padding-left: 20px; line-height: 1.5; font-size: .82rem; }
+      .meal-library-cards p { font-size: .82rem; margin-bottom: 12px; }
+      #plan-saved-meal-form .form-grid > label { display: grid; grid-template-columns: 1fr; gap: 6px; }
+      #plan-saved-meal-form input:not([type="hidden"]) { min-width: 0; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: Canvas; color: CanvasText; }
+      #plan-saved-meal-form { display: grid; gap: 14px; margin-top: 20px; }
     </style>
+    <link rel="stylesheet" href="/static/recipe-graph.css" />
+    <script src="/static/recipe-graph.js"></script>
+    <link rel="stylesheet" href="/static/recipe-browser.css" />
+    <script src="/static/recipe-browser.js"></script>
   </head>
   <body>
     <main id="root"><div class="empty">Loading meal-prep data…</div></main>
@@ -250,11 +264,14 @@
       let requestId = 0;
       let householdSnapshot = null;
       let recipeLibrary = [];
+      let recipeBrowser = null, browserUi = {}, modernLibrary = false;
       let availableRecipeTags = [];
       let recipeSearchTimer = null;
       let recipeSearchSequence = 0;
       let activeRecipeTag = '';
       let shoppingList = null;
+      let currentPlan = null;
+      let planHousehold = null;
       let activePantryItemId = null;
       let pantryNotice = '';
       let pantryCategory = 'all';
@@ -281,8 +298,28 @@
 
       function renderPlan(plan) {
         if (!plan) return '<div class="empty">No meal plan has been saved yet.</div>';
-        const entries = (plan.entries || []).map((entry) => `<article class="day"><small>${escapeHtml(entry.day || entry.date)}</small><strong>${escapeHtml(entry.meal || entry.title)}</strong><span>${escapeHtml(entry.servings || '')}${entry.servings ? ' servings' : ''}</span></article>`).join('');
-        return `<header><div><h1>Weekly meal plan</h1><p>Week of ${escapeHtml(plan.weekStart || plan.week_start || '')}</p></div></header><section class="grid">${entries}</section>`;
+        const slots = planHousehold?.mealSlots || [];
+        const entries = (plan.entries || []).map((entry) => `<article class="day" data-plan-meal="${escapeHtml(entry.id)}"><small>${escapeHtml(entry.date)} · ${escapeHtml(slots.find((slot) => slot.id === entry.slot)?.name || entry.slotName || entry.slot)}</small><strong>${escapeHtml(entry.meal)}</strong><span>${escapeHtml(entry.servings || '')}${entry.servings ? ' servings' : ''}</span><ul>${(entry.components || []).map((item) => `<li>${escapeHtml(item.name)}${item.quantity != null ? ` · ${escapeHtml(item.quantity)} ${escapeHtml(item.unit)}` : ''}${item.taskId ? ` · ${escapeHtml(plan.tasks?.find((task) => task.id === item.taskId)?.title || 'Prepared task')}` : ''}</li>`).join('')}</ul>${entry.notes ? `<p>${escapeHtml(entry.notes)}</p>` : ''}${entry.completedAt ? '<span>Eaten</span>' : `<button type="button" data-plan-complete="${escapeHtml(entry.id)}" data-kind="meal">Record eaten</button>`}</article>`).join('');
+        const tasks = (plan.tasks || []).map((task) => `<article class="day" data-plan-task="${escapeHtml(task.id)}"><small>${escapeHtml(task.date || 'Unscheduled')}</small><strong>${escapeHtml(task.title)}</strong>${task.notes ? `<p>${escapeHtml(task.notes)}</p>` : ''}${task.mealIds?.length ? `<p>For: ${task.mealIds.map((id) => escapeHtml(plan.entries.find((meal) => meal.id === id)?.meal || 'Meal')).join(', ')}</p>` : ''}${task.completedAt ? '<span>Completed</span>' : `<button type="button" data-plan-complete="${escapeHtml(task.id)}" data-kind="task">${task.recipeId ? 'Record cooking' : 'Complete task'}</button>`}</article>`).join('');
+        return `<header><div><h1>Weekly meal plan</h1><p>Week of ${escapeHtml(plan.weekStart)}</p></div></header><h2>Meals</h2><section class="grid">${entries || '<p>No meals planned.</p>'}</section><h2>Tasks</h2><section class="grid">${tasks || '<p>No tasks planned.</p>'}</section><p class="form-error" id="plan-error" role="alert" hidden></p><section id="plan-activity"></section>`;
+      }
+
+      function actualUseRow(pantry, index) {
+        return `<div class="form-grid" data-actual-use><div><span id="actual-item-${index}">Pantry food</span>${MealPrepChoices.markup({name: `item-${index}`, value: '', labelId: `actual-item-${index}`, choices: [{value: '', label: 'Choose food (optional)'}, ...pantry.map((row) => ({value: row.id, label: `${row.name} · ${row.quantity ?? '?'} ${row.unit || ''} left`}))]})}</div><label>Actual amount used (in pantry unit)<input name="quantity-${index}" type="number" min="0.001" step="0.001"></label></div>`;
+      }
+
+      function libraryNavigation() {
+        return `<nav class="food-library-nav" aria-label="Navigation"><button type="button" data-library-view="recipes">Recipes</button><button type="button" data-library-view="plan">Weekly plan</button></nav>`;
+      }
+
+      function savedMealCard(meal) {
+        return `<article class="day saved-meal" data-saved-meal="${escapeHtml(meal.id)}"><p>Meal · ${escapeHtml(meal.servings)} default servings</p><h3>${escapeHtml(meal.name)}</h3><ul>${meal.components.map(row => `<li>${row.recipeId ? `<button type="button" class="text-button" data-rb-open="${escapeHtml(row.recipeId)}">${escapeHtml(row.name)}</button>` : escapeHtml(row.name)}${row.quantity != null ? ` · ${escapeHtml(row.quantity)} ${escapeHtml(row.unit)}` : ''}</li>`).join('')}</ul><p>${escapeHtml(meal.notes)}</p><button type="button" data-plan-saved-meal="${escapeHtml(meal.id)}">Plan this meal</button></article>`;
+      }
+
+      function planMealForm(meal) {
+        const slots = (planHousehold?.mealSlots || []).filter(slot => slot.enabled);
+        const today = new Date().toLocaleDateString('en-CA');
+        return `<form id="plan-saved-meal-form" data-id="${escapeHtml(meal.id)}"><h2>Plan ${escapeHtml(meal.name)}</h2><p>Amounts scale from ${escapeHtml(meal.servings)} servings. Edit the copy later in your weekly plan.</p><div class="form-grid"><label>Date<input name="date" type="date" value="${today}" required></label><div><span id="saved-meal-slot-label">Meal slot</span>${MealPrepChoices.markup({name: 'slot', value: slots.find(slot => slot.id === 'dinner')?.id || slots[0]?.id, labelId: 'saved-meal-slot-label', choices: slots.map(slot => ({value: slot.id, label: slot.name}))})}</div><label>Servings to plan<input name="servings" type="number" min="0.001" step="0.001" value="${escapeHtml(meal.servings)}" required></label></div><button type="submit">Add to weekly plan</button><p class="form-error" role="alert" hidden></p></form>`;
       }
 
       function renderShopping(list) {
@@ -355,7 +392,7 @@
         }).join('');
         const active = items.find((item) => String(item.id) === activePantryItemId);
         const recipes = asArray(sectionValue('recipes'));
-        const form = active ? `<form id="pantry-use-form" class="pantry-use-form"><strong>Use ${escapeHtml(active.name)}</strong><div class="pantry-use-fields"><label>Amount used (${escapeHtml(active.unit || 'units')})<input name="quantity" type="number" min="0.001" max="${escapeHtml(active.quantity)}" step="0.001" required autofocus></label><label>Recipe (optional)<select name="recipeId"><option value="">No recipe</option>${recipes.map((recipe) => `<option value="${escapeHtml(recipe.id)}">${escapeHtml(recipe.title)}</option>`).join('')}</select></label><label>Meal (optional)<input name="mealTitle" maxlength="180" placeholder="e.g. Tuesday dinner"></label></div><div class="pantry-use-actions"><button type="submit">Record use</button><button type="button" class="cancel" data-pantry-cancel>Cancel</button></div><p class="form-error" role="alert" hidden></p></form>` : '';
+        const form = active ? `<form id="pantry-use-form" class="pantry-use-form"><strong>Use ${escapeHtml(active.name)}</strong><div class="pantry-use-fields"><label>Amount used (${escapeHtml(active.unit || 'units')})<input name="quantity" type="number" min="0.001" max="${escapeHtml(active.quantity)}" step="0.001" required autofocus></label><div class="field"><span id="pantry-recipe-label">Recipe (optional)</span>${MealPrepChoices.markup({ name: 'recipeId', labelId: 'pantry-recipe-label', choices: [{ value: '', label: 'No recipe' }, ...recipes.map((recipe) => ({ value: recipe.id, label: recipe.title }))] })}</div><label>Meal (optional)<input name="mealTitle" maxlength="180" placeholder="e.g. Tuesday dinner"></label></div><div class="pantry-use-actions"><button type="submit">Record use</button><button type="button" class="cancel" data-pantry-cancel>Cancel</button></div><p class="form-error" role="alert" hidden></p></form>` : '';
         const body = `${browse}${pantryNotice ? `<p class="pantry-notice" role="status">${escapeHtml(pantryNotice)}</p>` : ''}${rows ? `<div class="compact-list">${rows}</div>` : `<div class="card-empty">${items.length ? 'No matching items.' : 'No pantry items saved yet.'}</div>`}${form}`;
         return cardShell('pantry', 'Pantry', 'P', body, `${items.length} item${items.length === 1 ? '' : 's'}`, true);
       }
@@ -405,12 +442,18 @@
         return `<section class="recipe-library">
           <div class="recipe-library-head"><div><h1>${escapeHtml(title)}</h1><p><span id="recipe-count">${recipes.length}</span> saved recipe${recipes.length === 1 ? '' : 's'} · select one to see the full recipe</p></div>
           <label class="recipe-search"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" placeholder="Search recipes or tags" aria-label="Search recipes" value="${escapeHtml(options.query || '')}"></label></div>
+          <div class="recipe-view-switch"><button type="button" data-explore-connections>Explore</button></div>
           <div id="recipe-tag-suggestions" class="recipe-tag-suggestions" role="group" aria-label="Suggested recipe tags"></div>
           ${allTags.length ? `<div class="recipe-tags" aria-label="Filter recipes by tag"><button class="recipe-tag ${activeRecipeTag ? '' : 'active'}" data-filter-recipe-tag="">All recipes</button>${allTags.map((tag) => `<button class="recipe-tag ${tag === activeRecipeTag ? 'active' : ''}" data-filter-recipe-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}</div>` : ''}
           <div id="recipe-results">${recipes.length ? renderRecipeCards(recipes) : '<div class="callout"><strong>No saved recipes yet</strong><p>Recipes you save will appear here as visual cards with ingredients and instructions.</p></div>'}</div>
         </section>`;
       }
 
+      function recipeCategories(recipe) {
+        const names = {cuisine:'Cuisine',goal:'Eating goal',meal:'Meal',diet:'Diet'};
+        const fields = {cuisine:'cuisines',goal:'eating_goals',meal:'meal_types',diet:'diets'};
+        return `<div class="recipe-tags">${Object.entries(fields).flatMap(([kind,field]) => asArray(recipe[field]).map(value => `<button type="button" class="recipe-tag" data-browse-category="${kind}" data-category-label="${escapeHtml(value)}" aria-label="Show recipes with ${names[kind].toLowerCase()} ${escapeHtml(value)}">${escapeHtml(value)}</button>`)).join('')}</div>`;
+      }
       function renderRecipeDetail(recipe) {
         const ingredients = asArray(recipe.ingredients);
         const instructions = asArray(recipe.instructions);
@@ -426,7 +469,7 @@
         const instructionMarkup = instructions.length ? instructions.map((instruction) => `<li><span>${escapeHtml(instructionText(instruction))}</span></li>`).join('') : '<li><span>Instructions have not been added yet.</span></li>';
         return `<section class="recipe-detail">
           <button class="recipe-back" data-recipe-back>← All recipes</button>
-          <div class="recipe-hero"><span class="recipe-art" aria-hidden="true">${escapeHtml(recipeInitial(recipe))}</span><div><h1>${escapeHtml(recipe.title || 'Untitled recipe')}</h1><p>${escapeHtml(recipe.description || 'Saved recipe')}</p><div class="recipe-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${tags.length ? `<div class="recipe-tags">${tags.map((tag) => `<button class="recipe-tag" data-filter-recipe-tag="${escapeHtml(tag)}" aria-label="Show recipes tagged ${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}</div>` : ''}</div></div>
+          <div class="recipe-hero"><span class="recipe-art" aria-hidden="true">${escapeHtml(recipeInitial(recipe))}</span><div><h1>${escapeHtml(recipe.title || 'Untitled recipe')}</h1><p>${escapeHtml(recipe.description || 'Saved recipe')}</p><div class="recipe-facts">${facts.map((fact) => `<span>${escapeHtml(fact)}</span>`).join('')}</div>${recipeCategories(recipe)}${tags.length ? `<div class="recipe-tags">${tags.map((tag) => `<button class="recipe-tag" data-filter-recipe-tag="${escapeHtml(tag)}" aria-label="Show recipes tagged ${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join('')}</div>` : ''}</div></div>
           <div class="recipe-columns"><section class="recipe-section"><h2>Ingredients</h2><ul class="recipe-list">${ingredientMarkup}</ul></section><section class="recipe-section"><h2>Instructions</h2><ol class="recipe-steps">${instructionMarkup}</ol></section></div>
           <section class="recipe-section"><h2>Share this recipe</h2><p>A shared link contains this recipe's ingredients and instructions. Cooking notes and household details stay private.</p><div class="recipe-share-actions"><button data-create-recipe-share="${escapeHtml(recipe.id || '')}">Create share link</button></div><div id="recipe-share-result" role="status"></div><div id="recipe-share-list" class="recipe-share-list"></div></section>
           ${recipe.feedbackUnavailable ? '<section class="recipe-section"><h2>Cooking notes</h2><p>Cooking notes are temporarily unavailable.</p></section>' : feedback.length ? `<section class="recipe-section"><h2>Cooking notes</h2><div class="recipe-notes">${feedback.map((item) => `<article class="recipe-note"><p>${escapeHtml(item.note || item.content || 'Saved feedback')}</p>${pick(item, 'nextTime', 'next_time') ? `<small>Next time: ${escapeHtml(pick(item, 'nextTime', 'next_time'))}</small>` : ''}</article>`).join('')}</div></section>` : ''}
@@ -542,7 +585,7 @@
         const size = pick(household, 'householdSize', 'household_size');
         const role = pick(household, 'role', 'householdRole', 'household_role') || 'Owner';
         const layout = normalizedDashboardLayout();
-        root.innerHTML = `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><p class="dashboard-intro">Your food week at a glance. Ask Meal Prep in chat to show, hide, reorder, or reset dashboard cards.</p><div class="dashboard-grid">${renderVisibleCards(layout)}</div></section>`;
+        root.innerHTML = libraryNavigation() + `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><p class="dashboard-intro">Your food week at a glance. Ask Meal Prep in chat to show, hide, reorder, or reset dashboard cards.</p><div class="dashboard-grid">${renderVisibleCards(layout)}</div></section>`;
       }
 
       function renderOnboarding(household = {}) {
@@ -576,9 +619,7 @@
                   <label class="field">People in the household<input name="householdSize" type="number" min="1" max="30" required value="${escapeHtml(household.householdSize || '')}"></label>
                   <label class="field">Dietary restrictions<input name="dietaryRestrictions" type="text" value="${escapeHtml(restrictions)}" placeholder="Enter none, or separate with commas" required></label>
                   <label class="field">Preferred stores, in order<input name="stores" type="text" value="${escapeHtml(stores)}" placeholder="Costco, Safeway" required></label>
-                  <label class="field">Maximum weeknight cooking time<select name="weeknightMaxMinutes">
-                    ${[15,20,25,30,45,60].map((minutes) => `<option value="${minutes}"${Number(preferences.weeknightMaxMinutes || 30) === minutes ? ' selected' : ''}>${minutes} minutes</option>`).join('')}
-                  </select></label>
+                  <div class="field"><span id="cooking-time-label">Maximum weeknight cooking time</span>${MealPrepChoices.markup({ name: 'weeknightMaxMinutes', labelId: 'cooking-time-label', value: preferences.weeknightMaxMinutes || 30, choices: [15,20,25,30,45,60].map((minutes) => ({ value: minutes, label: `${minutes} minutes` })) })}</div>
                 </div>
               </fieldset>
               <fieldset>
@@ -610,15 +651,60 @@
         }).join('')}</section>`;
       }
 
-      function applyResult(result) {
+      function leaveBrowser() {
+        if (recipeBrowser) { browserUi = recipeBrowser.snapshot(); recipeBrowser.destroy(); recipeBrowser = null; }
+      }
+      function mountRecipeBrowser(initial) {
+        leaveBrowser(); modernLibrary = true;
+        root.innerHTML = '<div id="recipe-browser"></div><div id="meal-library-plan"></div><p id="meal-library-error" role="alert" hidden></p>';
+        recipeBrowser = new RecipeBrowser(root.querySelector('#recipe-browser'), {
+          mealCard: savedMealCard,
+          load: ui => {
+            if (initial) { const data = initial; initial = null; return Promise.resolve(data); }
+            return graphCall('browse_recipe_library', {query: ui.query, filters: ui.filters, max_minutes: ui.maxMinutes, item_type: ui.itemType, limit: ui.itemType === 'meals' ? 50 : 25, offset: ui.offset});
+          },
+          openRecipe: async recipe_id => {
+            try { const recipe = await graphCall('get_recipe', {recipe_id}); leaveBrowser(); root.innerHTML = renderRecipeDetail(recipe); await loadRecipeShares(recipe_id); }
+            catch (error) { if (recipeBrowser?.graph) recipeBrowser.graph.failure(error); else if (root.querySelector('.rb-error')) root.querySelector('.rb-error').textContent = error.message; }
+          },
+          graph: {
+            load: ui => graphCall('get_recipe_graph', {query: ui.query, filters: ui.filters, max_minutes: ui.maxMinutes}),
+            save: relationship => graphCall('save_recipe_relationship', {relationship}),
+            remove: relationship_id => graphCall('delete_recipe_relationship', {relationship_id}),
+          },
+        }, browserUi);
+      }
+
+      async function graphCall(name, arguments_ = {}) {
+        const result = await rpc('tools/call', { name, arguments: arguments_ });
+        if (result?.isError) throw new Error(result.content?.find(c => c.type === 'text')?.text || 'Could not update connections');
+        return result?.structuredContent || result;
+      }
+
+      function mountRecipeGraph(initial) {
+        leaveBrowser();
+        if (initial?.scope) browserUi = {...browserUi, query: initial.scope.query, filters: initial.scope.filters, maxMinutes: initial.scope.maxMinutes};
+        browserUi.exploreOpen = true;
+        mountRecipeBrowser();
+      }
+
+      function applyResult(result, preserveGraph = false) {
         const data = result?.structuredContent || result;
         if (!data) return;
-        if (data.kind === 'household_snapshot') {
+        if (!['meal_library', 'household_snapshot', 'onboarding', 'recipe_library', 'recipe_graph', 'feedback', 'pantry_evidence', 'shopping_list', 'meal_plan'].includes(data.kind) && !data.onboardingCompletedAt) return;
+        leaveBrowser(); if (!preserveGraph) { browserUi = {}; modernLibrary = false; }
+        if (data.kind === 'meal_library') { planHousehold = data.household; browserUi = {itemType: 'meals', query: data.library.query, filters: {}}; mountRecipeBrowser(); }
+        else if (data.kind === 'household_snapshot') {
           activePantryItemId = null;
           pantryNotice = '';
           renderHouseholdSnapshot(data);
         }
         else if (data.kind === 'onboarding') root.innerHTML = renderOnboarding(data.household);
+        else if (data.kind === 'recipe_library' && data.facets) {
+          planHousehold = data.household || planHousehold;
+          browserUi = {itemType: data.itemType || 'recipes', query: data.query || '', filters: data.filters || {}, maxMinutes: data.maxMinutes || null, exploreOpen: data.exploreOpen === true};
+          mountRecipeBrowser(data);
+        }
         else if (data.kind === 'recipe_library') {
           clearTimeout(recipeSearchTimer);
           recipeSearchSequence += 1;
@@ -627,6 +713,7 @@
           root.innerHTML = renderRecipeLibrary(asArray(data.recipes), { query: data.query });
           updateRecipeResults();
         }
+        else if (data.kind === 'recipe_graph') mountRecipeGraph(data.graph);
         else if (data.kind === 'feedback') {
           householdSnapshot = { sections: data.sections || {} };
           root.innerHTML = renderFeedback();
@@ -636,7 +723,10 @@
           shoppingList = data.shoppingList;
           root.innerHTML = renderShopping(shoppingList);
         }
-        else if (data.kind === 'meal_plan') root.innerHTML = renderPlan(data.plan);
+        else if (data.kind === 'meal_plan') {
+          currentPlan = data.plan; planHousehold = data.household;
+          root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
+        }
         else if (data.onboardingCompletedAt) root.innerHTML = renderOnboardingSuccess(data);
       }
 
@@ -663,8 +753,70 @@
       });
 
       root.addEventListener('click', async (event) => {
+        const nav = event.target.closest('[data-library-view]');
+        if (nav) {
+          nav.disabled = true;
+          try { applyResult(await graphCall({recipes: 'render_recipe_library', plan: 'render_meal_plan'}[nav.dataset.libraryView])); }
+          catch (reason) { nav.disabled = false; const error = document.createElement('p'); error.setAttribute('role', 'alert'); error.textContent = reason.message; root.prepend(error); }
+          return;
+        }
+        const savedMeal = event.target.closest('[data-plan-saved-meal]');
+        if (savedMeal) {
+          savedMeal.disabled = true;
+          root.querySelector('#meal-library-plan').innerHTML = '<p role="status">Loading meal…</p>';
+          try {
+            const meal = await graphCall('get_meal', {meal_id: savedMeal.dataset.planSavedMeal});
+            root.querySelector('#meal-library-plan').innerHTML = planMealForm(meal);
+            root.querySelector('#meal-library-plan input').focus();
+          } catch (reason) { const error = root.querySelector('#meal-library-error'); error.textContent = reason.message; error.hidden = false; }
+          finally { savedMeal.disabled = false; }
+          return;
+        }
+        const complete = event.target.closest('[data-plan-complete]');
+        if (complete) {
+          const kind = complete.dataset.kind;
+          const item = (kind === 'task' ? currentPlan.tasks : currentPlan.entries).find((row) => row.id === complete.dataset.planComplete);
+          const error = root.querySelector('#plan-error');
+          error.hidden = true; complete.disabled = true;
+          try {
+            if (kind === 'task' && !item.recipeId) {
+              const result = await rpc('tools/call', {name: 'complete_plan_item', arguments: {week_start: currentPlan.weekStart, kind, item_id: item.id}});
+              if (result?.isError) throw new Error(result.content?.find((row) => row.type === 'text')?.text || 'Could not complete task.');
+              currentPlan = (result.structuredContent || result).plan;
+              root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
+            } else {
+              const result = await rpc('tools/call', {name: 'get_pantry', arguments: {}});
+              if (result?.isError) throw new Error('Could not load pantry.');
+              const pantry = (result.structuredContent || result).items || [];
+              const area = root.querySelector('#plan-activity');
+              area._pantry = pantry;
+              area.innerHTML = `<form id="plan-completion-form" data-kind="${kind}" data-id="${escapeHtml(item.id)}"><h2>${kind === 'task' ? 'Record cooking' : 'Record eaten'}: ${escapeHtml(item.title || item.meal)}</h2><p>Enter actual amounts. Only listed food will change in the pantry.</p><div id="actual-use-rows">${actualUseRow(pantry, 0)}</div><button type="button" data-add-actual-use>Add food used</button><h3>Prepared food remaining (optional)</h3><div class="form-grid"><label>Food name<input name="outputName" value="${kind === 'task' ? escapeHtml(item.recipeSnapshot?.title || item.title) : ''}"></label><label>Actual quantity remaining<input name="outputQuantity" type="number" min="0.001" step="0.001"></label><label>Unit<input name="outputUnit" value="servings"></label></div><button type="submit">Record completion</button><p class="form-error" role="alert" hidden></p></form>`;
+              area.querySelector('input')?.focus();
+            }
+          } catch (reason) { error.textContent = reason.message; error.hidden = false; }
+          finally { complete.disabled = false; }
+          return;
+        }
+        if (event.target.closest('[data-add-actual-use]')) {
+          const area = root.querySelector('#plan-activity');
+          const rows = area.querySelector('#actual-use-rows');
+          rows.insertAdjacentHTML('beforeend', actualUseRow(area._pantry, rows.children.length));
+          return;
+        }
+        if (event.target.closest('[data-explore-connections]')) { mountRecipeGraph(); return; }
+        if (event.target.closest('[data-graph-cards]')) {
+          if (modernLibrary) { mountRecipeBrowser(); return; }
+          try {
+            const data = await graphCall('render_recipe_library', { limit: 50 });
+            applyResult(data, true);
+          } catch (error) { root.innerHTML = `<p role="alert">${escapeHtml(error.message)}</p><button data-explore-connections>Return to Explore</button>`; }
+          return;
+        }
+        const category = event.target.closest('[data-browse-category]');
+        if (category) { browserUi = {query: '', filters: {[category.dataset.browseCategory]: [category.dataset.categoryLabel]}, tab: category.dataset.browseCategory}; mountRecipeBrowser(); return; }
         const recipeTag = event.target.closest('[data-filter-recipe-tag]');
         if (recipeTag) {
+          if (modernLibrary) { browserUi = {query: '', filters: {tag: [recipeTag.dataset.filterRecipeTag]}, tab: 'tag'}; mountRecipeBrowser(); return; }
           activeRecipeTag = recipeTag.dataset.filterRecipeTag;
           if (!root.querySelector('#recipe-results')) root.innerHTML = renderRecipeLibrary(recipeLibrary);
           root.querySelectorAll('[data-filter-recipe-tag]').forEach((button) => button.classList.toggle('active', button.dataset.filterRecipeTag === activeRecipeTag));
@@ -735,6 +887,7 @@
           return;
         }
         if (event.target.closest('[data-recipe-back]')) {
+          if (modernLibrary) { mountRecipeBrowser(); return; }
           root.innerHTML = renderRecipeLibrary(recipeLibrary);
           updateRecipeResults();
         }
@@ -775,7 +928,7 @@
       }
 
       root.addEventListener('input', (event) => {
-        if (!event.target.matches('#recipe-search')) return;
+        if (event.target.closest('.recipe-browser') || !event.target.matches('#recipe-search')) return;
         updateRecipeResults();
         clearTimeout(recipeSearchTimer);
         recipeSearchTimer = setTimeout(fetchRecipeResults, 250);
@@ -792,6 +945,37 @@
       });
 
       root.addEventListener('submit', async (event) => {
+        if (event.target.matches('#plan-saved-meal-form')) {
+          event.preventDefault();
+          const form = event.target, data = new FormData(form), error = form.querySelector('.form-error'), button = form.querySelector('[type="submit"]');
+          button.disabled = true; error.hidden = true;
+          try {
+            {
+              const date = String(data.get('date')), week = new Date(`${date}T12:00:00Z`);
+              week.setUTCDate(week.getUTCDate() - (week.getUTCDay() + 6) % 7);
+              currentPlan = await graphCall('plan_saved_meal', {meal_id: form.dataset.id, week_start: week.toISOString().slice(0, 10), planned_date: date, slot: String(data.get('slot')), servings: Number(data.get('servings'))});
+              root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
+            }
+          } catch (reason) { error.textContent = reason.message; error.hidden = false; button.disabled = false; }
+          return;
+        }
+        if (event.target.matches('#plan-completion-form')) {
+          event.preventDefault();
+          const form = event.target;
+          const data = new FormData(form);
+          const error = form.querySelector('.form-error');
+          const button = form.querySelector('[type="submit"]');
+          button.disabled = true; error.hidden = true;
+          try {
+            const inputs = [...form.querySelectorAll('[data-actual-use]')].map((row) => ({itemId: row.querySelector('input[name^="item-"]').value, quantity: Number(row.querySelector('input[type="number"]').value)})).filter((row) => row.itemId || row.quantity);
+            const outputs = data.get('outputQuantity') ? [{name: String(data.get('outputName') || '').trim(), quantity: Number(data.get('outputQuantity')), unit: String(data.get('outputUnit') || '').trim(), storageLocation: 'fridge'}] : [];
+            const result = await rpc('tools/call', {name: 'complete_plan_item', arguments: {week_start: currentPlan.weekStart, kind: form.dataset.kind, item_id: form.dataset.id, inputs, outputs}});
+            if (result?.isError) throw new Error(result.content?.find((row) => row.type === 'text')?.text || 'Could not record completion.');
+            currentPlan = (result.structuredContent || result).plan;
+            root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
+          } catch (reason) { error.textContent = reason.message; error.hidden = false; button.disabled = false; }
+          return;
+        }
         if (event.target.matches('#pantry-use-form')) {
           event.preventDefault();
           const formElement = event.target;

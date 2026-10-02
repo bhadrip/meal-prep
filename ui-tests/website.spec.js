@@ -24,18 +24,22 @@ async function saveEditor(page) {
   await expect(page.locator('#toast')).toContainText('Saved to your household.');
 }
 
-test('home loads dashboard data in one startup request', async ({ page }) => {
+test('home loads only its three sections and defers the household dashboard', async ({ page }) => {
   const apiPaths = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
     if (path.startsWith('/api/')) apiPaths.push(path);
   });
   await page.goto('/app');
-  await expect(content(page).locator('[data-dashboard-card]')).toHaveCount(10);
+  await expect(content(page).locator('[data-home-section]')).toHaveCount(3);
+  await expect(content(page).locator('.section-loading')).toHaveCount(0);
   expect(apiPaths.filter((path) => path === '/api/app/bootstrap')).toHaveLength(1);
-  expect(apiPaths).not.toContain('/api/app/snapshot');
+  expect(apiPaths.filter((path) => path === '/api/app/snapshot')).toHaveLength(3);
   expect(apiPaths).not.toContain('/api/household/access');
   expect(apiPaths).not.toContain('/api/households');
+  await page.locator('#household-dashboard summary').click();
+  await expect(content(page).locator('[data-dashboard-card]')).toHaveCount(10);
+  await expect(content(page).locator('[data-dashboard-card="recipes"]')).toContainText('Paneer');
 });
 
 test('navigation, sidebar, refresh, account, and mobile navigation', async ({ page }) => {
@@ -63,7 +67,7 @@ test('navigation, sidebar, refresh, account, and mobile navigation', async ({ pa
 test('overview shortcuts and editor validation and cancel', async ({ page }) => {
   await open(page, 'overview');
   for (const [button, title] of [
-    ['View plan', 'Weekly plan'], ['Open list', 'Shopping'], ['View pantry', 'Pantry'],
+    ['Open weekly plan', 'Weekly plan'], ['Open list', 'Shopping'], ['View pantry', 'Pantry'],
     ['Customize dashboard', 'Settings'], ['Browse recipes', 'Recipes'], ['View reviews', 'Reviews'],
   ]) {
     await page.locator('.sidebar [data-view="overview"]').click();
@@ -99,6 +103,7 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
   await expect(form.locator('[name="householdSize"]')).toHaveValue('3');
   await expect(form.locator('[name="stores"]')).toHaveValue('Safeway, Costco');
   await page.locator('.sidebar [data-view="overview"]').click();
+  await page.locator('#household-dashboard summary').click();
   await expect(content(page)).toContainText('3 people');
   await expect(content(page)).toContainText('25 minutes maximum');
   await expect(content(page)).toContainText('No dietary restrictions recorded.');
@@ -115,6 +120,7 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
   await expect(content(page).locator('[data-dashboard-card]').first()).toHaveAttribute('data-dashboard-card', 'planning-defaults');
   await expect(content(page).locator('[data-dashboard-card="pantry"]')).toHaveCount(0);
   await page.reload();
+  await page.locator('#household-dashboard summary').click();
   await expect(content(page).locator('[data-dashboard-card]').first()).toHaveAttribute('data-dashboard-card', 'planning-defaults');
   await expect(content(page).locator('[data-dashboard-card="pantry"]')).toHaveCount(0);
   await page.locator('.sidebar [data-view="settings"]').click();
@@ -131,7 +137,7 @@ test('weekly rhythm and planned meal can be added, edited, and removed', async (
   await saveEditor(page);
   await expect(content(page).locator('.day-card').first()).toContainText('busy');
   const meal = unique('Playwright dinner');
-  await content(page).getByRole('button', { name: 'Add meal or prep' }).click();
+  await content(page).getByRole('button', { name: 'Add meal', exact: true }).click();
   await editor(page).locator('[name="date"]').fill(week);
   await editor(page).locator('[name="meal"]').fill(meal);
   await choose(page, 'slot', 'dinner');
@@ -179,7 +185,7 @@ test('an empty week can be planned from its day card without losing the previous
   await expect(content(page)).toContainText(meal);
 });
 
-test('day form supports prep, linked recipes, and guards the selected week', async ({ page }) => {
+test('day form supports recipe components and guards the selected week', async ({ page }) => {
   await open(page, 'plan');
   const week = await page.locator('#week-picker').inputValue();
   const thursday = new Date(`${week}T12:00:00`);
@@ -188,13 +194,21 @@ test('day form supports prep, linked recipes, and guards the selected week', asy
   await page.setViewportSize({ width: 320, height: 720 });
   await content(page).getByRole('button', { name: 'Add meal to Thursday' }).click();
   await expect(editor(page).locator('[name="date"]')).toHaveValue(selectedDate);
-  await choose(page, 'slot', 'prep');
-  await choose(page, 'recipeId', '11111111-1111-1111-1111-111111111111');
+  await choose(page, 'slot', 'dinner');
+  const component = editor(page).locator('.component-row');
+  await component.getByLabel('Food or dish').fill('Paneer rice bowls');
+  const source = component.locator('input[name$="-source"]').locator('..');
+  await source.locator('.choice-trigger').click();
+  await source.locator('[data-choice-value="cook"]').click();
+  const recipe = component.locator('input[name$="-recipeId"]').locator('..');
+  await recipe.locator('.choice-trigger').click();
+  await recipe.locator('[data-choice-value="11111111-1111-1111-1111-111111111111"]').click();
   const meal = unique('Prep rice');
   await editor(page).locator('[name="meal"]').fill(meal);
   await saveEditor(page);
   const row = content(page).locator('.meal').filter({ hasText: meal });
-  await expect(row).toContainText('Prep');
+  await expect(row).toContainText('Dinner');
+  await expect(row).toContainText('Paneer rice bowls');
   await row.getByRole('button', { name: 'Edit' }).click();
   const outside = new Date(`${week}T12:00:00`);
   outside.setDate(outside.getDate() + 7);
@@ -244,6 +258,7 @@ test('recipe create, search, edit, share, copy, public save, revoke, and archive
   await page.goto('/app');
   await page.locator('.sidebar [data-view="recipes"]').click();
   await content(page).locator(`[data-action="open-recipe"][data-id="${originalId}"]`).click();
+  await expect(content(page).locator('.hero h2')).toHaveText(title);
   page.once('dialog', (dialog) => dialog.accept());
   await content(page).getByRole('button', { name: 'Archive' }).click();
   await expect(content(page).locator(`[data-action="open-recipe"][data-id="${originalId}"]`)).toHaveCount(0);
@@ -265,8 +280,8 @@ test('recipe tags can be saved, searched, and opened as exact filters', async ({
     await saveEditor(page);
     await content(page).getByRole('button', { name: '← All recipes' }).click();
   }
-  const partialTag = 'sickness';
-  const searchResponse = page.waitForResponse((response) => response.url().includes('/api/recipes?') && new URL(response.url()).searchParams.get('query') === partialTag);
+  const partialTag = tag.slice(0, -1);
+  const searchResponse = page.waitForResponse((response) => response.url().includes('/api/recipe-library?') && new URL(response.url()).searchParams.get('query') === partialTag);
   await page.locator('#recipe-search').fill(partialTag);
   await expect(content(page).getByRole('group', { name: 'Suggested recipe tags' }).getByRole('button', { name: new RegExp(tag) })).toBeVisible();
   await searchResponse;
@@ -278,10 +293,13 @@ test('recipe tags can be saved, searched, and opened as exact filters', async ({
   await expect(content(page).locator('.recipe-card')).not.toContainText(dinner);
   await content(page).getByRole('button', { name: 'Clear tag' }).click();
   await page.locator('#recipe-search').fill('');
+  await expect(content(page).locator('#recipe-results')).toHaveAttribute('aria-busy', 'false');
+  await content(page).getByRole('button', {name: 'Tags', exact: true}).click();
   await page.getByRole('searchbox', { name: 'Find a recipe tag' }).fill('guest');
   await content(page).getByRole('group', { name: 'Recipe tag filters' }).getByRole('button', { name: /guest-friendly/ }).click();
   await expect(content(page).locator('.recipe-card').filter({ hasText: dinner })).toHaveCount(1);
   await content(page).getByRole('button', { name: 'Clear tag' }).click();
+  await expect(content(page).locator('#recipe-results')).toHaveAttribute('aria-busy', 'false');
   await page.getByRole('searchbox', { name: 'Find a recipe tag' }).fill(`imagined-${Date.now()}`);
   await expect(content(page)).toContainText('No matching saved tags.');
   await expect(content(page).getByRole('group', { name: 'Recipe tag filters' }).getByRole('button', { name: /imagined/ })).toHaveCount(0);
@@ -289,6 +307,7 @@ test('recipe tags can be saved, searched, and opened as exact filters', async ({
 
 test('recipe feedback appears in the open detail without leaving the page', async ({ page }) => {
   await open(page, 'recipes');
+  await page.locator('#recipe-search').fill('Paneer');
   await content(page).locator('[data-action="open-recipe"][data-id="11111111-1111-1111-1111-111111111111"]').click();
   const note = unique('Fresh recipe feedback');
   await content(page).getByRole('button', { name: 'Add feedback' }).click();
@@ -353,6 +372,68 @@ test('pantry categories and search narrow items and save corrections', async ({ 
   await expect(content(page).locator('.table-row').filter({ hasText: mystery })).toBeVisible();
 });
 
+test('pantry photo history opens inline, retries, and pages saved uploads', async ({ page }) => {
+  const requests = [];
+  let firstAttempt = true;
+  await page.route('**/api/pantry/evidence?*', async (route) => {
+    const offset = Number(new URL(route.request().url()).searchParams.get('offset'));
+    requests.push(offset);
+    if (firstAttempt) {
+      firstAttempt = false;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'Photos are temporarily unavailable.' }) });
+      return;
+    }
+    const photo = offset === 0
+      ? { id: 'photo-1', created_at: '2026-09-30T12:00:00Z', image_url: 'https://example.test/pantry-photo.webp', image_bytes: 4096, status: 'applied', note: 'Fridge shelf', observations: [{ name: 'Milk', quantity: 1, unit: 'carton' }] }
+      : { id: 'photo-2', created_at: '2026-09-29T12:00:00Z', image_url: null, image_bytes: 2048, status: 'captured', note: 'Pantry shelf', observations: [{ name: 'Rice', quantity: 2, unit: 'bags' }] };
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [photo], count: 1, hasMore: offset === 0, nextOffset: offset + 1 }) });
+  });
+  await page.route('https://example.test/pantry-photo.webp', (route) => route.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLxSQAAAABJRU5ErkJggg==', 'base64'),
+  }));
+  await open(page, 'pantry');
+  await expect(content(page).locator('.pantry-sections')).toHaveCount(0);
+  await expect(content(page).getByRole('button', { name: 'Photo history' })).toBeVisible();
+  await expect(content(page).locator('#pantry-photo-panel')).toHaveCount(0);
+  await content(page).getByRole('button', { name: 'Photo history' }).click();
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
+  await expect(content(page).getByRole('group', { name: 'Pantry categories' })).toBeVisible();
+  await expect(content(page).getByRole('alert')).toContainText('Photos are temporarily unavailable.');
+  await content(page).getByRole('button', { name: 'Try again' }).click();
+  await expect(content(page).locator('.pantry-photo-card')).toHaveCount(1);
+  await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Milk — 1 carton');
+  await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Added to pantry');
+  await expect(content(page).locator('.pantry-photo-card img')).toHaveJSProperty('naturalWidth', 1);
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
+  await content(page).getByRole('button', { name: 'Load older photos' }).click();
+  await expect(content(page).locator('.pantry-photo-card')).toHaveCount(2);
+  await expect(content(page).locator('.pantry-photo-card').last()).toContainText('Rice — 2 bags');
+  await expect(content(page).locator('.pantry-photo-card').last()).toContainText('Saved for review');
+  expect(requests).toEqual([0, 0, 1]);
+  await page.reload();
+  await expect(content(page).locator('.pantry-photo-card')).toHaveCount(1);
+  await expect(content(page).locator('.pantry-photo-card').first()).toContainText('Milk — 1 carton');
+  await content(page).getByRole('button', { name: 'Hide photo history' }).click();
+  await expect(content(page).locator('#pantry-photo-panel')).toHaveCount(0);
+  await expect(content(page).getByRole('button', { name: 'Add pantry item' })).toBeVisible();
+});
+
+test('empty photo history stays a small disclosure within Pantry', async ({ page }) => {
+  await page.route('**/api/pantry/evidence?*', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [], count: 0, hasMore: false, nextOffset: 0 }),
+  }));
+  await open(page, 'pantry');
+  await expect(content(page).getByText('No photos have been saved yet.')).toHaveCount(0);
+  await content(page).getByRole('button', { name: 'Photo history' }).click();
+  await expect(content(page).getByText(/No photos have been saved yet/)).toBeVisible();
+  await expect(content(page).locator('.table-card .table-row').first()).toBeVisible();
+  await content(page).getByRole('button', { name: 'Hide photo history' }).click();
+  await expect(content(page).getByText(/No photos have been saved yet/)).toHaveCount(0);
+  await expect(content(page).locator('.table-card .table-row').first()).toBeVisible();
+});
+
 test('pantry use records a meal and shows the remaining quantity', async ({ page }) => {
   await open(page, 'pantry');
   const name = unique('Playwright rice');
@@ -361,7 +442,7 @@ test('pantry use records a meal and shows the remaining quantity', async ({ page
   await editor(page).locator('[name="quantity"]').fill('4');
   await editor(page).locator('[name="unit"]').fill('cups');
   await saveEditor(page);
-  await content(page).locator('.table-row').filter({ hasText: name }).getByRole('button', { name: 'Use' }).click();
+  await content(page).locator('.table-row').filter({ hasText: name }).getByRole('button', { name: 'Use', exact: true }).click();
   await expect(editor(page).locator('#dialog-save')).toHaveText('Record use');
   await editor(page).locator('[name="quantity"]').fill('1');
   await choose(page, 'recipeId', '11111111-1111-1111-1111-111111111111');
@@ -493,4 +574,109 @@ test('sign-in code, email change, error, and sign-out UI with a mocked auth prov
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login\?next=/);
   await expect(page.locator('#login-form')).toBeVisible();
+});
+
+test.describe('pantry dates in a UTC browser', () => {
+  test.use({ timezoneId: 'UTC' });
+
+  test('pantry freshness review, aligned columns, and inline remaining work on desktop and mobile', async ({ page }) => {
+    await open(page, 'pantry');
+    const name = unique('Mushrooms');
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const purchased = new Date(`${today}T12:00:00Z`);
+    purchased.setUTCDate(purchased.getUTCDate() - 7);
+    const purchaseDate = purchased.toISOString().slice(0, 10);
+    await content(page).getByRole('button', { name: 'Add pantry item' }).click();
+    await editor(page).locator('[name="name"]').fill(name);
+    await editor(page).locator('[name="quantity"]').fill('2');
+    await editor(page).locator('[name="unit"]').fill('boxes');
+    await editor(page).locator('[name="acquiredAt"]').fill(purchaseDate);
+    await choose(page, 'storageLocation', 'fridge');
+    await saveEditor(page);
+    const row = content(page).locator('.table-row').filter({ hasText: name });
+    await expect(row).toContainText('Purchased 7 days ago');
+    await expect(row).toContainText('Review first');
+    await page.locator('.sidebar [data-view=overview]').click();
+    const attention = content(page).locator('[data-home-section=pantry]');
+    await expect(attention).toContainText(name);
+    await attention.locator('.row').filter({ hasText: name }).getByRole('button', { name: 'Review' }).click();
+    await expect(editor(page).locator('[name=acquiredAt]')).toHaveValue(purchaseDate);
+    await editor(page).getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.locator('.sidebar [data-view=pantry]').click();
+    await content(page).getByRole('button', { name: /Review produce & dates/ }).click();
+    await expect(row).toBeVisible();
+    await content(page).getByRole('button', { name: /Review produce & dates/ }).click();
+    const positions = await row.evaluate((element) => [...element.children].map((cell) => cell.getBoundingClientRect().x));
+    const headers = await content(page).locator('.pantry-table .header').evaluate((element) => [...element.children].map((cell) => cell.getBoundingClientRect().x));
+    positions.forEach((x, index) => expect(Math.abs(x - headers[index])).toBeLessThan(1));
+    const allPositions = await content(page).locator('.pantry-table .table-row:not(.header)').evaluateAll((elements) => elements.map((element) => [...element.children].map((cell) => cell.getBoundingClientRect().x)));
+    allPositions.forEach((cells) => cells.forEach((x, index) => expect(Math.abs(x - headers[index])).toBeLessThan(1)));
+    await page.setViewportSize({ width: 820, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await row.getByRole('button', { name: 'Used half', exact: true }).click();
+    await expect(row).toContainText('1 boxes left');
+    await expect(row.getByRole('meter')).toHaveAttribute('aria-valuenow', '50');
+    await row.getByRole('button', { name: `Update remaining ${name}` }).click();
+    await row.getByRole('spinbutton', { name: `Remaining ${name}` }).fill('0.25');
+    await row.getByRole('button', { name: 'Save amount' }).click();
+    await expect(row).toContainText('0.25 boxes left');
+    await expect(row).toContainText('Purchased 7 days ago');
+    await row.getByRole('button', { name: `Update remaining ${name}` }).click();
+    await row.getByRole('spinbutton', { name: `Remaining ${name}` }).fill('-1');
+    await row.getByRole('button', { name: 'Save amount' }).click();
+    await expect(row.locator('.pantry-inline-form')).toBeVisible();
+    await row.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.reload();
+    await expect(row).toContainText('0.25 boxes left');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(row.locator('.pantry-freshness')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    await page.screenshot({ path: 'test-results/pantry-mobile.png', fullPage: true });
+    await row.getByRole('button', { name: 'Finished', exact: true }).click();
+    await expect(row).toHaveCount(0);
+    await content(page).getByRole('button', { name: /^Finished \d/ }).click();
+    await expect(row).toContainText('0 boxes left');
+    await content(page).getByRole('button', { name: /Review produce & dates/ }).click();
+    await expect(row).toHaveCount(0);
+    await content(page).getByRole('button', { name: /Review produce & dates/ }).click();
+    await row.getByRole('button', { name: 'Restock', exact: true }).click();
+    await expect(editor(page).locator('[name=acquiredAt]')).toHaveValue(today);
+    await editor(page).locator('[name=quantity]').fill('3');
+    await saveEditor(page);
+    await expect(row).toHaveCount(0);
+    await content(page).getByRole('button', { name: /^On hand/ }).click();
+    await expect(row).toContainText('3 boxes left');
+    await expect(row).toContainText('Purchased today');
+    await expect(row.getByRole('meter')).toHaveAttribute('aria-valuenow', '100');
+    await page.reload();
+    await expect(row).toContainText('3 boxes left');
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.screenshot({ path: 'test-results/pantry-desktop.png', fullPage: true });
+  });
+});
+
+test('unknown pantry quantity can be set inline and failed saves retain input', async ({ page }) => {
+  await open(page, 'pantry');
+  const name = unique('Spinach');
+  await content(page).getByRole('button', { name: 'Add pantry item' }).click();
+  await editor(page).locator('[name="name"]').fill(name);
+  await saveEditor(page);
+  const row = content(page).locator('.table-row').filter({ hasText: name });
+  await row.getByRole('button', { name: 'Add purchase date' }).click();
+  await editor(page).locator('[name="acquiredAt"]').fill('2020-01-01');
+  await saveEditor(page);
+  await expect(row).toContainText('Review first');
+  await row.getByRole('button', { name: `Update remaining ${name}` }).click();
+  await row.getByRole('spinbutton').fill('1.5');
+  await row.getByRole('textbox').fill('bags');
+  await page.route('**/api/pantry', (route) => route.request().method() === 'PUT' ? route.fulfill({ status: 503, json: { detail: 'Try again later' } }) : route.continue());
+  await row.getByRole('button', { name: 'Save amount' }).click();
+  await expect(page.locator('#toast')).toContainText('Try again later');
+  await expect(row.getByRole('spinbutton')).toHaveValue('1.5');
+  await page.unroute('**/api/pantry');
+  await row.getByRole('button', { name: 'Save amount' }).click();
+  await expect(row).toContainText('1.5 bags left');
+  await page.reload();
+  await expect(row).toContainText('1.5 bags left');
 });

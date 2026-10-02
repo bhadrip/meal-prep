@@ -1,13 +1,36 @@
 const { test, expect } = require('@playwright/test');
 
-test('landing links open the app and copy the MCP URL', async ({ page }) => {
+test('landing links open the app and copy the configured MCP URL', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Your food week, all together.' })).toBeVisible();
   await page.getByRole('button', { name: 'Copy MCP server URL' }).click();
-  await expect(page.locator('#copy-mcp')).toHaveText(/Copied|Select the URL to copy/);
+  await expect(page.locator('#copy-mcp')).toHaveText('Copied');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('http://127.0.0.1:18765/mcp');
   await page.getByRole('link', { name: 'Open the app' }).first().click();
   await expect(page).toHaveURL(/\/app$/);
   await expect(page.locator('#view-title')).toHaveText('Overview');
+});
+
+test('clipboard failure leaves the configured MCP URL available to copy manually', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: {
+      writeText: async () => { throw new DOMException('Clipboard permission denied', 'NotAllowedError'); },
+    } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Copy MCP server URL' }).click();
+  await expect(page.locator('#copy-mcp')).toHaveText('Select the URL to copy');
+  await expect(page.locator('#mcp-url')).toHaveText('http://127.0.0.1:18765/mcp');
+  const selectedUrl = await page.locator('#mcp-url').evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return selection.toString();
+  });
+  expect(selectedUrl).toBe('http://127.0.0.1:18765/mcp');
 });
 
 async function mockInviteSession(page, session) {
@@ -74,7 +97,7 @@ test('household settings create, revoke, remove, switch, and leave through the U
   ];
   const invitations = [];
   const calls = [];
-  await page.route('**/api/app/bootstrap', async (route) => {
+  await page.route('**/api/app/bootstrap?*', async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     return route.fulfill({ json: {
@@ -144,9 +167,11 @@ test('household settings create, revoke, remove, switch, and leave through the U
   await page.getByRole('button', { name: 'Create household' }).click();
   await expect(page.locator('#household-select')).toHaveValue('home-2');
   await expect(page.locator('#app-content')).toContainText('Weekend kitchen');
-  await page.locator('#household-select').selectOption('home-1');
+  await page.locator('#household-choice .choice-trigger').click();
+  await page.getByRole('option', { name: 'Home · Owner', exact: true }).click();
   await expect(page.locator('#household-select')).toHaveValue('home-1');
-  await page.locator('#household-select').selectOption('home-2');
+  await page.locator('#household-choice .choice-trigger').click();
+  await page.getByRole('option', { name: 'Weekend kitchen · Member', exact: true }).click();
   await expect(page.locator('#household-select')).toHaveValue('home-2');
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Leave this household' }).click();

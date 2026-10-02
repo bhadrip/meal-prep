@@ -6,10 +6,19 @@ const recipe = {
   instructions: ['Cook lentils', 'Serve warm'], tags: ['weeknight'], servings: 4,
 };
 
-async function host(page, live = false) {
+async function host(page, standalone = false, live = false) {
+  const frameUrl = standalone ? new URL('/static/mcp-app.html', test.info().project.use.baseURL).href.replace('127.0.0.1', 'localhost') : '/static/mcp-app.html';
+  if (standalone) {
+    const response = await page.request.post('/mcp', { headers: { Accept: 'application/json, text/event-stream' }, data: {
+      jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'ui://meal-prep/onboarding-v2.html' },
+    } });
+    const html = (await response.json()).result.contents[0].text;
+    await page.route('**/static/mcp-app.html', (route) => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.route('**/static/choices.*', (route) => route.abort());
+  }
   await page.route('**/mcp-test-host', (route) => route.fulfill({
     contentType: 'text/html',
-    body: `<!doctype html><html><body><iframe src="/static/mcp-app.html" style="width:100%;height:900px;border:0"></iframe>
+    body: `<!doctype html><html><body><iframe src="${frameUrl}" style="width:100%;height:900px;border:0"></iframe>
       <script>
         window.calls = [];
         window.ready = false;
@@ -68,6 +77,29 @@ async function show(page, data) {
   }, data);
 }
 
+test('embedded dropdowns work without asset requests and keep selection on Escape', async ({ page }) => {
+  const frame = await host(page, true);
+  await show(page, { kind: 'onboarding', household: {} });
+  const trigger = frame.getByRole('button', { name: 'Maximum weeknight cooking time 30 minutes', exact: true });
+  await trigger.click();
+  await frame.getByRole('option', { name: '30 minutes', exact: true }).press('ArrowDown');
+  await frame.getByRole('option', { name: '45 minutes', exact: true }).press('Escape');
+  await expect(frame.locator('[name="weeknightMaxMinutes"]')).toHaveValue('30');
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  const menu = await frame.getByRole('listbox').boundingBox();
+  expect(menu.y).toBeGreaterThanOrEqual(0);
+  expect(menu.y + menu.height).toBeLessThanOrEqual(page.viewportSize().height);
+  await frame.getByRole('option', { name: '45 minutes', exact: true }).click();
+  await expect(frame.locator('[name="weeknightMaxMinutes"]')).toHaveValue('45');
+  await frame.locator('[name="householdSize"]').fill('3');
+  await frame.locator('[name="dietaryRestrictions"]').fill('none');
+  await frame.locator('[name="stores"]').fill('Costco');
+  await frame.getByRole('button', { name: 'Save household setup' }).click();
+  await expect(frame.getByRole('heading', { name: 'Your household setup is saved.' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.calls.at(-1))).toMatchObject({ arguments: { planning_preferences: { weeknightMaxMinutes: 45 } } });
+});
+
 test('MCP dashboard, plan, feedback, and shopping views', async ({ page }) => {
   const frame = await host(page);
   const sections = {
@@ -109,7 +141,8 @@ test('MCP pantry use updates the remaining amount', async ({ page }) => {
   } });
   await frame.getByRole('button', { name: 'Use' }).click();
   await frame.locator('#pantry-use-form input[name="quantity"]').fill('0.5');
-  await frame.locator('#pantry-use-form select[name="recipeId"]').selectOption('recipe-ui-test');
+  await frame.getByRole('button', { name: 'Recipe (optional) No recipe', exact: true }).click();
+  await frame.getByRole('option', { name: 'Lentil bowls', exact: true }).click();
   await frame.getByRole('button', { name: 'Record use' }).click();
   await expect(frame.locator('[data-card-id="pantry"]')).toContainText('0.5 bag left');
   await expect(frame.locator('[data-card-id="pantry"] [role="meter"]')).toHaveAttribute('aria-valuenow', '50');
@@ -152,10 +185,15 @@ test('MCP onboarding and recipe library actions', async ({ page }) => {
   await frame.locator('[name="dietaryRestrictions"]').fill('none');
   await frame.locator('[name="stores"]').fill('Costco, Safeway');
   await frame.locator('[name="focusAreas"][value="dinners"]').check();
+  const cookingTime = frame.getByRole('button', { name: 'Maximum weeknight cooking time 30 minutes', exact: true });
+  await cookingTime.focus();
+  await cookingTime.press('ArrowDown');
+  await frame.getByRole('option', { name: '30 minutes', exact: true }).press('End');
+  await frame.getByRole('option', { name: '60 minutes', exact: true }).press('Enter');
   await frame.getByRole('button', { name: 'Save household setup' }).click();
   await expect(frame.getByRole('heading', { name: 'Your household setup is saved.' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.calls.at(-1))).toMatchObject({
-    name: 'update_household_preferences', arguments: { household_size: 3, store_priority: [{ store: 'Costco', priority: 1 }, { store: 'Safeway', priority: 2 }], complete_onboarding: true },
+    name: 'update_household_preferences', arguments: { household_size: 3, planning_preferences: { weeknightMaxMinutes: 60 }, store_priority: [{ store: 'Costco', priority: 1 }, { store: 'Safeway', priority: 2 }], complete_onboarding: true },
   });
   await show(page, { kind: 'recipe_library', recipes: [recipe] });
   await frame.getByRole('searchbox', { name: 'Search recipes' }).fill('missing');
@@ -246,7 +284,7 @@ test('direct MCP client receives shared workflow and persists pantry use without
   } });
   const item = created.structuredContent;
   const snapshot = await call('tools/call', { name: 'render_household_snapshot', arguments: {} });
-  const frame = await host(page, true);
+  const frame = await host(page, false, true);
   await show(page, snapshot.structuredContent);
   const row = frame.locator('.pantry-row').filter({ hasText: 'Direct connection chickpeas' });
   await row.getByRole('button', { name: 'Use', exact: true }).click();

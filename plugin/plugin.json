@@ -1,13 +1,13 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "meal-prep",
-  "version": "0.6.0+codex.20260929172454",
+  "version": "0.9.0",
   "description": "Coordinate the household food week across meals, prep, pantry inventory, and shopping.",
   "author": {
     "name": "BhadriP",
     "url": "https://github.com/bhadrip"
   },
-  "homepage": "https://meal-prep-swart.vercel.app",
+  "homepage": "https://meal-prep.madhavan-padmaja.dev",
   "repository": "https://github.com/bhadrip/meal-prep",
   "keywords": ["meal-planning", "recipes", "pantry", "shopping-list"],
   "extensions": {

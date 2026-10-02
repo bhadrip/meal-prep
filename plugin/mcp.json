@@ -3,7 +3,7 @@
   "mcpServers": {
     "meal-prep": {
       "type": "streamable-http",
-      "url": "https://meal-prep-swart.vercel.app/mcp"
+      "url": "https://meal-prep.madhavan-padmaja.dev/mcp"
     }
   }
 }

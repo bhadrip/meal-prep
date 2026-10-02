@@ -2,9 +2,34 @@ import httpx
 import pytest
 from unittest.mock import AsyncMock
 
-from app.application.errors import RepositoryError, StorageNotInstalledError
+from app.application.errors import RepositoryError, RevisionConflictError, StorageNotInstalledError
 from app.config import Settings
 from app.infrastructure.repositories import SupabaseRepository, _repository_error
+
+
+@pytest.mark.asyncio
+async def test_rule_reads_scope_to_active_household_and_saves_send_expected_revision(monkeypatch):
+    repository = SupabaseRepository(Settings(supabase_url="https://example.supabase.co", supabase_anon_key="test", _env_file=None), "token")
+    monkeypatch.setattr(repository, "household_id", AsyncMock(return_value="active-household"))
+    read = AsyncMock(return_value=[{"id": "revision-id", "revision": 1, "text": "Saturday pasta.", "created_at": "now"}])
+    monkeypatch.setattr(repository, "request", read)
+    assert (await repository.get_meal_plan_rules())["text"] == "Saturday pasta."
+    assert read.call_args.kwargs["params"]["household_id"] == "eq.active-household"
+    await repository.get_meal_plan_rules("revision-id")
+    assert read.call_args.kwargs["params"]["id"] == "eq.revision-id"
+    rpc = AsyncMock(return_value={"revision": 2})
+    monkeypatch.setattr(repository, "rpc", rpc)
+    assert await repository.save_meal_plan_rules("Saturday stir-fry.", 1) == {"revision": 2}
+    rpc.assert_awaited_once_with("save_meal_plan_rules", {"rule_text": "Saturday stir-fry.", "expected_revision": 1})
+
+
+def test_rule_conflict_maps_to_a_recoverable_error_and_missing_storage_is_explicit():
+    request = httpx.Request("POST", "https://example.supabase.co/rest/v1/rpc/save_meal_plan_rules")
+    response = httpx.Response(400, request=request, json={"code": "P0001", "message": "Meal plan rules changed. Reload the current rules before saving."})
+    mapped = _repository_error("rpc/save_meal_plan_rules", httpx.HTTPStatusError("conflict", request=request, response=response))
+    assert isinstance(mapped, RevisionConflictError)
+    missing = httpx.Response(404, request=request, json={"code": "PGRST202", "message": "Missing function"})
+    assert isinstance(_repository_error("rpc/save_meal_plan_rules", httpx.HTTPStatusError("missing", request=request, response=missing)), StorageNotInstalledError)
 
 
 @pytest.mark.asyncio
@@ -136,3 +161,30 @@ async def test_household_lookup_is_reused_within_one_request(monkeypatch):
     assert await repository.household_id() == "active-id"
     assert "dashboard" not in (await repository.get_household_context())["planningPreferences"]
     assert calls == ["get_household_context"]
+
+
+@pytest.mark.asyncio
+async def test_pantry_partial_edit_preserves_database_dates_and_scope(monkeypatch):
+    from app.application.services import RecipePantryService
+    from app.application.errors import ApplicationError
+    repository = SupabaseRepository(Settings(supabase_url="https://example.supabase.co", supabase_anon_key="test", _env_file=None), "token")
+    monkeypatch.setattr(repository, "household_id", AsyncMock(return_value="active-household"))
+    stored = {"id": "item-1", "name": "Mushrooms", "quantity": 1, "unit": "box", "category": "vegetables",
+              "storage_location": "fridge", "quantity_confidence": "exact", "acquired_at": "2026-09-24",
+              "freshness_basis": "Receipt", "use_by_date": None, "reference_quantity": 2, "provenance": {"receipt": "one"}}
+    request = AsyncMock(return_value=[stored])
+    monkeypatch.setattr(repository, "request", request)
+    service = RecipePantryService(repository)
+    await service.update_pantry_item({"id": "item-1", "quantity": 0.5})
+    payload = request.call_args.kwargs["json"]
+    assert payload["quantity"] == 0.5
+    assert payload["household_id"] == "active-household"
+    assert payload["acquired_at"] == "2026-09-24"
+    assert payload["freshness_basis"] == "Receipt"
+    assert payload["reference_quantity"] == 2
+    assert payload["storage_location"] == "fridge"
+    assert payload["provenance"] == {"receipt": "one"}
+    request.reset_mock()
+    with pytest.raises(ApplicationError, match="quantity must"):
+        await service.update_pantry_item({"id": "item-1", "quantity": -2})
+    assert all(call.args[0] == "GET" for call in request.call_args_list)
