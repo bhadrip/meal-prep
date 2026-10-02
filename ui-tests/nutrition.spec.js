@@ -16,30 +16,30 @@ test('serving variations save macro amounts and food sources, reject invalid amo
   await editor.locator('[name="meal"]').fill('Teriyaki noodles');
   await editor.getByLabel('Food or dish', {exact: true}).fill('Noodles, tofu, edamame and broccoli');
   await editor.getByLabel('Nutrition basis / assumptions').fill('Ingredient estimate, portions unverified');
-  for (const [name, serving, protein, carbs] of [['Kids', 'Mild steamed noodles', 'low', 'high'], ['Adults', 'Smaller noodle portion, add tofu and gochujang', 'high', 'moderate']]) {
+  for (const [name, serving, protein, carbs] of [['Standard', 'Mild steamed noodles', 'low', 'high'], ['Protein-heavy', 'Smaller noodle portion, add tofu and gochujang', 'high', 'moderate']]) {
     await editor.getByRole('button', {name: 'Add serving variation'}).click();
     const row = editor.locator('[data-nutrition-profile]').last();
     await row.getByLabel('Variation name').fill(name);
     await row.getByLabel('How to serve this plate').fill(serving);
     await choose(row, 'protein', protein); await choose(row, 'carbs', carbs);
   }
-  const adult = editor.locator('[data-nutrition-profile]').last();
-  await adult.getByLabel('Portion for numeric values').fill('1 adult bowl');
-  await adult.getByLabel('Calories (kcal)', {exact:true}).fill('520');
-  await adult.getByLabel('Protein (g)', {exact:true}).fill('35.5');
-  await adult.getByLabel('Fat (g)', {exact:true}).fill('0');
-  await adult.getByLabel('Micronutrients').fill('Iron | Tofu | -3 | mg');
+  const proteinPlate = editor.locator('[data-nutrition-profile]').last();
+  await proteinPlate.getByLabel('Portion for numeric values').fill('1 protein-heavy bowl');
+  await proteinPlate.getByLabel('Calories (kcal)', {exact:true}).fill('520');
+  await proteinPlate.getByLabel('Protein (g)', {exact:true}).fill('35.5');
+  await proteinPlate.getByLabel('Fat (g)', {exact:true}).fill('0');
+  await proteinPlate.getByLabel('Micronutrients').fill('Iron | Tofu | -3 | mg');
   await editor.locator('#dialog-save').click();
   await expect(editor.locator('#dialog-error')).toContainText('nonnegative');
   expect((await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan.entries).toHaveLength(0);
-  await adult.getByLabel('Micronutrients').fill('Iron | Tofu | 3.2 | mg\nVitamin C | Broccoli');
+  await proteinPlate.getByLabel('Micronutrients').fill('Iron | Tofu | 3.2 | mg\nVitamin C | Broccoli');
   await editor.locator('#dialog-save').click();
   await expect(editor).toBeHidden();
   await page.reload();
   const meal = page.locator('.meal').filter({hasText: 'Teriyaki noodles'});
   await meal.locator('.nutrition-details summary').click();
-  await expect(meal.locator('.nutrition-profile').filter({hasText: 'Adults'}).locator('[data-nutrient="protein"]')).toHaveAttribute('data-level', 'high');
-  await expect(meal.locator('.nutrition-profile').filter({hasText: 'Kids'}).locator('[data-nutrient="carbs"]')).toHaveAttribute('data-level', 'high');
+  await expect(meal.locator('.nutrition-profile').filter({hasText: 'Protein-heavy'}).locator('[data-nutrient="protein"]')).toHaveAttribute('data-level', 'high');
+  await expect(meal.locator('.nutrition-profile').filter({hasText: 'Standard'}).locator('[data-nutrient="carbs"]')).toHaveAttribute('data-level', 'high');
   await expect(meal).toContainText('Broccoli');
   await expect(meal.locator('[data-amount="calories"]')).toHaveText('≈ 520 kcal');
   await expect(meal.locator('[data-amount="protein"]')).toHaveText('≈ 35.5 g');
@@ -52,6 +52,13 @@ test('serving variations save macro amounts and food sources, reject invalid amo
   await meal.getByRole('button', {name:'Edit', exact:true}).click();
   await expect(editor.locator('[data-nutrition-profile]')).toHaveCount(2);
   await expect(editor.getByLabel('Protein (g)', {exact:true}).last()).toHaveValue('35.5');
+  await editor.getByLabel('Variation name').first().fill('Quick');
+  await editor.locator('#dialog-save').click();
+  await expect(editor).toBeHidden();
+  await expect(page.locator('[data-weekly-profile="Quick"]')).toBeVisible();
+  await expect(page.locator('[data-weekly-profile="Protein-heavy"] [data-weekly-amount="protein"]')).toHaveText('35.5 g');
+  await meal.getByRole('button', {name:'Edit', exact:true}).click();
+
   await editor.getByRole('button', {name:'Remove variation'}).first().click();
   await editor.getByRole('button', {name:'Remove variation'}).click();
   await editor.locator('#dialog-save').click();
@@ -61,7 +68,7 @@ test('serving variations save macro amounts and food sources, reject invalid amo
 });
 
 test('self-contained MCP App shows the saved plates and preserves nutrition when recording eaten', async ({page}) => {
-  const nutrition = {basis:'Ingredient estimate', profiles:[{name:'Adults', serving:'Add tofu', portion:'1 labeled serving', valueType:'label', amounts:{calories:400, protein:28, fat:0}, macros:{protein:'high'}, micronutrients:[{nutrient:'Iron', source:'Tofu', amount:3, unit:'mg'}]}]};
+  const nutrition = {basis:'Ingredient estimate', profiles:[{name:'Protein-heavy', serving:'Add tofu', portion:'1 labeled serving', valueType:'label', amounts:{calories:400, protein:28, fat:0}, macros:{protein:'high'}, micronutrients:[{nutrient:'Iron', source:'Tofu', amount:3, unit:'mg'}]}]};
   const response = await page.request.put('/api/meal-plan', {data:{weekStart:week, entries:[{date:week, slot:'dinner', meal:'MCP noodles', nutrition}], tasks:[]}});
   expect(response.ok()).toBeTruthy(); const plan = await response.json();
   const resource = await page.request.post('/mcp', {headers:{Accept:'application/json, text/event-stream'}, data:{jsonrpc:'2.0', id:1, method:'resources/read', params:{uri:'ui://meal-prep/meal-plan-v2.html'}}});
@@ -100,7 +107,7 @@ test('self-contained MCP App shows the saved plates and preserves nutrition when
 
 test('weekly totals update after removing a meal and show incomplete coverage', async ({page}) => {
   const week = '2045-02-13';
-  const guide = protein => ({basis:'Test estimates', profiles:[{name:'Adults',serving:'Tofu bowl',portion:'1 bowl',amounts:{protein,fat:0},micronutrients:[{nutrient:'Iron',source:'Tofu',amount:2,unit:'mg'}]}]});
+  const guide = protein => ({basis:'Test estimates', profiles:[{name:'Protein-heavy',serving:'Tofu bowl',portion:'1 bowl',amounts:{protein,fat:0},micronutrients:[{nutrient:'Iron',source:'Tofu',amount:2,unit:'mg'}]}]});
   const response = await page.request.put('/api/meal-plan', {data:{weekStart:week, entries:[
     {date:week,slot:'dinner',meal:'Monday bowl',nutrition:guide(30)},
     {date:'2045-02-14',slot:'dinner',meal:'Tuesday bowl',nutrition:guide(25)},

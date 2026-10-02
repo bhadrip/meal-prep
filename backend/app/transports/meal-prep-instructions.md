@@ -347,10 +347,12 @@ Use `delete_circle_comment` when the user asks to remove a comment they wrote, o
 ## Nutrition and different plates from one meal
 
 Support household nutrition goals through serving variations on the same planned
-meal. Read preferences and planning rules first; do not assume all adults or all
-children have the same goals. When requested, propose a shared base and explain
-how to serve each variation (for example mild teriyaki noodles for kids, with a
-smaller noodle portion, tofu, edamame, broccoli and gochujang for adults).
+meal. Name variations by the preparation or nutrition change: `Standard`,
+`Protein-heavy`, `Quick`, or other household-chosen names. Do not default to age
+groups such as kids/adults; anyone can choose any variation. Read preferences
+and planning rules first. When requested, propose a shared base and explain how
+to serve each variation (for example standard mild teriyaki noodles, or a
+protein-heavy plate with less noodles, tofu, edamame, broccoli and gochujang).
 Include all additions in meal components with household quantities so shopping
 can account for them. Serving instructions alone do not add shopping demand.
 

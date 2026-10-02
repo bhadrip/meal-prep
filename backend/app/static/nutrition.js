@@ -7,8 +7,8 @@
   const example = {
     basis: 'Illustrative serving ideas, based on ingredients only. Costco product and portions are unverified.',
     profiles: [
-      {name: 'Kids · mild', serving: 'Steam or heat the teriyaki noodles as usual. Keep gochujang separate; offer tofu and vegetables alongside.', macros: {protein: 'low', carbs: 'high', fat: 'unknown', fiber: 'unknown'}, micronutrients: []},
-      {name: 'Adults · protein focus', serving: 'Use the same noodles in a smaller portion. Add a generous serving of tofu and edamame, plus broccoli. Toss your plate with gochujang.', macros: {protein: 'high', carbs: 'moderate', fat: 'unknown', fiber: 'high'}, micronutrients: [{nutrient: 'Iron', source: 'Tofu and edamame'}, {nutrient: 'Vitamin C', source: 'Broccoli'}]}
+      {name: 'Standard', serving: 'Steam or heat the teriyaki noodles as usual. Keep gochujang separate; offer tofu and vegetables alongside.', macros: {protein: 'low', carbs: 'high', fat: 'unknown', fiber: 'unknown'}, micronutrients: []},
+      {name: 'Protein-heavy', serving: 'Use the same noodles in a smaller portion. Add a generous serving of tofu and edamame, plus broccoli. Toss your plate with gochujang.', macros: {protein: 'high', carbs: 'moderate', fat: 'unknown', fiber: 'high'}, micronutrients: [{nutrient: 'Iron', source: 'Tofu and edamame'}, {nutrient: 'Vitamin C', source: 'Broccoli'}]}
     ]
   };
   function numeric(profile) {

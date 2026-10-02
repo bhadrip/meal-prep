@@ -8,8 +8,8 @@ from app.infrastructure.repositories import DemoRepository
 
 WEEK = '2043-02-02'
 GUIDE = {'basis': 'Ingredient-based estimate; portions unverified', 'profiles': [
-    {'name': 'Kids', 'serving': 'Mild noodles', 'macros': {'protein': 'low', 'carbs': 'high'}},
-    {'name': 'Adults', 'serving': 'Less noodles, add tofu and broccoli',
+    {'name': 'Standard', 'serving': 'Mild noodles', 'macros': {'protein': 'low', 'carbs': 'high'}},
+    {'name': 'Protein-heavy', 'serving': 'Less noodles, add tofu and broccoli',
      'macros': {'protein': 'high', 'carbs': 'moderate'},
      'micronutrients': [{'nutrient': 'Iron', 'source': 'Tofu'}]},
 ]}
@@ -52,7 +52,7 @@ async def test_invalid_nutrition_never_replaces_saved_plan():
 async def test_numeric_nutrients_keep_units_zero_unknowns_and_portion():
     service = PlanningService(DemoRepository())
     guide = deepcopy(GUIDE)
-    guide['profiles'][1].update(portion='1 adult bowl', valueType='estimated',
+    guide['profiles'][1].update(portion='1 protein-heavy bowl', valueType='estimated',
         amounts={'calories': 520, 'protein': 35.5, 'carbs': 48, 'fat': 0})
     guide['profiles'][1]['micronutrients'][0].update(amount=3.2, unit='mg')
     saved = await service.save_meal_plan({'weekStart': WEEK, 'entries': [
@@ -106,7 +106,7 @@ async def test_weekly_numbers_cover_one_plate_per_meal_and_keep_missing_values_u
     for index, protein in enumerate([30, 0, None]):
         guide = None
         if protein is not None:
-            guide = {'basis': 'Estimate', 'profiles': [{'name': 'Adults' if index == 0 else 'adults',
+            guide = {'basis': 'Estimate', 'profiles': [{'name': 'Protein-heavy' if index == 0 else 'protein-heavy',
                 'serving': 'Tofu bowl', 'portion': '1 bowl', 'amounts': {'protein': protein, 'fat': 0},
                 'micronutrients': [{'nutrient': 'Iron', 'source': 'Tofu', 'amount': 3 if index == 0 else 1000,
                                    'unit': 'mg' if index == 0 else 'mcg'}]}]}
@@ -127,3 +127,23 @@ async def test_weekly_numbers_cover_one_plate_per_meal_and_keep_missing_values_u
     assert await service.get_weekly_nutrition('2043-02-09') == {'mealCount': 0, 'profiles': [], 'basis': summary['basis']}
     snapshot = await HouseholdService(service.repository).snapshot(sections=['mealPlan'], week_start=WEEK)
     assert snapshot['sections']['mealPlan']['value']['nutritionSummary'] == summary
+
+
+@pytest.mark.asyncio
+async def test_preparation_variations_are_freeform_and_rename_without_losing_numbers():
+    service = PlanningService(DemoRepository())
+    guide = {'basis': 'Ingredient estimate', 'profiles': [
+        {'name': 'Standard', 'serving': 'Original plate', 'portion': '1 bowl', 'amounts': {'protein': 15}},
+        {'name': 'Protein-heavy', 'serving': 'Add tofu', 'portion': '1 bowl', 'amounts': {'protein': 35}}]}
+    saved = await service.save_meal_plan({'weekStart': WEEK, 'entries': [
+        {'date': WEEK, 'slot': 'dinner', 'meal': 'Noodles', 'nutrition': guide}]})
+    renamed = deepcopy(saved['entries'][0]['nutrition'])
+    renamed['profiles'][0]['name'] = 'Quick'
+    await service.update_plan_item(WEEK, 'meal', {'id': saved['entries'][0]['id'], 'nutrition': renamed})
+    profiles = (await service.get_weekly_nutrition(WEEK))['profiles']
+    assert [(p['name'], p['amounts']['protein']['total']) for p in profiles] == [('Quick', 15), ('Protein-heavy', 35)]
+    invalid = deepcopy(renamed)
+    invalid['profiles'][0]['name'] = 'protein-heavy'
+    with pytest.raises(ApplicationError, match='unique'):
+        await service.update_plan_item(WEEK, 'meal', {'id': saved['entries'][0]['id'], 'nutrition': invalid})
+    assert (await service.get_weekly_nutrition(WEEK))['profiles'] == profiles
