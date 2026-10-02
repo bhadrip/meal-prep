@@ -1,5 +1,11 @@
 # Repository instructions
 
+## MCP first
+
+Implement capabilities and shared workflow guidance through the MCP server whenever MCP can support them. Direct MCP clients must receive the same supported behavior without installing the plugin.
+
+Use plugin skills only for capabilities that require plugin-specific features and cannot be supported through MCP. Document the concrete MCP limitation before choosing a plugin-only implementation. Keep shared workflow instructions in the server; plugin skills may provide a thin entry point without duplicating those instructions.
+
 ## Feature tests
 
 For every new feature or behavior change, add or extend both:
