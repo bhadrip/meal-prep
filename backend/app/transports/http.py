@@ -201,6 +201,11 @@ async def comment_on_circle_share(share_id: UUID, payload: dict[str, Any], servi
     return await services.circles.comment(str(share_id), payload.get("body"), payload.get("targetType", "post"), payload.get("targetId"))
 
 
+@router.delete("/api/circle-comments/{comment_id}")
+async def delete_circle_comment(comment_id: UUID, services: WebServices) -> dict:
+    return await services.circles.delete_comment(str(comment_id))
+
+
 @router.post("/api/circle-shares/{share_id}/recipes/{recipe_id}/save")
 async def save_circle_recipe(share_id: UUID, recipe_id: UUID, services: WebServices) -> dict:
     return await services.circles.save_shared_recipe(str(share_id), str(recipe_id))

@@ -319,6 +319,10 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
 .circle-comment p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .circle-comment small { color: var(--muted); }
 .circle-members { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.circle-review { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.circle-review h4 { margin-bottom: 8px; }
+.circle-review p { margin: 8px 0; }
+.circle-review ul { margin: 12px 0 12px 20px; font-size: .76rem; line-height: 1.7; overflow-wrap: anywhere; }
 .circle-members h4 { margin-bottom: 8px; font-size: .8rem; }
 .circle-member { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 0; color: var(--muted); font-size: .73rem; overflow-wrap: anywhere; }
 @media (max-width: 600px) {

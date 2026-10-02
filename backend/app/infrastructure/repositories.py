@@ -97,6 +97,9 @@ class SupabaseRepository:
         return await self.rpc("comment_on_circle_share", {"requested_share_id": share_id, "requested_body": body,
                                                           "requested_target_type": target_type, "requested_target_id": target_id})
 
+    async def circle_delete_comment(self, comment_id):
+        return await self.rpc("delete_circle_comment", {"requested_comment_id": comment_id})
+
     async def circle_save_recipe(self, share_id, recipe_id):
         return await self.rpc("save_circle_recipe", {"requested_share_id": share_id, "requested_recipe_id": recipe_id})
 
@@ -672,11 +675,16 @@ class DemoRepository:
     async def circle_list(self):
         return deepcopy([{"id": row["id"], "name": row["name"], "ownerId": row["ownerId"],
                           "members": [{"userId": user, "email": user, "status": status} for user, status in row["members"].items()] if row["ownerId"] == self.user_id else [],
+                          "memberNames": [user.split('@')[0] for user, status in row["members"].items() if status == "accepted"] if row["members"].get(self.user_id) == "accepted" else [],
+                          "memberCount": sum(status == "accepted" for status in row["members"].values()) if row["members"].get(self.user_id) == "accepted" else 0,
                           "myStatus": row["members"].get(self.user_id)}
                          for row in self._circles.values() if self.user_id in row["members"]])
 
     async def circle_create(self, name):
-        row = {"id": str(uuid4()), "name": name, "ownerId": self.user_id, "members": {self.user_id: "accepted"}}
+        if sum(row["ownerId"] == self.user_id for row in self._circles.values()) >= 30:
+            raise RepositoryError("Circle limit reached")
+        row = {"id": str(uuid4()), "name": name, "ownerId": self.user_id, "members": {self.user_id: "accepted"},
+               "memberEpochs": {self.user_id: str(uuid4())}}
         self._circles[row["id"]] = row
         return deepcopy(row)
 
@@ -686,7 +694,10 @@ class DemoRepository:
             raise RepositoryError("Circle invitation is not available")
         if email in circle["members"]:
             raise RepositoryError("Friend is already invited or a member")
+        if len(circle["members"]) >= 25:
+            raise RepositoryError("Circle member limit reached")
         circle["members"][email] = "pending"
+        circle["memberEpochs"][email] = str(uuid4())
         return {"circleId": circle_id, "email": email, "status": "pending"}
 
     async def circle_respond(self, circle_id, accept):
@@ -697,6 +708,7 @@ class DemoRepository:
             circle["members"][self.user_id] = "accepted"
         else:
             del circle["members"][self.user_id]
+            del circle["memberEpochs"][self.user_id]
         return {"circleId": circle_id, "accepted": accept}
 
     async def circle_remove_friend(self, circle_id, user_id):
@@ -704,6 +716,7 @@ class DemoRepository:
         if not circle or circle["ownerId"] != self.user_id or user_id == self.user_id or user_id not in circle["members"]:
             raise RepositoryError("Circle member was not found")
         del circle["members"][user_id]
+        del circle["memberEpochs"][user_id]
         return {"removed": True}
 
     async def circle_leave(self, circle_id):
@@ -711,6 +724,7 @@ class DemoRepository:
         if not circle or circle["ownerId"] == self.user_id or circle["members"].get(self.user_id) != "accepted":
             raise RepositoryError("Circle is not available to leave")
         del circle["members"][self.user_id]
+        del circle["memberEpochs"][self.user_id]
         return {"left": True}
 
     def _circle_access(self, circle_id):
@@ -722,6 +736,7 @@ class DemoRepository:
     async def circle_feed(self, limit=51, offset=0, kind=None):
         rows = [self._circle_summary(row) for row in reversed(list(self._circle_posts.values()))
                 if row["revokedAt"] is None and self._circles[row["circleId"]]["members"].get(self.user_id) == "accepted"
+                and row["recipientIds"].get(self.user_id) == self._circles[row["circleId"]]["memberEpochs"].get(self.user_id)
                 and (kind is None or row["kind"] == kind)]
         return deepcopy(rows[offset:offset + limit])
 
@@ -731,10 +746,11 @@ class DemoRepository:
 
     async def circle_get_post(self, share_id):
         row = self._circle_posts.get(share_id)
-        if not row or row["revokedAt"] or self._circles[row["circleId"]]["members"].get(self.user_id) != "accepted":
+        if not row or row["revokedAt"] or self._circles[row["circleId"]]["members"].get(self.user_id) != "accepted" or row["recipientIds"].get(self.user_id) != self._circles[row["circleId"]]["memberEpochs"].get(self.user_id):
             raise RepositoryError("Shared item was not found")
         recipes = row["snapshot"].get("recipes") or [row["snapshot"].get("recipe")]
-        return {**self._circle_summary(row), "comments": deepcopy(self._circle_comments.get(share_id, [])),
+        return {**self._circle_summary(row), "comments": deepcopy([comment for comment in self._circle_comments.get(share_id, [])
+                                                                   if not comment.get("deletedAt")]),
                 "savedRecipeIds": {recipe["id"]: saved["id"] for recipe in recipes if recipe
                                    for saved in self._recipes if saved.get("sourceSnapshot", {}).get("sourceRecipeId") == recipe["id"]}}
 
@@ -746,9 +762,15 @@ class DemoRepository:
 
     async def _circle_post(self, circle_id, kind, snapshot):
         circle = self._circle_access(circle_id)
+        now = datetime.now(UTC)
+        if sum(row["circleId"] == circle_id and row["createdBy"] == self.user_id
+               and datetime.fromisoformat(row["createdAt"]) > now - timedelta(days=1)
+               for row in self._circle_posts.values()) >= 100:
+            raise RepositoryError("Daily share limit reached")
         row = {"id": str(uuid4()), "circleId": circle_id, "circleName": circle["name"], "kind": kind,
                "createdBy": self.user_id, "createdByName": self.user_id.split('@')[0],
-               "createdAt": datetime.now(UTC).isoformat(), "snapshot": deepcopy(snapshot), "revokedAt": None}
+               "createdAt": now.isoformat(), "snapshot": deepcopy(snapshot), "revokedAt": None,
+               "recipientIds": {user: circle["memberEpochs"][user] for user, status in circle["members"].items() if status == "accepted"}}
         self._circle_posts[row["id"]] = row
         return self._circle_summary(row)
 
@@ -783,6 +805,10 @@ class DemoRepository:
 
     async def circle_comment(self, share_id, body, target_type, target_id):
         row = await self.circle_get_post(share_id)
+        now = datetime.now(UTC)
+        if sum(comment["authorId"] == self.user_id and datetime.fromisoformat(comment["createdAt"]) > now - timedelta(hours=1)
+               for comment in self._circle_comments.get(share_id, [])) >= 30:
+            raise RepositoryError("Comment rate limit reached")
         recipes = row["snapshot"].get("recipes") or [row["snapshot"].get("recipe")]
         valid = (target_type == "post" and not target_id or
                  target_type == "meal" and row["kind"] == "week" and any(entry["id"] == target_id for entry in row["snapshot"]["entries"]) or
@@ -790,9 +816,21 @@ class DemoRepository:
         if not valid:
             raise RepositoryError("Comment target was not found")
         comment = {"id": str(uuid4()), "authorId": self.user_id, "authorName": self.user_id.split('@')[0], "body": body, "targetType": target_type,
-                   "targetId": target_id, "createdAt": datetime.now(UTC).isoformat()}
+                   "targetId": target_id, "createdAt": now.isoformat()}
         self._circle_comments.setdefault(share_id, []).append(comment)
         return deepcopy(comment)
+
+    async def circle_delete_comment(self, comment_id):
+        for share_id, comments in self._circle_comments.items():
+            comment = next((item for item in comments if item["id"] == comment_id), None)
+            if comment:
+                post = self._circle_posts[share_id]
+                owner = self._circles[post["circleId"]]["ownerId"]
+                if self.user_id not in (comment["authorId"], post["createdBy"], owner):
+                    break
+                comment["deletedAt"] = comment.get("deletedAt") or datetime.now(UTC).isoformat()
+                return {"removed": True}
+        raise RepositoryError("Comment was not found")
 
     async def circle_save_recipe(self, share_id, recipe_id):
         row = await self.circle_get_post(share_id)

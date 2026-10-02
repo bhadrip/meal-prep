@@ -163,6 +163,12 @@ async def comment_on_circle_share(share_id: str, body: str, target_type: str = "
     return await services_for_request().circles.comment(share_id, body, target_type, target_id)
 
 
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def delete_circle_comment(comment_id: str) -> dict[str, Any]:
+    """Remove a comment you wrote or a comment on your post or circle. This also withdraws its notification."""
+    return await services_for_request().circles.delete_comment(comment_id)
+
+
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_circle_recipe(share_id: str, recipe_id: str) -> dict[str, Any]:
     """Save one shared recipe or ready food as an independent copy in the active household; returns the existing copy on repeat."""

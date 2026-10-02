@@ -10,6 +10,13 @@ class CircleService:
     def __init__(self, repository: Any):
         self.repository = repository
 
+    @staticmethod
+    def _raise_known_limit(exc: RepositoryError) -> None:
+        if str(exc) in ("Circle limit reached", "Circle member limit reached",
+                        "Daily share limit reached", "Comment rate limit reached"):
+            raise ApplicationError(str(exc)) from exc
+        raise exc
+
     async def list_circles(self) -> dict:
         items = await self.repository.circle_list()
         return {"items": items, "count": len(items)}
@@ -18,7 +25,10 @@ class CircleService:
         clean = (name or "").strip()
         if not 1 <= len(clean) <= 80:
             raise ApplicationError("Enter a circle name of 1 to 80 characters")
-        return await self.repository.circle_create(clean)
+        try:
+            return await self.repository.circle_create(clean)
+        except RepositoryError as exc:
+            self._raise_known_limit(exc)
 
     async def invite_friend(self, circle_id: str, email: str) -> dict:
         clean = (email or "").strip().lower()
@@ -29,7 +39,7 @@ class CircleService:
         except RepositoryError as exc:
             if str(exc) in ("Existing friend account was not found", "Friend is already invited or a member"):
                 raise ApplicationError(str(exc)) from exc
-            raise
+            self._raise_known_limit(exc)
 
     async def respond_invitation(self, circle_id: str, accept: bool) -> dict:
         return await self.repository.circle_respond(circle_id, accept)
@@ -57,10 +67,16 @@ class CircleService:
             raise ApplicationError("Choose a valid week start date") from None
         if parsed.weekday() != 0 or week_start != parsed.isoformat():
             raise ApplicationError("Choose a Monday week start date")
-        return await self.repository.circle_share_week(circle_id, week_start)
+        try:
+            return await self.repository.circle_share_week(circle_id, week_start)
+        except RepositoryError as exc:
+            self._raise_known_limit(exc)
 
     async def share_recipe(self, circle_id: str, recipe_id: str) -> dict:
-        return await self.repository.circle_share_recipe(circle_id, recipe_id)
+        try:
+            return await self.repository.circle_share_recipe(circle_id, recipe_id)
+        except RepositoryError as exc:
+            self._raise_known_limit(exc)
 
     async def comment(self, share_id: str, body: str, target_type: str = "post", target_id: str | None = None) -> dict:
         clean = (body or "").strip()
@@ -68,10 +84,16 @@ class CircleService:
             raise ApplicationError("Enter a comment of 1 to 2000 characters")
         if target_type not in ("post", "meal", "recipe"):
             raise ApplicationError("Choose the shared week, meal, or recipe to comment on")
-        return await self.repository.circle_comment(share_id, clean, target_type, target_id)
+        try:
+            return await self.repository.circle_comment(share_id, clean, target_type, target_id)
+        except RepositoryError as exc:
+            self._raise_known_limit(exc)
 
     async def save_shared_recipe(self, share_id: str, recipe_id: str) -> dict:
         return await self.repository.circle_save_recipe(share_id, recipe_id)
+
+    async def delete_comment(self, comment_id: str) -> dict:
+        return await self.repository.circle_delete_comment(comment_id)
 
     async def revoke_share(self, share_id: str) -> dict:
         return await self.repository.circle_revoke_post(share_id)

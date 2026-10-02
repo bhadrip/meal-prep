@@ -50,6 +50,7 @@ async def test_local_friend_circle_sharing_and_inbox_isolation():
             await RecipePantryService(owner).archive_recipe(recipe["id"])
             with pytest.raises(RepositoryError):
                 await own.share_recipe(circle["id"], recipe["id"])
+            old_share = await own.share_week(circle["id"], week)
             await own.invite_friend(circle["id"], friend_email)
             with pytest.raises(ApplicationError, match="Existing friend account was not found"):
                 await own.invite_friend(circle["id"], "missing-circle-account@example.test")
@@ -58,6 +59,13 @@ async def test_local_friend_circle_sharing_and_inbox_isolation():
             with pytest.raises(RepositoryError):
                 await peer.share_recipe(circle["id"], recipe["id"])
             await peer.respond_invitation(circle["id"], True)
+            assert (await peer.list_circles())["items"][0]["memberCount"] == 2
+            with pytest.raises(RepositoryError):
+                await peer.get_shared_item(old_share["id"])
+            with pytest.raises(RepositoryError):
+                await peer.comment(old_share["id"], "Too old")
+            with pytest.raises(RepositoryError):
+                await peer.save_shared_recipe(old_share["id"], recipe["id"])
             shared = await own.share_week(circle["id"], week)
             assert (await peer.list_shared_with_me())["items"][0]["id"] == shared["id"]
             friend_inbox = await friend.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_share"})
@@ -72,10 +80,24 @@ async def test_local_friend_circle_sharing_and_inbox_isolation():
                 await friend.request("PATCH", "circle_posts", params={"id": f"eq.{shared['id']}"},
                     json={"snapshot": {"entries": []}})
             with pytest.raises(RepositoryError):
+                await friend.request("GET", "circle_post_recipients", params={"select": "user_id"})
+            with pytest.raises(RepositoryError):
                 await peer.comment(shared["id"], "Wrong meal", "meal", str(uuid4()))
-            await peer.comment(shared["id"], "How did you season the dal?", "meal", snap["entries"][0]["id"])
+            first_comment = await peer.comment(shared["id"], "How did you season the dal?", "meal", snap["entries"][0]["id"])
+            for index in range(29):
+                await peer.comment(shared["id"], f"Follow-up {index}")
+            with pytest.raises(ApplicationError, match="Comment rate limit"):
+                await peer.comment(shared["id"], "One too many")
             inbox = await owner.request("GET", "notifications", params={"select": "kind,title", "kind": "eq.circle_comment"})
             assert inbox and inbox[0]["kind"] == "circle_comment"
+            with pytest.raises(RepositoryError):
+                await stranger.delete_comment(first_comment["id"])
+            await own.delete_comment(first_comment["id"])
+            assert all(item["id"] != first_comment["id"] for item in (await peer.get_shared_item(shared["id"]))["comments"])
+            assert await owner.request("GET", "notifications", params={"select": "id", "event_key": f"eq.circle-comment:{first_comment['id']}"}) == []
+            with pytest.raises(ApplicationError, match="Comment rate limit"):
+                await peer.comment(shared["id"], "Deletion does not reset the limit")
+            await peer.delete_comment(first_comment["id"])
             copied = await peer.save_shared_recipe(shared["id"], recipe["id"])
             assert copied["recipeId"] != recipe["id"]
             assert (await peer.save_shared_recipe(shared["id"], recipe["id"]))["alreadySaved"]
@@ -98,13 +120,19 @@ async def test_local_friend_circle_sharing_and_inbox_isolation():
             with pytest.raises(RepositoryError):
                 await peer.get_shared_item(shared["id"])
             assert await friend.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_share"}) == []
+            assert (await friend.get_recipe(concurrent[0]["recipeId"]))["title"] == "Golden dal"
             await own.invite_friend(circle["id"], friend_email)
             await peer.respond_invitation(circle["id"], True)
-            assert (await peer.get_shared_item(shared["id"]))["id"] == shared["id"]
+            assert await friend.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_share"}) == []
+            with pytest.raises(RepositoryError):
+                await peer.get_shared_item(shared["id"])
+            fresh = await own.share_week(circle["id"], week)
+            assert (await peer.get_shared_item(fresh["id"]))["id"] == fresh["id"]
             await peer.leave_circle(circle["id"])
             with pytest.raises(RepositoryError):
                 await peer.get_shared_item(shared["id"])
             await own.revoke_share(shared["id"])
+            assert await owner.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_comment"}) == []
             with pytest.raises(RepositoryError):
                 await peer.get_shared_item(shared["id"])
         finally:
