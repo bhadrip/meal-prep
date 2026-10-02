@@ -302,7 +302,16 @@ async def test_snapshot_and_pantry_service_share_freshness():
 
 
 @pytest.mark.asyncio
-async def test_finished_pantry_is_retained_and_restock_resets_tracked_amount():
+async def test_finished_pantry_is_retained_and_restock_resets_tracked_amount(monkeypatch):
+    from datetime import datetime, UTC
+    from app.application import services as service_module
+
+    class EveningDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 2, 2, tzinfo=UTC).astimezone(tz)
+
+    monkeypatch.setattr(service_module, 'datetime', EveningDateTime)
     service = RecipePantryService(DemoRepository())
     item = await service.update_pantry_item({"name": "Raspberries", "quantity": 1, "unit": "package", "acquiredAt": "2020-01-01"})
     await service.record_pantry_use(item["id"], 1)
@@ -311,6 +320,9 @@ async def test_finished_pantry_is_retained_and_restock_resets_tracked_amount():
     assert finished["freshness"]["status"] == "finished"
     with pytest.raises(ApplicationError, match="exceeds"):
         await service.record_pantry_use(item["id"], 1)
+    with pytest.raises(ApplicationError, match="future"):
+        await service.update_pantry_item({"id": item["id"], "quantity": 3, "acquiredAt": "2026-10-02"})
+    assert next(row for row in await service.get_pantry() if row["id"] == item["id"])["quantity"] == 0
     restocked = await service.update_pantry_item({"id": item["id"], "quantity": 3, "acquiredAt": "2026-10-01"})
     assert restocked["reference_quantity"] == 3
     assert restocked["acquiredAt"] == "2026-10-01"

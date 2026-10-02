@@ -1039,7 +1039,7 @@ async function handleAction(actionName, id) {
     fields.querySelector('[name=quantity]').value = '';
     fields.querySelector('[name=quantity]').required = true;
     fields.querySelector('[name=quantity]').min = '0.001';
-    fields.querySelector('[name=acquiredAt]').value = new Date().toLocaleDateString('en-CA');
+    fields.querySelector('[name=acquiredAt]').value = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
     fields.querySelector('[name=useByDate]').value = '';
     fields.querySelector('[name=freshnessBasis]').value = '';
     fields.querySelector('[name=quantity]').focus();
