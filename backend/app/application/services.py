@@ -17,6 +17,7 @@ from .pantry_freshness import pantry_freshness
 from .planning_model import meal_slots, validate_slots, component, identifier, text, positive, iso_date
 from .meal_library import MealLibrary, copy_components, components_from_plan
 from .circles import CircleService
+from .nutrition import normalize_nutrition, weekly_nutrition, with_weekly_nutrition
 
 
 DASHBOARD_CARD_IDS = (
@@ -269,7 +270,7 @@ class HouseholdService:
             "schedule": lambda: self.repository.get_weekly_schedule(week_start),
             "feedback": lambda: self.repository.get_feedback(limit=25),
             "memories": self.repository.get_household_memory,
-            "mealPlan": lambda: self.repository.get_meal_plan(week_start),
+            "mealPlan": lambda: PlanningService(self.repository).get_plan_view(week_start),
             "mealPlanRules": self.repository.get_meal_plan_rules,
             "shoppingList": self.repository.get_shopping_list,
         }
@@ -413,6 +414,8 @@ class RecipePantryService:
         for field in CATEGORY_FIELDS.values():
             if field != "tags" and field in recipe:
                 clean[field] = normalize_categories(recipe[field], field)
+        if "nutrition" in recipe:
+            clean["nutrition"] = normalize_nutrition(recipe["nutrition"])
         return await self.repository.save_recipe(clean)
 
     async def archive_recipe(self, recipe_id: str) -> dict[str, Any]:
@@ -639,7 +642,16 @@ class PlanningService:
     async def get_meal_plan(self, week_start: str | None = None) -> dict[str, Any] | None:
         return await self.repository.get_meal_plan(week_start)
 
+    async def get_plan_view(self, week_start: str | None = None):
+        return with_weekly_nutrition(await self.get_meal_plan(week_start))
+
+    async def get_weekly_nutrition(self, week_start: str | None = None):
+        if week_start:
+            self._week(week_start)
+        return weekly_nutrition(await self.get_meal_plan(week_start))
+
     async def save_meal_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
+        plan = {key: value for key, value in plan.items() if key != "nutritionSummary"}
         if not plan.get("weekStart") or not isinstance(plan.get("entries"), list):
             raise ApplicationError("plan.weekStart and plan.entries are required")
         week = self._week(plan["weekStart"])
@@ -744,6 +756,8 @@ class PlanningService:
                             "servings": positive(value.get("servings"), "Servings", optional=True),
                             "notes": text(value.get("notes"), "Meal notes", optional=True),
                             "components": components, "completedAt": old.get("completedAt")})
+            if "nutrition" in value:
+                entries[-1]["nutrition"] = normalize_nutrition(value["nutrition"])
         entry_ids = {entry["id"] for entry in entries}
         if any(set(task["mealIds"]) - entry_ids for task in tasks):
             raise ApplicationError("Task meal link was not found in this plan")

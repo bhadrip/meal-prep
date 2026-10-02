@@ -1,0 +1,32 @@
+.nutrition-card { margin: 16px 0; padding: 20px; border: 1px solid #d4dfd7; border-radius: 16px; background: #f6faf6; color: #263b32; }
+.nutrition-card h3 { margin: 0 0 8px; }
+.nutrition-card > p { font-size: .85rem; margin-bottom: 12px; }
+.nutrition-details { margin-top: 12px; }
+.nutrition-details summary { cursor: pointer; font-size: .8rem; font-weight: 650; }
+.nutrition-profiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px; margin-top: 12px; }
+.nutrition-profile { min-width: 0; padding: 16px; border-radius: 12px; border: 1px solid #d4dfd7; background: #fff; color: #263b32; }
+.nutrition-profile h4 { margin: 0 0 8px; font-size: .95rem; }
+.nutrition-serving { font-size: .8rem; line-height: 1.6; margin: 0 0 15px; }
+.nutrition-macro { display: grid; grid-template-columns: 54px minmax(30px, 1fr) 64px; align-items: center; gap: 8px; font-size: .72rem; margin: 8px 0; }
+.nutrition-macro b { font-weight: 550; text-align: right; }
+.nutrition-segments { display: flex; gap: 4px; }
+.nutrition-segments i { height: 9px; flex: 1; border-radius: 3px; background: #edf0ed; }
+.nutrition-segments i.filled { background: #658773; }
+.nutrition-macro[data-nutrient="carbs"] i.filled { background: #c49a51; }
+.nutrition-macro[data-nutrient="fat"] i.filled { background: #a487aa; }
+.nutrition-macro[data-nutrient="fiber"] i.filled { background: #85a167; }
+.nutrition-profile h5 { margin: 18px 0 6px; font-size: .75rem; }
+.nutrition-profile ul { padding-left: 16px; font-size: .75rem; line-height: 1.6; }
+.nutrition-caption, .nutrition-basis, .nutrition-unknown { font-size: .72rem; line-height: 1.5; color: #64746b; }
+.nutrition-basis { margin-top: 14px; }
+.nutrition-editor-row { padding: 16px; border: 1px solid #d4dfd7; border-radius: 12px; margin: 12px 0; }
+.nutrition-editor-row .field { min-width: 0; }
+.nutrition-numbers { border-bottom: 1px solid #d4dfd7; padding-bottom: 10px; margin: 12px 0; }
+.nutrition-numbers p { font-size: .75rem; line-height: 1.5; }
+.nutrition-numbers dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 12px; margin: 12px 0 0; }
+.nutrition-numbers dt { font-size: .7rem; color: #64746b; }
+.nutrition-numbers dd { margin: 4px 0 0; font-size: .95rem; font-weight: 650; }
+.weekly-nutrition-numbers { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px; margin: 16px 0; }
+.weekly-nutrition-numbers dt { font-size: .75rem; }
+.weekly-nutrition-numbers dd { margin: 5px 0; font-weight: 700; font-size: 1.1rem; }
+.weekly-nutrition-numbers small { font-size: .65rem; color: #64746b; }

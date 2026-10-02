@@ -10,6 +10,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict
 
+from ..application.nutrition import weekly_nutrition, with_weekly_nutrition
 from ..auth import SupabaseTokenVerifier
 from ..config import MCP_AUTH_SCOPES, get_settings
 from ..container import services_for_request
@@ -22,7 +23,7 @@ STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 def mcp_app_html() -> str:
     """MCP resources are self-contained because hosts need not allow static asset URLs."""
     html = (STATIC_DIR / "mcp-app.html").read_text(encoding="utf-8")
-    for asset in ("recipe-graph", "recipe-browser"):
+    for asset in ("recipe-graph", "recipe-browser", "nutrition"):
         css = (STATIC_DIR / f"{asset}.css").read_text(encoding="utf-8")
         script = (STATIC_DIR / f"{asset}.js").read_text(encoding="utf-8")
         html = html.replace(f'<link rel="stylesheet" href="/static/{asset}.css" />', f"<style>{css}</style>").replace(
@@ -280,6 +281,7 @@ async def get_recipe(recipe_id: str) -> dict[str, Any]:
 async def save_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     """Create or update a household recipe. Category lists: cuisines, eating_goals, meal_types, diets, tags.
     Use kind recipe or ready_food. Ready food has heating/serving instructions and no ingredient demand.
+    Optional nutrition uses the same {basis, profiles} per-serving schema as plan entries, including numeric amounts, portion and valueType. Omitted nutrition retains saved values; null clears it.
     Omitted typed categories retain saved values. Use totalMinutes for total cooking time.
     """
     return await services_for_request().food.save_recipe(recipe)
@@ -368,7 +370,7 @@ async def apply_pantry_evidence(evidence_id: str, observed_items: list[dict[str,
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_meal_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    """Save an approved plan: weekStart (Monday), entries [{id?, date, slot: household slot ID, meal, servings?, notes?, components:[{id?, name, quantity?, unit?, source: ready|cook|task|external, action: cook|heat|serve, recipeId?, pantryItemId?, taskId?, notes?}]}], tasks [{id?, date?, title, notes?, recipeId?, servings?, mealIds?:[]}]. Tasks need no slot or meal link. Supply stable UUIDs when linking new items. Cook components require recipeId; task components require taskId. Saving never changes stock."""
+    """Save an approved plan: weekStart (Monday), entries [{id?, date, slot: household slot ID, meal, servings?, notes?, components:[{id?, name, quantity?, unit?, source: ready|cook|task|external, action: cook|heat|serve, recipeId?, pantryItemId?, taskId?, notes?}]}], tasks [{id?, date?, title, notes?, recipeId?, servings?, mealIds?:[]}]. Optional entry nutrition: {basis: text, profiles: [{name, serving: plate instructions, macros: {protein, carbs, fat, fiber: unknown|low|moderate|high}, micronutrients: [{nutrient, source: food}]}]}. Optional profile portion (required with numbers), valueType: estimated|label, amounts: {calories: kcal number, protein/carbs/fat/fiber: gram numbers}; micronutrients may include amount and unit: g|mg|mcg. Numbers must be finite nonnegative with at most 3 decimals. Values are per stated portion, never daily targets; omitted data is unknown. Include protein additions in meal components too. Tasks need no slot or meal link. Supply stable UUIDs when linking new items. Cook components require recipeId; task components require taskId. Saving never changes stock."""
     return await services_for_request().planning.save_meal_plan(plan)
 
 
@@ -425,7 +427,8 @@ async def complete_plan_item(week_start: str, kind: str, item_id: str,
                              inputs: list[dict[str, Any]] | None = None,
                              outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Record a task done or a meal eaten. Inputs [{itemId, quantity}] are actual amounts USED in the pantry item's saved unit; outputs [{name, quantity, unit, storageLocation?}] create prepared stock. Ask for unknown actual amounts. Ordinary tasks can omit both. Atomic and safe to retry: each item completes once."""
-    return await services_for_request().planning.complete_item(week_start, kind, item_id, inputs, outputs)
+    result = await services_for_request().planning.complete_item(week_start, kind, item_id, inputs, outputs)
+    return {**result, "plan": with_weekly_nutrition(result["plan"])}
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
@@ -450,7 +453,13 @@ async def receive_shopping_item(item_id: str, quantity: float, unit: str, storag
 async def get_meal_plan(week_start: str | None = None) -> dict[str, Any]:
     """Return the meal plan for a week, or the latest plan when no week is supplied."""
     plan = await services_for_request().planning.get_meal_plan(week_start)
-    return {"plan": plan}
+    return {"plan": plan, "nutritionSummary": weekly_nutrition(plan)}
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_weekly_nutrition(week_start: str | None = None) -> dict[str, Any]:
+    """Totals of known numbers for one stated plate per variation per planned meal, with meal coverage for each nutrient. Partial data is not a complete weekly total or household consumption."""
+    return await services_for_request().planning.get_weekly_nutrition(week_start)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
@@ -678,7 +687,7 @@ async def render_onboarding() -> dict[str, Any]:
 )
 async def render_meal_plan(week_start: str | None = None) -> dict[str, Any]:
     """Render the final meal plan. Call get_meal_plan first when reasoning over the plan."""
-    plan = await services_for_request().planning.get_meal_plan(week_start)
+    plan = await services_for_request().planning.get_plan_view(week_start)
     return {"kind": "meal_plan", "plan": plan, "household": await services_for_request().household.get_context()}
 
 
