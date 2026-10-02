@@ -9,6 +9,7 @@ from .services import (
     RecipePantryService,
     ShoppingService,
 )
+from .circles import CircleService
 
 __all__ = [
     "FeedbackService",
@@ -18,4 +19,5 @@ __all__ = [
     "PlanningService",
     "RecipePantryService",
     "ShoppingService",
+    "CircleService",
 ]

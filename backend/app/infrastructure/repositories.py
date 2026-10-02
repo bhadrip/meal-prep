@@ -63,6 +63,46 @@ def _repository_error(path: str, exc: httpx.HTTPError | ValueError) -> Repositor
 
 
 class SupabaseRepository:
+    async def circle_list(self):
+        return await self.rpc("list_my_circles")
+
+    async def circle_create(self, name):
+        return await self.rpc("create_circle", {"requested_name": name})
+
+    async def circle_invite(self, circle_id, email):
+        return await self.rpc("invite_circle_friend", {"requested_circle_id": circle_id, "requested_email": email})
+
+    async def circle_respond(self, circle_id, accept):
+        return await self.rpc("respond_circle_invitation", {"requested_circle_id": circle_id, "requested_accept": accept})
+
+    async def circle_remove_friend(self, circle_id, user_id):
+        return await self.rpc("remove_circle_member", {"requested_circle_id": circle_id, "requested_user_id": user_id})
+
+    async def circle_leave(self, circle_id):
+        return await self.rpc("leave_circle", {"requested_circle_id": circle_id})
+
+    async def circle_feed(self, limit=51, offset=0, kind=None):
+        return await self.rpc("list_shared_with_me", {"result_limit": limit, "result_offset": offset, "requested_kind": kind})
+
+    async def circle_get_post(self, share_id):
+        return await self.rpc("get_circle_share", {"requested_share_id": share_id})
+
+    async def circle_share_week(self, circle_id, week_start):
+        return await self.rpc("share_week_to_circle", {"requested_circle_id": circle_id, "requested_week_start": week_start})
+
+    async def circle_share_recipe(self, circle_id, recipe_id):
+        return await self.rpc("share_recipe_to_circle", {"requested_circle_id": circle_id, "requested_recipe_id": recipe_id})
+
+    async def circle_comment(self, share_id, body, target_type, target_id):
+        return await self.rpc("comment_on_circle_share", {"requested_share_id": share_id, "requested_body": body,
+                                                          "requested_target_type": target_type, "requested_target_id": target_id})
+
+    async def circle_save_recipe(self, share_id, recipe_id):
+        return await self.rpc("save_circle_recipe", {"requested_share_id": share_id, "requested_recipe_id": recipe_id})
+
+    async def circle_revoke_post(self, share_id):
+        return await self.rpc("revoke_circle_share", {"requested_share_id": share_id})
+
     async def search_meals(self, query, limit, offset):
         await self.household_id()
         return await self.rpc("search_meals", {"search_text": query, "result_limit": limit, "result_offset": offset})
@@ -620,6 +660,163 @@ class SupabaseRepository:
 class DemoRepository:
     """Deterministic local state used when Supabase is not configured."""
 
+    user_id = "demo"
+
+    def as_user(self, user_id: str):
+        from copy import copy
+        other = copy(self)
+        other.user_id = user_id
+        other._recipes = deepcopy(self._recipes)
+        return other
+
+    async def circle_list(self):
+        return deepcopy([{"id": row["id"], "name": row["name"], "ownerId": row["ownerId"],
+                          "members": [{"userId": user, "email": user, "status": status} for user, status in row["members"].items()] if row["ownerId"] == self.user_id else [],
+                          "myStatus": row["members"].get(self.user_id)}
+                         for row in self._circles.values() if self.user_id in row["members"]])
+
+    async def circle_create(self, name):
+        row = {"id": str(uuid4()), "name": name, "ownerId": self.user_id, "members": {self.user_id: "accepted"}}
+        self._circles[row["id"]] = row
+        return deepcopy(row)
+
+    async def circle_invite(self, circle_id, email):
+        circle = self._circles.get(circle_id)
+        if not circle or circle["ownerId"] != self.user_id:
+            raise RepositoryError("Circle invitation is not available")
+        if email in circle["members"]:
+            raise RepositoryError("Friend is already invited or a member")
+        circle["members"][email] = "pending"
+        return {"circleId": circle_id, "email": email, "status": "pending"}
+
+    async def circle_respond(self, circle_id, accept):
+        circle = self._circles.get(circle_id)
+        if not circle or circle["members"].get(self.user_id) != "pending":
+            raise RepositoryError("Circle invitation was not found")
+        if accept:
+            circle["members"][self.user_id] = "accepted"
+        else:
+            del circle["members"][self.user_id]
+        return {"circleId": circle_id, "accepted": accept}
+
+    async def circle_remove_friend(self, circle_id, user_id):
+        circle = self._circles.get(circle_id)
+        if not circle or circle["ownerId"] != self.user_id or user_id == self.user_id or user_id not in circle["members"]:
+            raise RepositoryError("Circle member was not found")
+        del circle["members"][user_id]
+        return {"removed": True}
+
+    async def circle_leave(self, circle_id):
+        circle = self._circles.get(circle_id)
+        if not circle or circle["ownerId"] == self.user_id or circle["members"].get(self.user_id) != "accepted":
+            raise RepositoryError("Circle is not available to leave")
+        del circle["members"][self.user_id]
+        return {"left": True}
+
+    def _circle_access(self, circle_id):
+        circle = self._circles.get(circle_id)
+        if not circle or circle["members"].get(self.user_id) != "accepted":
+            raise RepositoryError("Circle is not available")
+        return circle
+
+    async def circle_feed(self, limit=51, offset=0, kind=None):
+        rows = [self._circle_summary(row) for row in reversed(list(self._circle_posts.values()))
+                if row["revokedAt"] is None and self._circles[row["circleId"]]["members"].get(self.user_id) == "accepted"
+                and (kind is None or row["kind"] == kind)]
+        return deepcopy(rows[offset:offset + limit])
+
+    @staticmethod
+    def _circle_summary(row):
+        return {key: deepcopy(row[key]) for key in ("id", "circleId", "circleName", "kind", "createdBy", "createdByName", "createdAt", "snapshot")}
+
+    async def circle_get_post(self, share_id):
+        row = self._circle_posts.get(share_id)
+        if not row or row["revokedAt"] or self._circles[row["circleId"]]["members"].get(self.user_id) != "accepted":
+            raise RepositoryError("Shared item was not found")
+        recipes = row["snapshot"].get("recipes") or [row["snapshot"].get("recipe")]
+        return {**self._circle_summary(row), "comments": deepcopy(self._circle_comments.get(share_id, [])),
+                "savedRecipeIds": {recipe["id"]: saved["id"] for recipe in recipes if recipe
+                                   for saved in self._recipes if saved.get("sourceSnapshot", {}).get("sourceRecipeId") == recipe["id"]}}
+
+    @staticmethod
+    def _circle_recipe_snapshot(recipe):
+        fields = ("id", "title", "kind", "description", "servings", "active_minutes", "total_minutes",
+                  "tags", "cuisines", "eating_goals", "meal_types", "diets", "ingredients", "instructions", "source_url")
+        return {key: deepcopy(recipe[key]) for key in fields if key in recipe}
+
+    async def _circle_post(self, circle_id, kind, snapshot):
+        circle = self._circle_access(circle_id)
+        row = {"id": str(uuid4()), "circleId": circle_id, "circleName": circle["name"], "kind": kind,
+               "createdBy": self.user_id, "createdByName": self.user_id.split('@')[0],
+               "createdAt": datetime.now(UTC).isoformat(), "snapshot": deepcopy(snapshot), "revokedAt": None}
+        self._circle_posts[row["id"]] = row
+        return self._circle_summary(row)
+
+    async def circle_share_week(self, circle_id, week_start):
+        self._circle_access(circle_id)
+        plan = await self.get_meal_plan(week_start)
+        if not plan:
+            raise RepositoryError("Weekly plan was not found")
+        entries = []
+        recipe_ids = set()
+        task_recipes = {task.get("id"): task.get("recipeId") for task in plan.get("tasks", [])}
+        for original in plan.get("entries", []):
+            entry = {key: deepcopy(original.get(key)) for key in ("id", "date", "slot", "slotName", "meal", "servings", "notes")}
+            entry["components"] = []
+            for original_component in original.get("components") or []:
+                component = {key: deepcopy(original_component.get(key)) for key in
+                             ("name", "quantity", "unit", "source", "action")}
+                component["recipeId"] = original_component.get("recipeId") or task_recipes.get(original_component.get("taskId"))
+                if component["recipeId"]:
+                    recipe_ids.add(component["recipeId"])
+                entry["components"].append(component)
+            entries.append(entry)
+        recipes = [self._circle_recipe_snapshot(recipe) for recipe in self._recipes if recipe["id"] in recipe_ids]
+        return await self._circle_post(circle_id, "week", {"weekStart": week_start, "entries": entries, "recipes": recipes})
+
+    async def circle_share_recipe(self, circle_id, recipe_id):
+        self._circle_access(circle_id)
+        recipe = await self.get_recipe(recipe_id)
+        if not recipe:
+            raise RepositoryError("Recipe was not found")
+        return await self._circle_post(circle_id, "recipe", {"recipe": self._circle_recipe_snapshot(recipe)})
+
+    async def circle_comment(self, share_id, body, target_type, target_id):
+        row = await self.circle_get_post(share_id)
+        recipes = row["snapshot"].get("recipes") or [row["snapshot"].get("recipe")]
+        valid = (target_type == "post" and not target_id or
+                 target_type == "meal" and row["kind"] == "week" and any(entry["id"] == target_id for entry in row["snapshot"]["entries"]) or
+                 target_type == "recipe" and any(recipe and recipe["id"] == target_id for recipe in recipes))
+        if not valid:
+            raise RepositoryError("Comment target was not found")
+        comment = {"id": str(uuid4()), "authorId": self.user_id, "authorName": self.user_id.split('@')[0], "body": body, "targetType": target_type,
+                   "targetId": target_id, "createdAt": datetime.now(UTC).isoformat()}
+        self._circle_comments.setdefault(share_id, []).append(comment)
+        return deepcopy(comment)
+
+    async def circle_save_recipe(self, share_id, recipe_id):
+        row = await self.circle_get_post(share_id)
+        recipes = row["snapshot"].get("recipes") or [row["snapshot"].get("recipe")]
+        recipe = next((item for item in recipes if item and item["id"] == recipe_id), None)
+        if not recipe:
+            raise RepositoryError("Shared recipe was not found")
+        key = (self.user_id, share_id, recipe_id)
+        existing = next((item for item in self._recipes if item.get("sourceSnapshot", {}).get("sourceRecipeId") == recipe_id), None)
+        if existing:
+            self._circle_saves[key] = existing["id"]
+            return {"recipeId": existing["id"], "alreadySaved": True}
+        saved = await self.save_recipe({**recipe, "id": str(uuid4()), "sourceType": "shared",
+                                       "sourceSnapshot": {"circleShareId": share_id, "sourceRecipeId": recipe_id}})
+        self._circle_saves[key] = saved["id"]
+        return {"recipeId": saved["id"], "alreadySaved": False}
+
+    async def circle_revoke_post(self, share_id):
+        row = self._circle_posts.get(share_id)
+        if not row or row["createdBy"] != self.user_id:
+            raise RepositoryError("Shared item was not found")
+        row["revokedAt"] = datetime.now(UTC).isoformat()
+        return {"revoked": True}
+
     async def search_meals(self, query, limit, offset):
         rows = [deepcopy(row) for row in self._meals.values() if not row.get("archivedAt")
                 and (not query or query.casefold() in str([row["name"], row["notes"], row["components"]]).casefold())]
@@ -644,6 +841,10 @@ class DemoRepository:
         return deepcopy(row)
 
     def __init__(self) -> None:
+        self._circles = {}
+        self._circle_posts = {}
+        self._circle_comments = {}
+        self._circle_saves = {}
         self._context = deepcopy(self._context)
         self._pantry = deepcopy(self._pantry)
         self._shopping_list = deepcopy(self._shopping_list)

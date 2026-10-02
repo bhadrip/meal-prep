@@ -73,6 +73,32 @@ def test_http_surface_serves_website_and_mcp(client: TestClient):
     login_script = client.get("/static/login.js")
     assert login_script.status_code == 200
     assert "shouldCreateUser: true" in login_script.text
+
+
+def test_direct_mcp_can_discover_and_discuss_friend_shares(client: TestClient):
+    def call(name, arguments, request_id):
+        return rpc(client, "tools/call", {"name": name, "arguments": arguments}, request_id)
+
+    names = {tool["name"] for tool in rpc(client, "tools/list", {}, 800)["tools"]}
+    assert {"list_shared_with_me", "get_shared_item", "save_circle_recipe", "share_week_to_circle"} <= names
+    circle = call("create_circle", {"name": "MCP friends"}, 801)["structuredContent"]
+    week = call("get_meal_plan", {}, 802)["structuredContent"]["plan"]["weekStart"]
+    shared = call("share_week_to_circle", {"circle_id": circle["id"], "week_start": week}, 803)["structuredContent"]
+    feed = call("list_shared_with_me", {}, 804)["structuredContent"]["items"]
+    assert any(item["id"] == shared["id"] for item in feed)
+    detail = call("get_shared_item", {"share_id": shared["id"]}, 805)["structuredContent"]
+    assert detail["snapshot"]["weekStart"] == week
+    assert detail["snapshot"]["entries"]
+    bad = call("comment_on_circle_share", {"share_id": shared["id"], "body": "Question", "target_type": "meal", "target_id": "00000000-0000-0000-0000-000000000099"}, 806)
+    assert bad["isError"] is True
+    assert not call("comment_on_circle_share", {"share_id": shared["id"], "body": "What worked?"}, 807).get("isError")
+    recipe_id = "11111111-1111-1111-1111-111111111111"
+    recipe_share = call("share_recipe_to_circle", {"circle_id": circle["id"], "recipe_id": recipe_id}, 808)["structuredContent"]
+    only_recipes = call("list_shared_with_me", {"kind": "recipe", "limit": 1}, 811)["structuredContent"]
+    assert only_recipes["items"][0]["id"] == recipe_share["id"]
+    saved = call("save_circle_recipe", {"share_id": recipe_share["id"], "recipe_id": recipe_id}, 809)["structuredContent"]
+    assert saved["recipeId"] != recipe_id
+    assert call("save_circle_recipe", {"share_id": recipe_share["id"], "recipe_id": recipe_id}, 810)["structuredContent"]["alreadySaved"]
     assert client.get("/invite").status_code == 200
 
 

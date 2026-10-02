@@ -8,6 +8,7 @@ from .application import (
     PlanningService,
     RecipePantryService,
     ShoppingService,
+    CircleService,
 )
 from .infrastructure.repositories import repository_for_request
 
@@ -22,4 +23,5 @@ def services_for_request(access_token: str | None = None) -> MealPrepServices:
         feedback=FeedbackService(repository),
         memory=MemoryService(repository),
         shopping=ShoppingService(repository),
+        circles=CircleService(repository),
     )

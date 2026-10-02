@@ -337,4 +337,7 @@ reviewing the visible observations with the user.
 Store availability, prices, carts, and ordering require a separately connected
 commerce tool. If none is available, save the agreed shopping list without
 claiming to have checked availability or placed an order.
+# Friend circles and shared inspiration
+
+When planning a meal week, `list_shared_with_me` can show weeks and recipes that friends have explicitly shared in accepted private circles. Use `get_shared_item` to read a share and its comments. These are immutable snapshots: later edits to a friend's plan or recipe do not appear until they share again. Treat shared food as inspiration; do not copy an entire friend's plan into the household. `save_circle_recipe` makes an independent recipe or ready food copy in the caller's active household when requested. `comment_on_circle_share` can ask about a whole share, a meal, or a recipe. Only call `share_week_to_circle` or `share_recipe_to_circle` when the user explicitly wants to publish to a circle. A week share includes every meal slot and referenced recipe or ready food, but does not expose pantry stock, prep tasks, or the rest of the recipe library. Circle invitations and new activity use the in-app notification inbox; there is no email or push path.
 

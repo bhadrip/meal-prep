@@ -146,6 +146,71 @@ async def list_notifications(services: WebServices) -> dict:
     return {"items": rows, "unreadCount": sum(row["read_at"] is None for row in rows)}
 
 
+@router.get("/api/circles")
+async def list_circles(services: WebServices) -> dict:
+    return await services.circles.list_circles()
+
+
+@router.post("/api/circles")
+async def create_circle(payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.circles.create_circle(payload.get("name"))
+
+
+@router.post("/api/circles/{circle_id}/invitations")
+async def invite_circle_friend(circle_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.circles.invite_friend(str(circle_id), payload.get("email"))
+
+
+@router.post("/api/circles/{circle_id}/invitation-response")
+async def respond_circle_invitation(circle_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.circles.respond_invitation(str(circle_id), payload.get("accept") is True)
+
+
+@router.delete("/api/circles/{circle_id}/members/{user_id}")
+async def remove_circle_friend(circle_id: UUID, user_id: str, services: WebServices) -> dict:
+    return await services.circles.remove_friend(str(circle_id), user_id)
+
+
+@router.post("/api/circles/{circle_id}/leave")
+async def leave_circle(circle_id: UUID, services: WebServices) -> dict:
+    return await services.circles.leave_circle(str(circle_id))
+
+
+@router.get("/api/circle-shares")
+async def list_circle_shares(services: WebServices, limit: int = 50, offset: int = 0, kind: str | None = None) -> dict:
+    return await services.circles.list_shared_with_me(limit, offset, kind)
+
+
+@router.get("/api/circle-shares/{share_id}")
+async def get_circle_share(share_id: UUID, services: WebServices) -> dict:
+    return await services.circles.get_shared_item(str(share_id))
+
+
+@router.post("/api/circles/{circle_id}/weeks")
+async def share_week_to_circle(circle_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.circles.share_week(str(circle_id), payload.get("weekStart"))
+
+
+@router.post("/api/circles/{circle_id}/recipes")
+async def share_recipe_to_circle(circle_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.circles.share_recipe(str(circle_id), payload.get("recipeId"))
+
+
+@router.post("/api/circle-shares/{share_id}/comments")
+async def comment_on_circle_share(share_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.circles.comment(str(share_id), payload.get("body"), payload.get("targetType", "post"), payload.get("targetId"))
+
+
+@router.post("/api/circle-shares/{share_id}/recipes/{recipe_id}/save")
+async def save_circle_recipe(share_id: UUID, recipe_id: UUID, services: WebServices) -> dict:
+    return await services.circles.save_shared_recipe(str(share_id), str(recipe_id))
+
+
+@router.delete("/api/circle-shares/{share_id}")
+async def revoke_circle_share(share_id: UUID, services: WebServices) -> dict:
+    return await services.circles.revoke_share(str(share_id))
+
+
 @router.patch("/api/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: UUID, services: WebServices) -> dict:
     repository = services.household.repository
