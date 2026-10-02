@@ -6,7 +6,7 @@ const recipe = {
   instructions: ['Cook lentils', 'Serve warm'], tags: ['weeknight'], servings: 4,
 };
 
-async function host(page, standalone = false) {
+async function host(page, standalone = false, live = false) {
   const frameUrl = standalone ? new URL('/static/mcp-app.html', test.info().project.use.baseURL).href.replace('127.0.0.1', 'localhost') : '/static/mcp-app.html';
   if (standalone) {
     const response = await page.request.post('/mcp', { headers: { Accept: 'application/json, text/event-stream' }, data: {
@@ -23,7 +23,7 @@ async function host(page, standalone = false) {
         window.calls = [];
         window.ready = false;
         window.revoked = false;
-        window.addEventListener('message', (event) => {
+        window.addEventListener('message', async (event) => {
           const message = event.data;
           if (message?.jsonrpc !== '2.0' || !message.method) return;
           if (message.method === 'ui/notifications/initialized') { window.ready = true; return; }
@@ -33,6 +33,16 @@ async function host(page, standalone = false) {
           }
           if (message.method !== 'tools/call') return;
           window.calls.push(message.params);
+          if (${JSON.stringify(live)}) {
+            const response = await fetch('/mcp', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+              body: JSON.stringify({ jsonrpc: '2.0', id: message.id, method: 'tools/call', params: message.params }),
+            });
+            const payload = await response.json();
+            event.source.postMessage({ ...payload, id: message.id }, '*');
+            return;
+          }
           const name = message.params.name;
           let result = {};
           if (name === 'get_recipe') result = ${JSON.stringify(recipe)};
@@ -250,4 +260,41 @@ test('MCP views explain empty and unavailable data', async ({ page }) => {
     },
   }, sections: {} });
   await expect(frame.locator('#root')).toContainText('All cards are hidden');
+});
+
+
+test('direct MCP client receives shared workflow and persists pantry use without a plugin', async ({ page, request }) => {
+  let requestId = 950;
+  async function call(method, params) {
+    const response = await request.post('/mcp', {
+      headers: { Accept: 'application/json, text/event-stream' },
+      data: { jsonrpc: '2.0', id: requestId++, method, params },
+    });
+    expect(response.ok()).toBeTruthy();
+    return (await response.json()).result;
+  }
+  const initialized = await call('initialize', {
+    protocolVersion: '2025-06-18', capabilities: {},
+    clientInfo: { name: 'browser-without-plugin', version: '1.0' },
+  });
+  expect(initialized.instructions).toContain('## Required sequence');
+  expect(initialized.instructions).toContain('## Client compatibility');
+  const created = await call('tools/call', { name: 'update_pantry_item', arguments: {
+    item: { name: 'Direct connection chickpeas', quantity: 2, unit: 'cups' },
+  } });
+  const item = created.structuredContent;
+  const snapshot = await call('tools/call', { name: 'render_household_snapshot', arguments: {} });
+  const frame = await host(page, false, true);
+  await show(page, snapshot.structuredContent);
+  const row = frame.locator('.pantry-row').filter({ hasText: 'Direct connection chickpeas' });
+  await row.getByRole('button', { name: 'Use', exact: true }).click();
+  await frame.locator('#pantry-use-form input[name="quantity"]').fill('0.5');
+  await frame.locator('#pantry-use-form input[name="mealTitle"]').fill('Tuesday dinner');
+  await frame.getByRole('button', { name: 'Record use' }).click();
+  await expect(row).toContainText('1.5 cups left');
+  const saved = await call('tools/call', { name: 'get_pantry', arguments: {} });
+  expect(saved.structuredContent.items.find((value) => value.id === item.id).quantity).toBe(1.5);
+  const refreshed = await call('tools/call', { name: 'render_household_snapshot', arguments: {} });
+  await show(page, refreshed.structuredContent);
+  await expect(row).toContainText('1.5 cups left');
 });

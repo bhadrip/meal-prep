@@ -356,3 +356,13 @@ evaluate a rule language or generate meals.
 - The plugin stores plans and shopping lists but never places orders. Commerce remains a separate, explicitly confirmed tool flow.
 - The service does not provide medical guidance or fabricate food-safety dates.
 - Recipe shares publish a fixed, allowlisted snapshot at `/s/{token}`. Anyone with the active link can view it; signed-in users can save an independent copy. Share creation requires a household recipe, and the URL is returned only once. The creator can list and revoke links. Shares omit cooking feedback and household details.
+
+### Shared MCP workflow instructions
+
+`app/transports/meal-prep-instructions.md` is the canonical planning workflow.
+The server returns it in the MCP `initialize` response, including for direct
+OAuth connections without the plugin. The plugin skill is only an entry point.
+Edit the server document when changing workflow guidance. MCP Apps enhance
+presentation; clients without app rendering can use structured results and
+complete onboarding conversationally. Photo archival still requires a supported
+ChatGPT attachment; moving instructions does not add other clients' upload formats.
