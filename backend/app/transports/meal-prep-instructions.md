@@ -396,3 +396,12 @@ with a named toggle (Standard first when available). Switching changes the view
 only and does not edit saved portions or nutrients. Direct clients can make the
 same choice with the optional `variation` argument on `get_recipe` and
 `get_weekly_nutrition`; names match case-insensitively and unknown names fail.
+
+Recipe variations are fully configurable: names such as Tasty, Decadent, Heart
+healthy or any household-chosen name are not a fixed enum. When adding a recipe,
+use `nutrition.profiles` to save each variation’s `name` and `serving` (the
+ingredient/preparation/serving changes). Nutrition fields and `basis` may be
+omitted for variation-only records. A basis is required once any nutrient
+guidance, food source or numeric amount is provided. Do not infer nutrient data
+from variation names. The editor starts with no variations; saved choices alone
+populate the toggle, and removing all variations clears it.

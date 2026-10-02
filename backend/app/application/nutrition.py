@@ -23,7 +23,7 @@ def normalize_nutrition(value):
         return None
     if not isinstance(value, dict):
         raise ApplicationError("Nutrition must be an object")
-    basis = text(value.get("basis"), "Nutrition basis", 1000)
+    basis = text(value.get("basis"), "Nutrition basis", 1000, optional=True)
     profiles = value.get("profiles")
     if not isinstance(profiles, list) or not 1 <= len(profiles) <= 8:
         raise ApplicationError("Nutrition needs 1–8 serving variations")
@@ -73,6 +73,10 @@ def normalize_nutrition(value):
                 raise ApplicationError("Nutrition valueType must be estimated or label")
             result[-1].update(portion=portion, valueType=kind,
                               amounts={key: numbers.get(key) for key in AMOUNTS})
+    assessed = any(profile["micronutrients"] or any(level != "unknown" for level in profile["macros"].values())
+                   or any(number is not None for number in profile.get("amounts", {}).values()) for profile in result)
+    if assessed and not basis:
+        raise ApplicationError("Nutrition basis is required when nutrient guidance or amounts are recorded")
     return {"basis": basis, "profiles": result}
 
 

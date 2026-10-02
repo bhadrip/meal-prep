@@ -1,6 +1,8 @@
 const {test, expect} = require('@playwright/test');
 const week = '2045-02-06';
 async function choose(row, nutrient, value) {
+  const nutrition = row.locator('details.variation-nutrition-editor');
+  if (await nutrition.count() && !(await nutrition.getAttribute('open') !== null)) await nutrition.locator('summary').click();
   const parent = row.locator(`input[name$="-${nutrient}"]`).locator('..');
   await parent.locator('.choice-trigger').click();
   await parent.locator(`[data-choice-value="${value}"]`).click();
@@ -19,10 +21,10 @@ test('serving variations save macro amounts and food sources, reject invalid amo
   await editor.getByLabel('Food or dish', {exact: true}).fill('Noodles, tofu, edamame and broccoli');
   await editor.getByLabel('Nutrition basis / assumptions').fill('Ingredient estimate, portions unverified');
   for (const [name, serving, protein, carbs] of [['Standard', 'Mild steamed noodles', 'low', 'high'], ['Protein-heavy', 'Smaller noodle portion, add tofu and gochujang', 'high', 'moderate']]) {
-    await editor.getByRole('button', {name: 'Add serving variation'}).click();
+    await editor.getByRole('button', {name: 'Add variation'}).click();
     const row = editor.locator('[data-nutrition-profile]').last();
     await row.getByLabel('Variation name').fill(name);
-    await row.getByLabel('How to serve this plate').fill(serving);
+    await row.getByLabel('What changes in this variation?').fill(serving);
     await choose(row, 'protein', protein); await choose(row, 'carbs', carbs);
   }
   const proteinPlate = editor.locator('[data-nutrition-profile]').last();
@@ -157,10 +159,11 @@ test('recipe nutrition edits persist, reject invalid units, and clear without ch
   await page.getByRole('button',{name:'Edit recipe',exact:true}).click();
   const editor = page.locator('#editor-dialog');
   await editor.getByLabel('Nutrition basis / assumptions').fill('Ingredient estimate');
-  await editor.getByRole('button',{name:'Add serving variation'}).click();
+  await editor.getByRole('button',{name:'Add variation'}).click();
   const row = editor.locator('[data-nutrition-profile]');
   await row.getByLabel('Variation name').fill('Base serving');
-  await row.getByLabel('How to serve this plate').fill('Serve one bowl');
+  await row.getByLabel('What changes in this variation?').fill('Serve one bowl');
+  await row.locator('.variation-nutrition-editor summary').click();
   await row.getByLabel('Portion for numeric values').fill('1 bowl, one quarter of recipe');
   await row.getByLabel('Protein (g)',{exact:true}).fill('28');
   await row.getByLabel('Calories (kcal)',{exact:true}).fill('450');
@@ -201,4 +204,44 @@ test('recipe variation toggle shows exactly one plate and leaves saved numbers u
   expect((await (await page.request.get(`/api/recipes/${recipe.id}`)).json()).nutrition).toEqual(recipe.nutrition);
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('adding a recipe accepts custom variations without nutrition, shows only saved choices, and hides removed toggles', async ({page}) => {
+  await page.goto('/app?view=recipes');
+  await page.getByRole('button',{name:'Add recipe',exact:true}).click();
+  const editor=page.locator('#editor-dialog');
+  const title=`Custom variations ${Date.now()}`;
+  await editor.getByLabel('Recipe name',{exact:true}).fill(title);
+  const notes = ['Toast sesame seeds and finish with lime.', 'Add butter and a richer sauce.', 'Use olive oil and extra vegetables.'];
+  for (const [index,name] of ['Tasty','Decadent','Heart healthy'].entries()) {
+    await editor.getByRole('button',{name:'Add variation',exact:true}).click();
+    const row=editor.locator('[data-nutrition-profile]').last();
+    await row.getByLabel('Variation name').fill(name);
+    await row.getByLabel('What changes in this variation?').fill(notes[index]);
+    await expect(row.locator('.variation-nutrition-editor')).not.toHaveAttribute('open','');
+  }
+  await editor.locator('#dialog-save').click();
+  await expect(editor).toBeHidden();
+  const card=page.locator('.recipe-nutrition');
+  await expect(card.getByRole('button',{name:'Tasty',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(card.getByRole('button',{name:'Standard',exact:true})).toHaveCount(0);
+  await card.getByRole('button',{name:'Decadent',exact:true}).click();
+  await expect(card.locator('.nutrition-profile:visible')).toContainText(notes[1]);
+  await expect(card.locator('.nutrition-profile:visible')).toHaveCount(1);
+  await expect(card.locator('.nutrition-macros')).toHaveCount(0);
+  await page.reload();
+  await card.getByRole('button',{name:'Heart healthy',exact:true}).click();
+  await expect(card.locator('.nutrition-profile:visible')).toContainText(notes[2]);
+  await page.getByRole('button',{name:'Edit recipe',exact:true}).click();
+  await editor.getByLabel('Variation name').last().fill('Tasty');
+  await editor.locator('#dialog-save').click();
+  await expect(editor.locator('#dialog-error')).toContainText('unique');
+  await editor.getByLabel('Variation name').last().fill('Heart healthy');
+  while (await editor.getByRole('button',{name:'Remove variation',exact:true}).count()) {
+    await editor.getByRole('button',{name:'Remove variation',exact:true}).first().click();
+  }
+  await editor.locator('#dialog-save').click();
+  await expect(editor).toBeHidden();
+  await expect(card.locator('.nutrition-toggle')).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
 });

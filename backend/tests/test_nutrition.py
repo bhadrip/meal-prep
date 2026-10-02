@@ -173,3 +173,28 @@ async def test_direct_clients_select_one_variation_without_mutating_saved_data()
             await planning.get_weekly_nutrition(WEEK, invalid)
     assert (await food.get_recipe(recipe['id']))['nutrition'] == recipe['nutrition']
     assert await planning.get_meal_plan(WEEK) == saved
+
+
+@pytest.mark.asyncio
+async def test_recipe_variations_need_no_nutrition_and_reject_duplicate_names():
+    from app.application.services import RecipePantryService
+    service = RecipePantryService(DemoRepository())
+    guide = {'profiles': [
+        {'name': 'Tasty', 'serving': 'Toast the sesame seeds and finish with lime.'},
+        {'name': 'Decadent', 'serving': 'Stir in butter and a richer sauce.'},
+        {'name': 'Heart healthy', 'serving': 'Use the household’s olive oil and vegetable adaptation.'}]}
+    saved = await service.save_recipe({'title': 'Configurable noodle recipe', 'nutrition': guide})
+    assert [p['name'] for p in saved['nutrition']['profiles']] == ['Tasty', 'Decadent', 'Heart healthy']
+    assert saved['nutrition']['basis'] == ''
+    assert 'amounts' not in saved['nutrition']['profiles'][0]
+    assert saved['nutrition']['profiles'][0]['macros']['protein'] == 'unknown'
+    selected = await service.get_recipe(saved['id'], 'Decadent')
+    assert selected['nutrition']['profiles'][0]['serving'] == 'Stir in butter and a richer sauce.'
+    invalid = deepcopy(guide)
+    invalid['profiles'][2]['name'] = 'tasty'
+    with pytest.raises(ApplicationError, match='unique'):
+        await service.save_recipe({'id': saved['id'], 'title': saved['title'], 'nutrition': invalid})
+    assert (await service.get_recipe(saved['id']))['nutrition'] == saved['nutrition']
+    with pytest.raises(ApplicationError, match='basis'):
+        await service.save_recipe({'title':'Unexplained numbers', 'nutrition':{'profiles':[
+            {'name':'Tasty', 'serving':'Original plate', 'portion':'1 bowl', 'amounts':{'protein':20}}]}})

@@ -281,7 +281,7 @@ async def get_recipe(recipe_id: str, variation: str | None = None) -> dict[str, 
 async def save_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
     """Create or update a household recipe. Category lists: cuisines, eating_goals, meal_types, diets, tags.
     Use kind recipe or ready_food. Ready food has heating/serving instructions and no ingredient demand.
-    Optional nutrition uses the same {basis, profiles} per-serving schema as plan entries, including numeric amounts, portion and valueType. Omitted nutrition retains saved values; null clears it.
+    Optional recipe variations use nutrition.profiles: [{name: custom label, serving: ingredient/preparation/serving changes}]. Nutrition is optional; basis is required only when nutrient guidance or numbers are included. Optional nutrition uses the same {basis, profiles} per-serving schema as plan entries, including numeric amounts, portion and valueType. Omitted nutrition retains saved values; null clears it.
     Omitted typed categories retain saved values. Use totalMinutes for total cooking time.
     """
     return await services_for_request().food.save_recipe(recipe)
