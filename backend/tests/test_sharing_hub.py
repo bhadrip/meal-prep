@@ -54,7 +54,12 @@ async def test_chat_food_attachment_and_mentions_validate_access():
     recipe_id = owner._recipes[0]['id']
     sent = await service.send_message(circle['id'], 'Try this', 'recipe', recipe_id, [friend.user_id])
     assert sent['kind'] == 'recipe' and sent['snapshot']['caption'] == 'Try this'
-    assert (await CircleService(friend).get_shared_item(sent['id']))['snapshot']['recipe']['id'] == recipe_id
+    original = (await CircleService(friend).get_shared_item(sent['id']))['snapshot']['recipe']
+    assert original['id'] == recipe_id
+    await owner.save_recipe({**(await owner.get_recipe(recipe_id)), 'title': 'Changed after sharing'})
+    assert (await CircleService(friend).get_shared_item(sent['id']))['snapshot']['recipe'] == original
+    with pytest.raises(RepositoryError, match='Shared item was not found'):
+        await CircleService(owner.as_user('outsider@example.test')).get_shared_item(sent['id'])
     assert {item['id'] for item in (await CircleService(friend).mention_candidates(circle['id']))['items']} == {owner.user_id, friend.user_id}
     with pytest.raises(RepositoryError, match='Mentioned friend'):
         await service.send_message(circle['id'], 'Hi', mention_ids=['outsider@example.test'])

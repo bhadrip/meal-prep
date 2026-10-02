@@ -194,7 +194,7 @@ async def test_local_supabase_unified_plan_activity_and_household_isolation():
             nutrition = plan["entries"][0]["nutrition"]
             with_recipe_nutrition = await food.save_recipe({**recipe, "nutrition": guide})
             assert with_recipe_nutrition["nutrition"] == nutrition
-            retained = await food.save_recipe(recipe)
+            retained = await food.save_recipe({key: value for key, value in recipe.items() if key != "nutrition"})
             assert retained["nutrition"] == nutrition
             with pytest.raises(ApplicationError):
                 await food.save_recipe({**recipe, "nutrition": {"basis": "Estimate", "profiles": []}})
