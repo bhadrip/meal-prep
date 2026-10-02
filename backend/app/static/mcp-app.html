@@ -243,6 +243,14 @@
         .form-grid,.choice-grid { grid-template-columns:1fr; }
         .snapshot-head { align-items:start; }
       }
+      .food-library-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+      .meal-library-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; margin: 14px 0; }
+      .meal-library-cards h2 { font-size: 1rem; overflow-wrap: anywhere; }
+      .meal-library-cards ul { padding-left: 20px; line-height: 1.5; font-size: .82rem; }
+      .meal-library-cards p { font-size: .82rem; margin-bottom: 12px; }
+      #plan-saved-meal-form .form-grid > label { display: grid; grid-template-columns: 1fr; gap: 6px; }
+      #plan-saved-meal-form input:not([type="hidden"]) { min-width: 0; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: Canvas; color: CanvasText; }
+      #plan-saved-meal-form { display: grid; gap: 14px; margin-top: 20px; }
     </style>
     <link rel="stylesheet" href="/static/recipe-graph.css" />
     <script src="/static/recipe-graph.js"></script>
@@ -298,6 +306,20 @@
 
       function actualUseRow(pantry, index) {
         return `<div class="form-grid" data-actual-use><div><span id="actual-item-${index}">Pantry food</span>${MealPrepChoices.markup({name: `item-${index}`, value: '', labelId: `actual-item-${index}`, choices: [{value: '', label: 'Choose food (optional)'}, ...pantry.map((row) => ({value: row.id, label: `${row.name} · ${row.quantity ?? '?'} ${row.unit || ''} left`}))]})}</div><label>Actual amount used (in pantry unit)<input name="quantity-${index}" type="number" min="0.001" step="0.001"></label></div>`;
+      }
+
+      function libraryNavigation() {
+        return `<nav class="food-library-nav" aria-label="Navigation"><button type="button" data-library-view="recipes">Recipes</button><button type="button" data-library-view="plan">Weekly plan</button></nav>`;
+      }
+
+      function savedMealCard(meal) {
+        return `<article class="day saved-meal" data-saved-meal="${escapeHtml(meal.id)}"><p>Meal · ${escapeHtml(meal.servings)} default servings</p><h3>${escapeHtml(meal.name)}</h3><ul>${meal.components.map(row => `<li>${row.recipeId ? `<button type="button" class="text-button" data-rb-open="${escapeHtml(row.recipeId)}">${escapeHtml(row.name)}</button>` : escapeHtml(row.name)}${row.quantity != null ? ` · ${escapeHtml(row.quantity)} ${escapeHtml(row.unit)}` : ''}</li>`).join('')}</ul><p>${escapeHtml(meal.notes)}</p><button type="button" data-plan-saved-meal="${escapeHtml(meal.id)}">Plan this meal</button></article>`;
+      }
+
+      function planMealForm(meal) {
+        const slots = (planHousehold?.mealSlots || []).filter(slot => slot.enabled);
+        const today = new Date().toLocaleDateString('en-CA');
+        return `<form id="plan-saved-meal-form" data-id="${escapeHtml(meal.id)}"><h2>Plan ${escapeHtml(meal.name)}</h2><p>Amounts scale from ${escapeHtml(meal.servings)} servings. Edit the copy later in your weekly plan.</p><div class="form-grid"><label>Date<input name="date" type="date" value="${today}" required></label><div><span id="saved-meal-slot-label">Meal slot</span>${MealPrepChoices.markup({name: 'slot', value: slots.find(slot => slot.id === 'dinner')?.id || slots[0]?.id, labelId: 'saved-meal-slot-label', choices: slots.map(slot => ({value: slot.id, label: slot.name}))})}</div><label>Servings to plan<input name="servings" type="number" min="0.001" step="0.001" value="${escapeHtml(meal.servings)}" required></label></div><button type="submit">Add to weekly plan</button><p class="form-error" role="alert" hidden></p></form>`;
       }
 
       function renderShopping(list) {
@@ -563,7 +585,7 @@
         const size = pick(household, 'householdSize', 'household_size');
         const role = pick(household, 'role', 'householdRole', 'household_role') || 'Owner';
         const layout = normalizedDashboardLayout();
-        root.innerHTML = `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><p class="dashboard-intro">Your food week at a glance. Ask Meal Prep in chat to show, hide, reorder, or reset dashboard cards.</p><div class="dashboard-grid">${renderVisibleCards(layout)}</div></section>`;
+        root.innerHTML = libraryNavigation() + `<section class="snapshot"><div class="snapshot-head"><div class="identity"><span class="identity-mark" aria-hidden="true">MP</span><div><h1>${escapeHtml(name)}</h1><p>${size ? `${escapeHtml(size)} people · ` : ''}saved meal-prep context</p></div></div><span class="owner-badge">${escapeHtml(role)}</span></div><p class="dashboard-intro">Your food week at a glance. Ask Meal Prep in chat to show, hide, reorder, or reset dashboard cards.</p><div class="dashboard-grid">${renderVisibleCards(layout)}</div></section>`;
       }
 
       function renderOnboarding(household = {}) {
@@ -634,11 +656,12 @@
       }
       function mountRecipeBrowser(initial) {
         leaveBrowser(); modernLibrary = true;
-        root.innerHTML = '<div id="recipe-browser"></div>';
+        root.innerHTML = '<div id="recipe-browser"></div><div id="meal-library-plan"></div><p id="meal-library-error" role="alert" hidden></p>';
         recipeBrowser = new RecipeBrowser(root.querySelector('#recipe-browser'), {
+          mealCard: savedMealCard,
           load: ui => {
             if (initial) { const data = initial; initial = null; return Promise.resolve(data); }
-            return graphCall('browse_recipe_library', {query: ui.query, filters: ui.filters, max_minutes: ui.maxMinutes, limit: 25, offset: ui.offset});
+            return graphCall('browse_recipe_library', {query: ui.query, filters: ui.filters, max_minutes: ui.maxMinutes, item_type: ui.itemType, limit: ui.itemType === 'meals' ? 50 : 25, offset: ui.offset});
           },
           openRecipe: async recipe_id => {
             try { const recipe = await graphCall('get_recipe', {recipe_id}); leaveBrowser(); root.innerHTML = renderRecipeDetail(recipe); await loadRecipeShares(recipe_id); }
@@ -668,16 +691,18 @@
       function applyResult(result, preserveGraph = false) {
         const data = result?.structuredContent || result;
         if (!data) return;
-        if (!['household_snapshot', 'onboarding', 'recipe_library', 'recipe_graph', 'feedback', 'pantry_evidence', 'shopping_list', 'meal_plan'].includes(data.kind) && !data.onboardingCompletedAt) return;
+        if (!['meal_library', 'household_snapshot', 'onboarding', 'recipe_library', 'recipe_graph', 'feedback', 'pantry_evidence', 'shopping_list', 'meal_plan'].includes(data.kind) && !data.onboardingCompletedAt) return;
         leaveBrowser(); if (!preserveGraph) { browserUi = {}; modernLibrary = false; }
-        if (data.kind === 'household_snapshot') {
+        if (data.kind === 'meal_library') { planHousehold = data.household; browserUi = {itemType: 'meals', query: data.library.query, filters: {}}; mountRecipeBrowser(); }
+        else if (data.kind === 'household_snapshot') {
           activePantryItemId = null;
           pantryNotice = '';
           renderHouseholdSnapshot(data);
         }
         else if (data.kind === 'onboarding') root.innerHTML = renderOnboarding(data.household);
         else if (data.kind === 'recipe_library' && data.facets) {
-          browserUi = {query: data.query || '', filters: data.filters || {}, maxMinutes: data.maxMinutes || null, exploreOpen: data.exploreOpen === true};
+          planHousehold = data.household || planHousehold;
+          browserUi = {itemType: data.itemType || 'recipes', query: data.query || '', filters: data.filters || {}, maxMinutes: data.maxMinutes || null, exploreOpen: data.exploreOpen === true};
           mountRecipeBrowser(data);
         }
         else if (data.kind === 'recipe_library') {
@@ -700,7 +725,7 @@
         }
         else if (data.kind === 'meal_plan') {
           currentPlan = data.plan; planHousehold = data.household;
-          root.innerHTML = renderPlan(currentPlan);
+          root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
         }
         else if (data.onboardingCompletedAt) root.innerHTML = renderOnboardingSuccess(data);
       }
@@ -728,6 +753,25 @@
       });
 
       root.addEventListener('click', async (event) => {
+        const nav = event.target.closest('[data-library-view]');
+        if (nav) {
+          nav.disabled = true;
+          try { applyResult(await graphCall({recipes: 'render_recipe_library', plan: 'render_meal_plan'}[nav.dataset.libraryView])); }
+          catch (reason) { nav.disabled = false; const error = document.createElement('p'); error.setAttribute('role', 'alert'); error.textContent = reason.message; root.prepend(error); }
+          return;
+        }
+        const savedMeal = event.target.closest('[data-plan-saved-meal]');
+        if (savedMeal) {
+          savedMeal.disabled = true;
+          root.querySelector('#meal-library-plan').innerHTML = '<p role="status">Loading meal…</p>';
+          try {
+            const meal = await graphCall('get_meal', {meal_id: savedMeal.dataset.planSavedMeal});
+            root.querySelector('#meal-library-plan').innerHTML = planMealForm(meal);
+            root.querySelector('#meal-library-plan input').focus();
+          } catch (reason) { const error = root.querySelector('#meal-library-error'); error.textContent = reason.message; error.hidden = false; }
+          finally { savedMeal.disabled = false; }
+          return;
+        }
         const complete = event.target.closest('[data-plan-complete]');
         if (complete) {
           const kind = complete.dataset.kind;
@@ -739,7 +783,7 @@
               const result = await rpc('tools/call', {name: 'complete_plan_item', arguments: {week_start: currentPlan.weekStart, kind, item_id: item.id}});
               if (result?.isError) throw new Error(result.content?.find((row) => row.type === 'text')?.text || 'Could not complete task.');
               currentPlan = (result.structuredContent || result).plan;
-              root.innerHTML = renderPlan(currentPlan);
+              root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
             } else {
               const result = await rpc('tools/call', {name: 'get_pantry', arguments: {}});
               if (result?.isError) throw new Error('Could not load pantry.');
@@ -901,6 +945,20 @@
       });
 
       root.addEventListener('submit', async (event) => {
+        if (event.target.matches('#plan-saved-meal-form')) {
+          event.preventDefault();
+          const form = event.target, data = new FormData(form), error = form.querySelector('.form-error'), button = form.querySelector('[type="submit"]');
+          button.disabled = true; error.hidden = true;
+          try {
+            {
+              const date = String(data.get('date')), week = new Date(`${date}T12:00:00Z`);
+              week.setUTCDate(week.getUTCDate() - (week.getUTCDay() + 6) % 7);
+              currentPlan = await graphCall('plan_saved_meal', {meal_id: form.dataset.id, week_start: week.toISOString().slice(0, 10), planned_date: date, slot: String(data.get('slot')), servings: Number(data.get('servings'))});
+              root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
+            }
+          } catch (reason) { error.textContent = reason.message; error.hidden = false; button.disabled = false; }
+          return;
+        }
         if (event.target.matches('#plan-completion-form')) {
           event.preventDefault();
           const form = event.target;
@@ -914,7 +972,7 @@
             const result = await rpc('tools/call', {name: 'complete_plan_item', arguments: {week_start: currentPlan.weekStart, kind: form.dataset.kind, item_id: form.dataset.id, inputs, outputs}});
             if (result?.isError) throw new Error(result.content?.find((row) => row.type === 'text')?.text || 'Could not record completion.');
             currentPlan = (result.structuredContent || result).plan;
-            root.innerHTML = renderPlan(currentPlan);
+            root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
           } catch (reason) { error.textContent = reason.message; error.hidden = false; button.disabled = false; }
           return;
         }

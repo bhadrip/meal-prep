@@ -20,7 +20,7 @@ account and selects it.
 1. Call `get_planning_context` before drafting or revising a weekly plan,
    passing the requested `week_start` when known. It returns household
    preferences, versioned English `mealPlanRules`, the current `mealPlan`, two
-   previous saved weeks in `recentPlans`, pantry, saved recipe tags, the weekly
+   previous saved weeks in `recentPlans`, pantry, `savedMeals` (the first page), saved recipe tags, the weekly
    schedule including `notes`, recent feedback, and active household knowledge.
    Earlier saved plans are planning evidence, not proof those meals were eaten.
    Missing weeks remain missing. If `household.onboardingComplete` is false,
@@ -122,9 +122,40 @@ rules document.
 
 ## Meals, components, and actual activity
 
-Recipes are reusable instructions and yield; a planned meal is a dated eating
-occasion with components. Bought food such as popcorn, rotis, yogurt, or a ready
-meal needs no recipe. No separate reusable meal record is required.
+Recipes are reusable instructions and yield. A saved Meal is a reusable
+combination of recipes and ready food, with a name, default servings, notes,
+and components. A planned meal is a dated eating occasion: a copy of a saved
+meal, a single recipe, or a one-off combination. Save bought food such as popcorn, rotis, or yogurt as Ready food entries.
+One-off components may also use a name without a saved entry.
+
+- Save ready foods such as bought rotis or popcorn using `save_recipe` with
+  `kind="ready_food"`, instructions for heating/serving, and no ingredient demand.
+  Meals link cooked recipes using `source="cook"`, and ready-food entries using
+  `source="ready"`; both carry `recipeId` so their details can be opened.
+  Receiving a shopping item updates pantry quantity; saving a library entry does
+  not create stock. Use `item_type="all"` to search the combined library or
+  `item_type="ready_food"` to filter bought foods.
+- Recipes, Ready food, and Meals are type filters in one library in the website
+  and MCP App. Use `render_recipe_library(item_type="meals")` (or `render_meal_library`)
+  to filter Meals, or `search_meals` and `get_meal`
+  without UI. Search name, notes, and components across the full library;
+  follow `total`, `limit`, and `offset` to paginate. Archived meals are excluded.
+- `save_meal` takes `name`, positive default `servings`, `notes`, and 1–30
+  components (`ready`, `cook`, or `external`). Amounts are for the default
+  servings; a recipe component uses `quantity` in `servings`, and requires
+  `recipeId`. Omit dates, pantry lot IDs, and task IDs. To edit, read `get_meal`
+  first and send the full record with its stable ID.
+- Use `save_planned_meal` to save a requested plan entry as a reusable meal.
+  It drops pantry links and converts task references to their recipe (or ready
+  food). Set default servings explicitly if the original entry has no yield.
+- Use `plan_saved_meal` with `meal_id`, `week_start`, `planned_date`, enabled
+  `slot`, and optional `servings`. It scales amounts, creates fresh occurrence
+  and component IDs, and snapshots current recipe ingredients. The copy keeps
+  `sourceMeal` identity/name/revision. Editing or archiving the library meal
+  never rewrites prior plans. Read the copy before linking actual pantry lots
+  or replacing cooking components with a batch task to avoid counting twice.
+- `archive_meal` hides future choices while preserving existing dated copies.
+  None of these operations consume stock or reserve pantry quantities.
 
 - Each entry has `date`, household `slot` ID, `meal`, optional servings/notes,
   and `components`. A component has `name`, optional `quantity`/`unit`, `source`

@@ -335,3 +335,91 @@ async def test_local_notification_inbox_respects_recipient_and_membership():
             for user_id in users:
                 deleted = await client.delete(f"/auth/v1/admin/users/{user_id}", headers=admin_headers)
                 assert deleted.status_code in (200, 204), deleted.text
+
+
+@pytest.mark.asyncio
+async def test_local_supabase_meal_library_roundtrip_validation_and_rls():
+    from app.application.errors import ApplicationError
+    url, anon, secret = (os.environ.get(key) for key in ('MEAL_PREP_TEST_SUPABASE_URL', 'MEAL_PREP_TEST_ANON_KEY', 'MEAL_PREP_TEST_SERVICE_ROLE_KEY'))
+    if not all((url, anon, secret)): pytest.skip('local Supabase test credentials are not configured')
+    admin = {'apikey': secret, 'Authorization': f'Bearer {secret}'}
+    users, homes, repos = [], [], []
+    async with httpx.AsyncClient(base_url=url, timeout=20) as client:
+        try:
+            for _ in range(2):
+                email, password = f'meal-library-{uuid4()}@example.test', str(uuid4())
+                created = await client.post('/auth/v1/admin/users', headers=admin, json={'email': email, 'password': password, 'email_confirm': True})
+                assert created.status_code in (200,201), created.text
+                users.append(created.json()['id'])
+                login = await client.post('/auth/v1/token', params={'grant_type':'password'}, headers={'apikey':anon}, json={'email':email,'password':password})
+                assert login.status_code == 200
+                repo = SupabaseRepository(Settings(supabase_url=url, supabase_anon_key=anon, auth_required=True),login.json()['access_token'])
+                repos.append(repo); homes.append((await repo.get_household_context())['householdId'])
+            repo, other = repos
+            food, planning = RecipePantryService(repo), PlanningService(repo)
+            recipe = await food.save_recipe({'title':'Dal','servings':4,'ingredients':[{'name':'Lentils','quantity':200,'unit':'g'}]})
+            ready = await food.save_recipe({'title':'Rotis','kind':'ready_food','instructions':['Heat and serve']})
+            assert (await food.browse_recipe_library(item_type='ready_food'))['items'][0]['id'] == ready['id']
+            shared = await food.create_recipe_share(ready['id'])
+            copied_id = await other.copy_shared_recipe(shared['token'])
+            assert (await other.get_recipe(copied_id))['kind'] == 'ready_food'
+            for value in ({'kind':'unknown'}, {'kind':'ready_food','ingredients':[{'name':'Flour'}]}):
+                with pytest.raises(RepositoryError):
+                    await repo.request('PATCH','recipes',params={'id':f"eq.{ready['id']}"},json=value)
+            meal = await planning.meals.save({'name':'Dal and rotis','servings':4,'notes':'School pickup dinner','components':[
+                {'name':'Dal','quantity':4,'unit':'servings','source':'cook','recipeId':recipe['id']},
+                {'name':'Rotis','quantity':8,'unit':'pieces','action':'heat','source':'ready','recipeId':ready['id']}]})
+            assert (await planning.meals.search('ROTIS'))['items'] == [meal]
+            assert (await planning.meals.search('pickup'))['total'] == 1
+            # Full library search and pagination, including beyond the first 50 choices.
+            await repo.request('POST','meals', json=[{'household_id':homes[0],'name':f'Dinner {i}','servings':1,'components':[{
+                'id':str(uuid4()),'name':'Popcorn','source':'ready','action':'serve'}]} for i in range(51)])
+            assert (await planning.meals.search())['total'] == 52
+            assert len((await planning.meals.search(offset=50))['items']) == 2
+            week='2030-02-04'
+            plan=await planning.plan_saved_meal(week,meal['id'],week,'dinner',8)
+            entry=plan['entries'][0]
+            assert entry['sourceMeal'] == {key:meal[key] for key in ('id','name','revision')}
+            assert entry['components'][0]['quantity'] == 8
+            assert {row['name']:row['quantity'] for row in (await planning.preview_shopping(week))['items']} == {'Lentils':400,'Rotis':16}
+            changed=await planning.meals.save({**meal,'name':'New dinner'})
+            assert changed['revision'] == 2
+            assert await planning.get_meal_plan(week) == plan
+            await planning.meals.archive(meal['id'])
+            assert (await planning.meals.search('rotis'))['total'] == 0
+            with pytest.raises(ApplicationError,match='Archived'): await planning.plan_saved_meal(week,meal['id'],week,'dinner')
+            updated=await planning.update_plan_item(week,'meal',{'id':entry['id'],'notes':'Still editable'})
+            assert updated['entries'][0]['sourceMeal'] == entry['sourceMeal']
+            with pytest.raises(RepositoryError): await repo.save_meal(meal)
+            # Unknown/foreign JSON references are rejected by both service and direct-table triggers.
+            foreign_recipe=await RecipePantryService(other).save_recipe({'title':'Private soup','servings':2})
+            foreign=await PlanningService(other).meals.save({'name':'Private meal','servings':2,'components':[{'name':'Private soup','source':'cook','recipeId':foreign_recipe['id']}]})
+            assert await other.get_meal(meal['id']) is None
+            assert await other.request('GET','meals',params={'household_id':f'eq.{homes[0]}'}) == []
+            with pytest.raises(RepositoryError): await other.save_meal({**changed,'name':'Foreign overwrite'})
+            before=await repo.search_meals('',50,0)
+            for bad in [
+                [{'id':str(uuid4()),'name':'Bad recipe','source':'cook','action':'cook','recipeId':foreign_recipe['id']}],
+                [{'id':str(uuid4()),'name':'Bad task','source':'task','action':'serve','taskId':str(uuid4())}],
+                [{'id':str(uuid4()),'name':'Wrong ready-food source','source':'cook','action':'cook','recipeId':ready['id']}],
+                [{'id':str(uuid4()),'name':'Bad quantity','source':'ready','action':'serve','quantity':-1}],
+            ]:
+                with pytest.raises(RepositoryError): await repo.request('POST','meals',json={'household_id':homes[0],'name':'Bad meal','servings':1,'components':bad})
+            assert await repo.search_meals('',50,0) == before
+            with pytest.raises(RepositoryError): await other.request('POST','meals',json={'household_id':homes[0],'name':'Forbidden','servings':1,'components':foreign['components']})
+            # Origin provenance cannot cross households, including writes bypassing the service.
+            with pytest.raises(RepositoryError): await repo.request('POST','meal_plan_entries',json={
+                'meal_plan_id':plan['id'],'planned_for':week,'slot':'dinner','title':'Forged origin',
+                'components':[],'source_meal':{key:foreign[key] for key in ('id','name','revision')}})
+            with pytest.raises(RepositoryError): await repo.request('PATCH','meal_plan_entries',params={'id':f"eq.{entry['id']}"},json={'source_meal':None})
+            completed=await planning.complete_item(week,'meal',entry['id'])
+            with pytest.raises(RepositoryError): await repo.save_meal_plan({**completed['plan'],'entries':[{**completed['plan']['entries'][0],'sourceMeal':None}]})
+            assert await planning.get_meal_plan(week) == completed['plan']
+            assert await repo.get_pantry() == []
+        finally:
+            for home in homes:
+                deleted=await client.delete('/rest/v1/households',headers=admin,params={'id':f'eq.{home}'})
+                assert deleted.status_code in (200,204),deleted.text
+            for user in users:
+                deleted=await client.delete(f'/auth/v1/admin/users/{user}',headers=admin)
+                assert deleted.status_code in (200,204),deleted.text
