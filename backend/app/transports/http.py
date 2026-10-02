@@ -177,8 +177,9 @@ async def leave_circle(circle_id: UUID, services: WebServices) -> dict:
 
 
 @router.get("/api/circle-shares")
-async def list_circle_shares(services: WebServices, limit: int = 50, offset: int = 0, kind: str | None = None) -> dict:
-    return await services.circles.list_shared_with_me(limit, offset, kind)
+async def list_circle_shares(services: WebServices, limit: int = 50, offset: int = 0,
+                             kind: str | None = None, circle_id: str | None = None) -> dict:
+    return await services.circles.list_shared_with_me(limit, offset, kind, circle_id)
 
 
 @router.get("/api/circle-shares/{share_id}")
@@ -194,6 +195,11 @@ async def share_week_to_circle(circle_id: UUID, payload: dict[str, Any], service
 @router.post("/api/circles/{circle_id}/recipes")
 async def share_recipe_to_circle(circle_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
     return await services.circles.share_recipe(str(circle_id), payload.get("recipeId"))
+
+
+@router.post("/api/circles/{circle_id}/messages")
+async def send_circle_message(circle_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.circles.send_message(str(circle_id), payload.get("body"))
 
 
 @router.post("/api/circle-shares/{share_id}/comments")

@@ -68,6 +68,17 @@ async def test_local_friend_circle_sharing_and_inbox_isolation():
                 await peer.save_shared_recipe(old_share["id"], recipe["id"])
             shared = await own.share_week(circle["id"], week)
             assert (await peer.list_shared_with_me())["items"][0]["id"] == shared["id"]
+            message = await own.send_message(circle["id"], "What are you making tonight?")
+            assert [item["id"] for item in (await peer.list_shared_with_me(circle_id=circle["id"], kind="message"))["items"]] == [message["id"]]
+            assert (await peer.get_shared_item(message["id"]))["snapshot"]["text"] == "What are you making tonight?"
+            message_reply = await peer.comment(message["id"], "Dal bowls")
+            assert message_reply["body"] == "Dal bowls"
+            assert (await own.list_shared_with_me(circle_id=circle["id"], kind="message"))["items"][0]["commentCount"] == 1
+            with pytest.raises(RepositoryError):
+                await stranger.send_message(circle["id"], "I should not be here")
+            with pytest.raises(RepositoryError):
+                await stranger.get_shared_item(message["id"])
+            assert await friend.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_message"})
             friend_inbox = await friend.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_share"})
             assert friend_inbox and friend_inbox[0]["kind"] == "circle_share"
             snap = (await peer.get_shared_item(shared["id"]))["snapshot"]
@@ -132,6 +143,7 @@ async def test_local_friend_circle_sharing_and_inbox_isolation():
             with pytest.raises(RepositoryError):
                 await peer.get_shared_item(shared["id"])
             await own.revoke_share(shared["id"])
+            await own.delete_comment(message_reply["id"])
             assert await owner.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_comment"}) == []
             with pytest.raises(RepositoryError):
                 await peer.get_shared_item(shared["id"])

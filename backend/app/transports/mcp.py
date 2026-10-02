@@ -134,15 +134,22 @@ async def leave_circle(circle_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
-async def list_shared_with_me(limit: int = 50, offset: int = 0, kind: str | None = None) -> dict[str, Any]:
-    """Find weekly plan snapshots and recipes shared in accepted friend circles for meal-planning inspiration. Page with limit/offset until nextOffset is null; kind can be week or recipe. Each week contains meals and recipe snapshots. No whole-plan copy."""
-    return await services_for_request().circles.list_shared_with_me(limit, offset, kind)
+async def list_shared_with_me(limit: int = 50, offset: int = 0, kind: str | None = None,
+                              circle_id: str | None = None) -> dict[str, Any]:
+    """Read accepted-circle conversations with messages, shared weeks, and recipes. Set circle_id for one circle; page with limit/offset until nextOffset is null. kind can be message, week, or recipe. Open an item to read its thread. No whole-plan copy."""
+    return await services_for_request().circles.list_shared_with_me(limit, offset, kind, circle_id)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def get_shared_item(share_id: str) -> dict[str, Any]:
-    """Read one circle share and its discussion. Week shares include every meal slot and full snapshots of referenced recipes and ready foods."""
+    """Read one circle message or share and its thread. Week shares include every meal slot and full snapshots of referenced recipes and ready foods."""
     return await services_for_request().circles.get_shared_item(share_id)
+
+
+@mcp.tool(annotations=SHARE, structured_output=True)
+async def send_circle_message(circle_id: str, body: str) -> dict[str, Any]:
+    """Send a short group message to an accepted private circle when the user asks to post it."""
+    return await services_for_request().circles.send_message(circle_id, body)
 
 
 @mcp.tool(annotations=SHARE, structured_output=True)

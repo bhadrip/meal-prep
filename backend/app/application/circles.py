@@ -50,10 +50,17 @@ class CircleService:
     async def leave_circle(self, circle_id: str) -> dict:
         return await self.repository.circle_leave(circle_id)
 
-    async def list_shared_with_me(self, limit: int = 50, offset: int = 0, kind: str | None = None) -> dict:
-        if not 1 <= limit <= 100 or offset < 0 or kind not in (None, "week", "recipe"):
+    async def list_shared_with_me(self, limit: int = 50, offset: int = 0, kind: str | None = None,
+                                  circle_id: str | None = None) -> dict:
+        if not 1 <= limit <= 100 or offset < 0 or kind not in (None, "week", "recipe", "message"):
             raise ApplicationError("Choose a valid share type, limit, and offset")
-        rows = await self.repository.circle_feed(limit + 1, offset, kind)
+        if circle_id is not None:
+            from uuid import UUID
+            try:
+                circle_id = str(UUID(circle_id))
+            except (TypeError, ValueError):
+                raise ApplicationError("Choose a valid circle") from None
+        rows = await self.repository.circle_feed(limit + 1, offset, kind, circle_id)
         items = rows[:limit]
         return {"items": items, "count": len(items), "nextOffset": offset + limit if len(rows) > limit else None}
 
@@ -75,6 +82,15 @@ class CircleService:
     async def share_recipe(self, circle_id: str, recipe_id: str) -> dict:
         try:
             return await self.repository.circle_share_recipe(circle_id, recipe_id)
+        except RepositoryError as exc:
+            self._raise_known_limit(exc)
+
+    async def send_message(self, circle_id: str, body: str) -> dict:
+        clean = (body or "").strip()
+        if not 1 <= len(clean) <= 2000:
+            raise ApplicationError("Enter a message of 1 to 2000 characters")
+        try:
+            return await self.repository.circle_send_message(circle_id, clean)
         except RepositoryError as exc:
             self._raise_known_limit(exc)
 
