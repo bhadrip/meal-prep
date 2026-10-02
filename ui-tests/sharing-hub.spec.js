@@ -28,6 +28,13 @@ test('landing shows circles and direct shares, and @recipe attaches a snapshot t
   await expect(page.locator('.circle-post').first()).toContainText('Ginger noodles');
   const feed = await (await page.request.get(`/api/circle-shares?circle_id=${circle.id}`)).json();
   expect(feed.items[0].snapshot.recipe.id).toBe(recipe.id);
+  await page.request.put('/api/recipes', {data: {id: recipe.id, title: 'Changed noodles', servings: 2,
+    ingredients: [{name: 'Different ingredient'}], instructions: ['Different method']}});
+  await page.getByRole('button', {name: 'Open recipe snapshot: Ginger noodles'}).click();
+  await expect(page.locator('.circle-thread-panel')).toContainText('Noodles');
+  await expect(page.locator('.circle-thread-panel')).toContainText('Cook noodles');
+  await expect(page.locator('.circle-thread-panel')).not.toContainText('Different ingredient');
+  await page.getByRole('button', {name: 'Close thread'}).click();
   await page.getByLabel('Message Supper club').pressSequentially('@demo');
   await page.locator('.mention-item').filter({hasText: 'demo'}).click();
   await page.getByRole('button', {name: 'Send message'}).click();
