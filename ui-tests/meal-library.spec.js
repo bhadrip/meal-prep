@@ -247,6 +247,7 @@ test('one library mixes recipes, ready food and meals, filters them, and opens c
   expect(new URL(page.url()).searchParams.get('view')).toBe('recipes');
   await page.locator('[data-saved-meal]').getByRole('button',{name:ready.title,exact:true}).click();
   await page.getByRole('button',{name:'Create share link',exact:true}).click();
+  await page.getByRole('button',{name:'Confirm public link'}).click();
   const shareUrl=await page.getByRole('textbox',{name:'New recipe share link'}).inputValue();
   await page.goto(shareUrl);await page.locator('#save-recipe').click();
   await expect(page.locator('#message')).toHaveText('Saved to your household recipes.');
