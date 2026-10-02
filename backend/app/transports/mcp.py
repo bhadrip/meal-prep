@@ -97,6 +97,90 @@ async def list_households() -> dict[str, Any]:
     return await services_for_request().household.list_households()
 
 
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_circles() -> dict[str, Any]:
+    """List private friend circles and pending invitations. Only accepted circles can be read or shared to."""
+    return await services_for_request().circles.list_circles()
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def create_circle(name: str) -> dict[str, Any]:
+    """Create a private circle for close friends; the creator is its first member."""
+    return await services_for_request().circles.create_circle(name)
+
+
+@mcp.tool(annotations=SHARE, structured_output=True)
+async def invite_circle_friend(circle_id: str, email: str) -> dict[str, Any]:
+    """Invite an existing Meal Prep account into a private circle by email, with an in-app notification only."""
+    return await services_for_request().circles.invite_friend(circle_id, email)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def respond_circle_invitation(circle_id: str, accept: bool) -> dict[str, Any]:
+    """Accept or decline a friend circle invitation."""
+    return await services_for_request().circles.respond_invitation(circle_id, accept)
+
+
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def remove_circle_friend(circle_id: str, user_id: str) -> dict[str, Any]:
+    """Remove a friend from a circle you own; their access to its shares and circle notifications ends immediately."""
+    return await services_for_request().circles.remove_friend(circle_id, user_id)
+
+
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def leave_circle(circle_id: str) -> dict[str, Any]:
+    """Leave a circle you joined; its shares and notifications stop being visible."""
+    return await services_for_request().circles.leave_circle(circle_id)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_shared_with_me(limit: int = 50, offset: int = 0, kind: str | None = None) -> dict[str, Any]:
+    """Find weekly plan snapshots and recipes shared in accepted friend circles for meal-planning inspiration. Page with limit/offset until nextOffset is null; kind can be week or recipe. Each week contains meals and recipe snapshots. No whole-plan copy."""
+    return await services_for_request().circles.list_shared_with_me(limit, offset, kind)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_shared_item(share_id: str) -> dict[str, Any]:
+    """Read one circle share and its discussion. Week shares include every meal slot and full snapshots of referenced recipes and ready foods."""
+    return await services_for_request().circles.get_shared_item(share_id)
+
+
+@mcp.tool(annotations=SHARE, structured_output=True)
+async def share_week_to_circle(circle_id: str, week_start: str) -> dict[str, Any]:
+    """Explicitly publish one immutable whole-week meal plan snapshot to an accepted friend circle. Later plan edits are not published automatically."""
+    return await services_for_request().circles.share_week(circle_id, week_start)
+
+
+@mcp.tool(annotations=SHARE, structured_output=True)
+async def share_recipe_to_circle(circle_id: str, recipe_id: str) -> dict[str, Any]:
+    """Explicitly publish one recipe or ready food snapshot to an accepted friend circle."""
+    return await services_for_request().circles.share_recipe(circle_id, recipe_id)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def comment_on_circle_share(share_id: str, body: str, target_type: str = "post", target_id: str | None = None) -> dict[str, Any]:
+    """Discuss a shared week, a specific planned meal, or a recipe in the share. Use target_type post, meal, or recipe with target_id for meal/recipe."""
+    return await services_for_request().circles.comment(share_id, body, target_type, target_id)
+
+
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def delete_circle_comment(comment_id: str) -> dict[str, Any]:
+    """Remove a comment you wrote or a comment on your post or circle. This also withdraws its notification."""
+    return await services_for_request().circles.delete_comment(comment_id)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def save_circle_recipe(share_id: str, recipe_id: str) -> dict[str, Any]:
+    """Save one shared recipe or ready food as an independent copy in the active household; returns the existing copy on repeat."""
+    return await services_for_request().circles.save_shared_recipe(share_id, recipe_id)
+
+
+@mcp.tool(annotations=ARCHIVE, structured_output=True)
+async def revoke_circle_share(share_id: str) -> dict[str, Any]:
+    """Hide a circle share from all recipients. Only its creator may revoke it."""
+    return await services_for_request().circles.revoke_share(share_id)
+
+
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def switch_household(household_id: str) -> dict[str, Any]:
     """Select a household by ID for subsequent website and MCP planning actions."""

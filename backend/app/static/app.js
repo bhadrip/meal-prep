@@ -53,10 +53,10 @@ const CARD_NAMES = {
   schedule: 'Weekly rhythm', 'meal-plan': 'Meal plan', 'shopping-list': 'Shopping list',
   pantry: 'Pantry', recipes: 'Recipes', feedback: 'Meal feedback', memories: 'Household memory',
 };
-const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', settings: 'Settings', notifications: 'Notifications' };
+const TITLES = { overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', circles: 'Circles', settings: 'Settings', notifications: 'Notifications' };
 let recipeBrowser = null;
-const state = { browserUi: {}, view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, mealPlanRules: null, ruleHistory: null, planTab: 'plan', ruleRevisionId: null, rulePreview: null, rulePreviewError: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, search: '', recipeTag: '', mealRecipes: [], pantrySearch: '', pantryCategory: 'all', pantryStock: 'on-hand', pantryReview: false, pantryQuantityId: null, pantrySection: 'items', pantryPhotos: [], pantryPhotosHasMore: false, pantryPhotosLoading: false, pantryPhotosError: null, pantryPhotosRequest: 0, client: null, session: null, config: null, editor: null };
-const VIEW_SECTIONS = { overview: ['mealPlan', 'shoppingList', 'pantry'], plan: ['mealPlan', 'schedule'], recipes: ['recipes'], pantry: ['pantry'], shopping: ['shoppingList'], reviews: ['feedback', 'memories'], settings: [], notifications: [] };
+const state = { browserUi: {}, view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, mealPlanRules: null, ruleHistory: null, planTab: 'plan', ruleRevisionId: null, rulePreview: null, rulePreviewError: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, circles: [], circleFeed: [], circleNextOffset: null, circleDetail: null, circleShareId: null, circleError: null, circleComposer: null, circleReview: null, search: '', recipeTag: '', mealRecipes: [], pantrySearch: '', pantryCategory: 'all', pantryStock: 'on-hand', pantryReview: false, pantryQuantityId: null, pantrySection: 'items', pantryPhotos: [], pantryPhotosHasMore: false, pantryPhotosLoading: false, pantryPhotosError: null, pantryPhotosRequest: 0, client: null, session: null, config: null, editor: null };
+const VIEW_SECTIONS = { overview: ['mealPlan', 'shoppingList', 'pantry'], plan: ['mealPlan', 'schedule'], recipes: ['recipes'], pantry: ['pantry'], shopping: ['shoppingList'], reviews: ['feedback', 'memories'], circles: [], settings: [], notifications: [] };
 const SECTION_NAMES = { mealPlan: 'meals and prep', shoppingList: 'shopping list', pantry: 'pantry', schedule: 'weekly rhythm', mealPlanRules: 'planning rules', recipes: 'recipes', meals: 'saved meals', feedback: 'reviews', memories: 'household memory' };
 Object.assign(state, { dataGeneration: 0, sectionRequests: new Map(), sectionWeeks: {}, dashboardExpanded: false, notificationsLoading: true });
 function routeFromUrl() {
@@ -71,6 +71,7 @@ function routeFromUrl() {
     planTab: view === 'plan' && params.get('tab') === 'rules' ? 'rules' : 'plan',
     ruleRevisionId: view === 'plan' && params.get('tab') === 'rules' ? params.get('revision') : null,
     recipeId: view === 'recipes' ? params.get('recipe') : null,
+    circleShareId: view === 'circles' ? params.get('share') : null,
     browserUi: {itemType: ['recipes','ready_food','meals'].includes(params.get('type')) ? params.get('type') : params.get('library') === 'meals' ? 'meals' : 'all', query: params.get('query') || '', filters: Object.fromEntries(['cuisine','goal','meal','diet','tag'].map(key => [key, params.getAll(key)]).filter(([,values]) => values.length)), maxMinutes: Number(params.get('max_minutes')) || null, exploreOpen: false},
     pantrySection: view === 'pantry' && params.get('section') === 'photos' ? 'photos' : 'items',
   };
@@ -78,7 +79,7 @@ function routeFromUrl() {
 
 function writeRoute(mode = 'push') {
   const url = new URL(location.href);
-  ['view', 'week', 'recipe', 'tab', 'revision', 'section', 'mode', 'library', 'type', 'query', 'cuisine', 'goal', 'meal', 'diet', 'tag', 'max_minutes'].forEach((key) => url.searchParams.delete(key));
+  ['view', 'week', 'recipe', 'share', 'tab', 'revision', 'section', 'mode', 'library', 'type', 'query', 'cuisine', 'goal', 'meal', 'diet', 'tag', 'max_minutes'].forEach((key) => url.searchParams.delete(key));
   if (state.view !== 'overview') url.searchParams.set('view', state.view);
   if ((state.view === 'plan' || state.view === 'recipes') && state.weekStart) url.searchParams.set('week', state.weekStart);
   if (state.view === 'recipes') {
@@ -92,6 +93,7 @@ function writeRoute(mode = 'push') {
     if (state.ruleRevisionId) url.searchParams.set('revision', state.ruleRevisionId);
   }
   if (state.view === 'recipes' && state.recipe?.id) url.searchParams.set('recipe', state.recipe.id);
+  if (state.view === 'circles' && state.circleShareId) url.searchParams.set('share', state.circleShareId);
   if (state.view === 'pantry' && state.pantrySection === 'photos') url.searchParams.set('section', 'photos');
   history[mode === 'replace' ? 'replaceState' : 'pushState'](null, '', url);
 }
@@ -276,6 +278,11 @@ async function loadSection(name, force = false) {
 }
 
 async function loadViewData(force = false) {
+  if (state.view === 'circles') {
+    render();
+    await loadCircleData();
+    return;
+  }
   const tasks = viewSections().map((name) => loadSection(name, force));
   render();
   await Promise.all(tasks);
@@ -420,13 +427,96 @@ function renderOverview() {
 function renderNotifications() {
   if (state.notificationsLoading) return '<div class="section-loading" role="status">Loading notifications…</div>';
   if (state.notificationError) return empty('Notifications unavailable', 'Refresh the page to try again.');
-  if (!state.notifications.length) return empty('All caught up', 'Household activity will appear here.');
-  return `<section class="page-heading"><div><p class="eyebrow">Household activity</p><h2>Your notifications</h2></div></section>
+  if (!state.notifications.length) return empty('All caught up', 'Household and circle activity will appear here.');
+  return `<section class="page-heading"><div><p class="eyebrow">Household and circle activity</p><h2>Your notifications</h2></div></section>
     <div class="stack">${state.notifications.map((item) => `<article class="card notification-item ${item.read_at ? '' : 'unread'}">
       <div class="card-head"><h3>${esc(item.title)}</h3>${item.read_at ? '' : '<span class="notification-new">New</span>'}</div>
       <p class="muted tiny">${esc(new Date(item.created_at).toLocaleString())}</p>
       <div style="margin-top:14px">${action('Open', 'open-notification', item.id)}</div>
     </article>`).join('')}</div>`;
+}
+
+async function loadCircleData() {
+  const requestView = state.view;
+  try {
+    const [circles, feed] = await Promise.all([api('/api/circles'), api('/api/circle-shares')]);
+    if (requestView !== state.view) return;
+    state.circles = arr(circles.items);
+    state.circleFeed = arr(feed.items);
+    state.circleNextOffset = feed.nextOffset;
+    state.circleError = null;
+    state.circleDetail = state.circleShareId ? await api(`/api/circle-shares/${encodeURIComponent(state.circleShareId)}`) : null;
+  } catch (error) {
+    state.circleError = error.message || 'Circles unavailable';
+  }
+  if (state.view === 'circles') render();
+}
+
+function circleRecipeCard(recipe, share) {
+  const savedId = share.savedRecipeIds?.[recipe.id];
+  return `<article class="card circle-recipe"><p class="eyebrow">${recipe.kind === 'ready_food' ? 'Ready food' : 'Recipe'}</p><h3>${esc(recipe.title)}</h3>
+    ${recipe.description ? `<p class="tiny">${esc(recipe.description)}</p>` : ''}
+    ${arr(recipe.ingredients).length ? `<h4>Ingredients</h4><ul>${recipe.ingredients.map((item) => `<li>${esc(item.name || item)}${item.quantity ? ` · ${esc(item.quantity)} ${esc(item.unit || '')}` : ''}</li>`).join('')}</ul>` : ''}
+    ${arr(recipe.instructions).length ? `<h4>Method</h4><ol>${recipe.instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : ''}
+    <div class="circle-actions">${savedId ? action('Open saved recipe', 'circle-open-saved', savedId) : action('Save recipe', 'circle-save-recipe', `${share.id}:${recipe.id}`)}</div>
+  </article>`;
+}
+
+function renderCircleDetail(share) {
+  const snap = share.snapshot;
+  const viewerId = state.session?.user?.id;
+  const ownerId = state.circles.find((circle) => circle.id === share.circleId)?.ownerId;
+  const recipes = share.kind === 'week' ? arr(snap.recipes) : [snap.recipe];
+  const commentTargetName = (comment) => comment.targetType === 'meal'
+    ? arr(snap.entries).find((meal) => meal.id === comment.targetId)?.meal || 'Meal'
+    : comment.targetType === 'recipe'
+      ? recipes.find((recipe) => recipe?.id === comment.targetId)?.title || 'Recipe'
+      : 'Whole share';
+  const title = share.kind === 'week' ? `Week of ${snap.weekStart}` : snap.recipe.title;
+  const targetOptions = [`<option value="post">Whole share</option>`,
+    ...arr(snap.entries).map((entry) => `<option value="meal:${esc(entry.id)}">Meal: ${esc(entry.meal)}</option>`),
+    ...recipes.filter(Boolean).map((recipe) => `<option value="recipe:${esc(recipe.id)}">Recipe: ${esc(recipe.title)}</option>`)].join('');
+  const meals = share.kind === 'week' ? `<section class="circle-meals"><h3>Every meal in the week</h3>${arr(snap.entries).map((entry) =>
+    `<article class="circle-meal"><p class="eyebrow">${esc(entry.date)} · ${esc(entry.slotName || label(entry.slot))}</p><h4>${esc(entry.meal)}</h4>${entry.notes ? `<p>${esc(entry.notes)}</p>` : ''}${arr(entry.components).length ? `<ul>${entry.components.map((part) => `<li>${esc(part.name)}</li>`).join('')}</ul>` : ''}</article>`).join('')}</section>` : '';
+  return `<div class="circle-detail"><div class="toolbar">${action('Back to circle', 'circle-back')}${share.createdBy === state.session?.user?.id || !state.client ? action('Remove share', 'circle-revoke', share.id, 'danger') : ''}</div>
+    <header class="circle-detail-head"><p class="eyebrow">${esc(share.createdByName || 'Friend')} shared in ${esc(share.circleName)}</p><h2>${esc(title)}</h2><p class="muted tiny">${share.kind === 'week' ? 'The whole week as it was shared. Later edits to the original plan are not shown.' : 'A recipe as it was shared.'}</p></header>
+    ${meals}${recipes.length ? `<section class="circle-recipes"><h3>${share.kind === 'week' ? 'Recipes in this week' : 'Shared recipe'}</h3><div class="circle-recipe-grid">${recipes.filter(Boolean).map((recipe) => circleRecipeCard(recipe, share)).join('')}</div></section>` : ''}
+    <section class="circle-discussion"><h3>Discussion</h3>${arr(share.comments).length ? share.comments.map((comment) => `<div class="circle-comment"><p>${esc(comment.body)}</p><small>${esc(comment.authorName || 'Friend')} · ${esc(commentTargetName(comment))}</small>${!state.client || viewerId === comment.authorId || viewerId === share.createdBy || viewerId === ownerId ? action('Remove comment', 'circle-delete-comment', comment.id, 'danger') : ''}</div>`).join('') : '<p class="muted tiny">Ask a friend about a meal or recipe.</p>'}
+      <form id="circle-comment-form" class="circle-form"><label for="circle-target">Comment on</label><select id="circle-target" name="target">${targetOptions}</select><label for="circle-comment">Comment</label><textarea id="circle-comment" name="body" maxlength="2000" required></textarea><button class="button primary" type="submit">Post comment</button></form>
+    </section></div>`;
+}
+
+function renderCircles() {
+  if (state.circleError) return empty('Circles unavailable', state.circleError) + action('Try again', 'circle-retry');
+  if (state.circleShareId) return state.circleDetail ? renderCircleDetail(state.circleDetail) : '<div class="section-loading" role="status">Loading shared meal…</div>';
+  const accepted = state.circles.filter((circle) => circle.myStatus === 'accepted');
+  const pending = state.circles.filter((circle) => circle.myStatus === 'pending');
+  const circleCards = accepted.map((circle) => {
+    const owner = circle.ownerId === state.session?.user?.id || !state.client;
+    const friends = owner ? arr(circle.members).filter((member) => member.userId !== circle.ownerId) : [];
+    return `<article class="card circle-card"><div class="card-head"><h3>${esc(circle.name)}</h3><span class="pill">Private circle</span></div>
+      <p class="muted tiny">Share a whole week or one recipe. Friends can view, comment, and save recipes.</p>
+      <div class="circle-actions">${action('Share this week', 'circle-share-week', circle.id, 'primary')}${action('Share a recipe', 'circle-compose-recipe', circle.id)}</div>
+      ${state.circleReview?.circleId === circle.id ? `<section class="circle-review"><h4>Review before sharing</h4><p class="tiny">Week of ${esc(state.circleReview.weekStart)} · ${arr(state.circleReview.plan.entries).length} meals</p>
+        <p class="tiny">Visible to ${esc(arr(circle.memberNames).join(', ') || 'you')} (${esc(circle.memberCount || 1)} accepted members). Future members cannot see this share.</p>
+        <ul>${arr(state.circleReview.plan.entries).map((meal) => `<li><strong>${esc(meal.date)} · ${esc(meal.slotName || label(meal.slot))}: ${esc(meal.meal)}</strong>${meal.notes ? `<span> · ${esc(meal.notes)}</span>` : ''}${arr(meal.components).length ? `<span> · ${arr(meal.components).map((part) => esc(part.name)).join(', ')}</span>` : ''}</li>`).join('')}</ul>
+        <p class="muted tiny">All meal notes, components, and referenced recipes or ready foods become a snapshot. Friends can save recipes as independent copies. Pantry stock, prep tasks, and shopping stay private.</p>
+        <div class="circle-actions">${action('Publish week', 'circle-publish-week', circle.id, 'primary')}${action('Cancel', 'circle-cancel-review')}</div></section>` : ''}
+      ${state.circleComposer === circle.id ? `<form class="circle-form" id="circle-recipe-form" data-circle-id="${esc(circle.id)}"><label for="circle-recipe-select">Recipe to share</label><select id="circle-recipe-select" name="recipeId" required>${state.mealRecipes.map((recipe) => `<option value="${esc(recipe.id)}">${esc(recipe.title)}</option>`).join('')}</select><button class="button primary" type="submit">Share recipe</button></form>` : ''}
+      ${owner ? `<form class="circle-form circle-invite-form" data-circle-id="${esc(circle.id)}"><label>Invite an existing friend<input name="email" type="email" required placeholder="friend@example.com" /></label><button class="button ghost" type="submit">Invite friend</button></form>
+        ${friends.length ? `<div class="circle-members"><h4>Friends</h4>${friends.map((member) => `<div class="circle-member"><span>${esc(member.email)} · ${esc(member.status)}</span>${action(member.status === 'pending' ? 'Cancel invite' : 'Remove friend', 'circle-remove-friend', `${circle.id}:${member.userId}`, 'danger')}</div>`).join('')}</div>` : ''}` : `<div class="circle-actions">${action('Leave circle', 'circle-leave', circle.id, 'danger')}</div>`}
+    </article>`;
+  }).join('');
+  const posts = state.circleFeed.map((post) => `<article class="card circle-post"><p class="eyebrow">${esc(post.createdByName || 'Friend')} in ${esc(post.circleName)} · ${post.kind === 'week' ? 'Weekly plan' : 'Recipe'}</p><h3>${esc(post.kind === 'week' ? `Week of ${post.snapshot.weekStart}` : post.snapshot.recipe.title)}</h3>
+    <p class="muted tiny">${post.kind === 'week' ? `${arr(post.snapshot.entries).length} meals · ${arr(post.snapshot.recipes).length} recipes` : 'Shared recipe snapshot'} · ${esc(new Date(post.createdAt).toLocaleDateString())}</p>
+    ${post.kind === 'week' ? `<p class="circle-preview">${arr(post.snapshot.entries).slice(0, 3).map((meal) => esc(meal.meal)).join(' · ')}</p>` : ''}
+    <div class="circle-actions">${action('View discussion', 'circle-open-share', post.id)}</div></article>`).join('');
+  return `<div class="circle-page"><section class="page-heading"><div><p class="eyebrow">Food with close friends</p><h2>Circles</h2><p>Share a meal week, ask what worked, and keep a recipe that inspires you.</p></div></section>
+    <section class="circle-setup"><div class="section-head"><h2>Your circles</h2>${action('Create circle', 'circle-compose-create')}</div>
+      ${state.circleComposer === 'create' ? `<form id="circle-create-form" class="card circle-form"><label for="circle-name">Circle name</label><input id="circle-name" name="name" maxlength="80" required /><button class="button primary" type="submit">Create</button></form>` : ''}
+      ${pending.map((circle) => `<article class="card circle-card"><h3>${esc(circle.name)}</h3><p class="tiny">A friend invited you to this circle.</p><div class="circle-actions">${action('Join circle', 'circle-accept', circle.id, 'primary')}${action('Decline', 'circle-decline', circle.id)}</div></article>`).join('')}
+      ${circleCards || '<p class="muted tiny">Create a circle or accept an invitation to start sharing.</p>'}</section>
+    <section class="circle-feed"><div class="section-head"><h2>Shared with you</h2></div>${posts || '<p class="muted tiny">No shares yet. A week or recipe shared with your circle appears here.</p>'}${state.circleNextOffset !== null ? action('Show older shares', 'circle-load-more') : ''}</section></div>`;
 }
 
 function renderPlanningRules() {
@@ -685,7 +775,7 @@ function render() {
     content.innerHTML = empty(`Could not load ${TITLES[state.view].toLowerCase()}`, 'Please try again.') + action('Try again', 'retry-view');
     return;
   }
-  const views = { overview: renderOverview, plan: renderPlan, recipes: renderRecipes, pantry: renderPantry, shopping: renderShopping, reviews: renderReviews, settings: renderSettings, notifications: renderNotifications };
+  const views = { overview: renderOverview, plan: renderPlan, recipes: renderRecipes, pantry: renderPantry, shopping: renderShopping, reviews: renderReviews, circles: renderCircles, settings: renderSettings, notifications: renderNotifications };
   content.innerHTML = views[state.view]?.() || renderOverview();
   const browserRoot = content.querySelector('#recipe-browser');
   if (browserRoot) recipeBrowser = new RecipeBrowser(browserRoot, {
@@ -719,6 +809,8 @@ function view(name, historyMode = 'push') {
   state.recipe = null;
   state.shareUrl = null;
   state.shareId = null;
+  state.circleShareId = null;
+  state.circleDetail = null;
   writeRoute(historyMode);
   loadViewData().catch((error) => showToast(error.message));
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -974,6 +1066,75 @@ async function submitEditor(data) {
 }
 
 async function handleAction(actionName, id) {
+  if (actionName === 'circle-retry') return loadCircleData();
+  if (actionName === 'circle-load-more') {
+    if (state.circleNextOffset === null) return;
+    const page = await api(`/api/circle-shares?offset=${state.circleNextOffset}`);
+    state.circleFeed.push(...arr(page.items));
+    state.circleNextOffset = page.nextOffset;
+    render(); return;
+  }
+  if (actionName === 'circle-compose-create') { state.circleComposer = 'create'; render(); return; }
+  if (actionName === 'circle-compose-recipe') { await loadMealRecipes(); state.circleComposer = id; render(); return; }
+  if (actionName === 'circle-share-week') {
+    const weekStart = state.weekStart || monday();
+    const plan = (await api(`/api/meal-plan?week_start=${encodeURIComponent(weekStart)}`)).plan;
+    if (!plan) throw new Error('Weekly plan was not found');
+    state.circleReview = {circleId: id, weekStart, plan, householdId: state.activeHouseholdId}; render(); return;
+  }
+  if (actionName === 'circle-cancel-review') { state.circleReview = null; render(); return; }
+  if (actionName === 'circle-publish-week') {
+    const review = state.circleReview;
+    if (!review || review.circleId !== id) return;
+    if (review.householdId !== state.activeHouseholdId) {
+      state.circleReview = null; render(); throw new Error('The active household changed. Review the week again before publishing.');
+    }
+    const latest = (await api(`/api/meal-plan?week_start=${encodeURIComponent(review.weekStart)}`)).plan;
+    if (JSON.stringify(latest) !== JSON.stringify(review.plan)) {
+      state.circleReview = latest ? {...review, plan: latest} : null;
+      render(); throw new Error('The weekly plan changed. Review it again before publishing.');
+    }
+    await save(`/api/circles/${encodeURIComponent(id)}/weeks`, 'POST', {weekStart: review.weekStart});
+    state.circleReview = null;
+    await loadCircleData(); showToast('Whole week shared with your circle.'); return;
+  }
+  if (actionName === 'circle-open-share') {
+    state.circleShareId = id; state.circleDetail = await api(`/api/circle-shares/${encodeURIComponent(id)}`);
+    writeRoute(); render(); return;
+  }
+  if (actionName === 'circle-back') { state.circleShareId = null; state.circleDetail = null; writeRoute(); render(); return; }
+  if (actionName === 'circle-accept' || actionName === 'circle-decline') {
+    await save(`/api/circles/${encodeURIComponent(id)}/invitation-response`, 'POST', {accept: actionName === 'circle-accept'});
+    await loadCircleData(); return;
+  }
+  if (actionName === 'circle-remove-friend') {
+    const [circleId, userId] = id.split(':');
+    await api(`/api/circles/${encodeURIComponent(circleId)}/members/${encodeURIComponent(userId)}`, {method: 'DELETE'});
+    await loadCircleData(); showToast('Friend removed from circle.'); return;
+  }
+  if (actionName === 'circle-leave') {
+    await api(`/api/circles/${encodeURIComponent(id)}/leave`, {method: 'POST'});
+    await loadCircleData(); showToast('You left the circle.'); return;
+  }
+  if (actionName === 'circle-save-recipe') {
+    const [shareId, recipeId] = id.split(':');
+    await api(`/api/circle-shares/${encodeURIComponent(shareId)}/recipes/${encodeURIComponent(recipeId)}/save`, {method: 'POST'});
+    state.circleDetail = await api(`/api/circle-shares/${encodeURIComponent(shareId)}`); render(); showToast('Recipe saved to your household.'); return;
+  }
+  if (actionName === 'circle-delete-comment') {
+    await api(`/api/circle-comments/${encodeURIComponent(id)}`, {method: 'DELETE'});
+    state.circleDetail = await api(`/api/circle-shares/${encodeURIComponent(state.circleShareId)}`);
+    render(); showToast('Comment removed.'); return;
+  }
+  if (actionName === 'circle-open-saved') {
+    state.view = 'recipes';
+    await Promise.all([loadSection('recipes'), loadRecipe(id)]);
+    writeRoute(); render(); return;
+  }
+  if (actionName === 'circle-revoke') {
+    await api(`/api/circle-shares/${encodeURIComponent(id)}`, {method: 'DELETE'});
+    state.circleShareId = null; state.circleDetail = null; writeRoute(); await loadCircleData(); showToast('Share removed.'); return;
+  }
   if (actionName === 'retry-section') { const request = loadSection(id, true); render(); return request; }
   if (actionName === 'retry-view') return loadViewData(true);
   if (actionName === 'today-recipe') {
@@ -1285,6 +1446,31 @@ content.addEventListener('input', (event) => {
 });
 
 content.addEventListener('submit', async (event) => {
+  if (['circle-create-form', 'circle-recipe-form', 'circle-comment-form'].includes(event.target.id) || event.target.matches('.circle-invite-form')) {
+    event.preventDefault();
+    const target = event.target;
+    const submit = target.querySelector('[type="submit"]');
+    submit.disabled = true;
+    try {
+      const data = new FormData(target);
+      if (target.id === 'circle-create-form') {
+        await save('/api/circles', 'POST', {name: String(data.get('name') || '').trim()});
+        state.circleComposer = null;
+      } else if (target.id === 'circle-recipe-form') {
+        await save(`/api/circles/${encodeURIComponent(target.dataset.circleId)}/recipes`, 'POST', {recipeId: data.get('recipeId')});
+        state.circleComposer = null;
+      } else if (target.id === 'circle-comment-form') {
+        const [targetType, targetId] = String(data.get('target')).split(':');
+        await save(`/api/circle-shares/${encodeURIComponent(state.circleShareId)}/comments`, 'POST', {
+          body: String(data.get('body') || '').trim(), targetType, targetId: targetId || null,
+        });
+      } else {
+        await save(`/api/circles/${encodeURIComponent(target.dataset.circleId)}/invitations`, 'POST', {email: data.get('email')});
+      }
+      await loadCircleData();
+    } catch (error) { showToast(error.message || 'Could not save.'); submit.disabled = false; }
+    return;
+  }
   if (event.target.matches('.pantry-inline-form')) {
     event.preventDefault();
     const submit = event.target.querySelector('[type="submit"]');
@@ -1350,7 +1536,15 @@ form.addEventListener('submit', async (event) => {
 });
 
 document.querySelector('#refresh-button').addEventListener('click', () => refresh('Up to date.').catch((error) => showToast(error.message)));
-document.querySelector('#notifications-button').addEventListener('click', () => view('notifications'));
+document.querySelector('#notifications-button').addEventListener('click', () => {
+  view('notifications');
+  loadNotifications(state.dataGeneration);
+});
+window.addEventListener('focus', () => { if (state.snapshot) loadNotifications(state.dataGeneration); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.snapshot) loadNotifications(state.dataGeneration);
+});
+setInterval(() => { if (!document.hidden && state.snapshot) loadNotifications(state.dataGeneration); }, 60000);
 document.querySelector('#account-button').addEventListener('click', () => view('settings'));
 householdChoice.addEventListener('change', async () => {
   MealPrepChoices.setDisabled(householdChoice.querySelector('[data-choice-control]'), true);
@@ -1382,6 +1576,7 @@ async function start() {
   state.planTab = route.planTab;
   state.ruleRevisionId = route.ruleRevisionId;
   state.pantrySection = route.pantrySection;
+  state.circleShareId = route.circleShareId;
   state.config = await fetch('/api/auth/config').then((response) => response.json());
   if (state.config.supabaseUrl && state.config.supabaseAnonKey) {
     if (!window.supabase?.createClient) throw new Error('Sign in is unavailable. Check your connection and reload.');
@@ -1414,6 +1609,8 @@ window.addEventListener('popstate', async () => {
   state.rulePreview = null;
   state.rulePreviewError = null;
   state.pantrySection = route.pantrySection;
+  state.circleShareId = route.circleShareId;
+  state.circleDetail = null;
   state.recipe = null;
   state.shareUrl = null;
   state.shareId = null;

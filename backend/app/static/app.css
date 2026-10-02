@@ -293,6 +293,38 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
 .toast { position: fixed; right: 26px; bottom: 26px; z-index: 50; max-width: 360px; padding: 13px 17px; border-radius: 9px; background: var(--primary); color: white; font-size: .75rem; font-weight: 600; box-shadow: var(--shadow); opacity: 0; transform: translateY(16px); pointer-events: none; transition: .22s ease; }
 .toast.show { opacity: 1; transform: translateY(0); }
 .mobile-nav { display: none; }
+.circle-page, .circle-detail { max-width: 950px; margin-inline: auto; }
+.circle-page .page-heading { margin-bottom: 22px; }
+.circle-page .page-heading p:last-child { margin-top: 7px; color: var(--muted); }
+.circle-setup, .circle-feed, .circle-meals, .circle-recipes, .circle-discussion { display: grid; gap: 14px; margin-bottom: 30px; }
+.circle-setup .section-head, .circle-feed .section-head { margin: 0; }
+.circle-card, .circle-post { padding: 22px; }
+.circle-card h3, .circle-post h3, .circle-recipe h3 { font-family: var(--font-display); font-size: 1.2rem; }
+.circle-card > p, .circle-post > p { margin-top: 8px; }
+.circle-preview { color: var(--ink); font-size: .78rem; }
+.circle-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.circle-form { display: grid; gap: 9px; max-width: 540px; margin-top: 18px; }
+.circle-form label { color: var(--ink); font-size: .75rem; font-weight: 700; }
+.circle-form input, .circle-form select, .circle-form textarea { width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
+.circle-form textarea { min-height: 92px; resize: vertical; }
+.circle-form button { justify-self: start; }
+.circle-detail-head { margin: 22px 0 28px; }
+.circle-detail-head h2 { font-family: var(--font-display); font-size: clamp(1.8rem,4vw,2.6rem); }
+.circle-meal { padding: 14px 18px; border-left: 3px solid var(--copper); background: var(--paper); }
+.circle-meal h4 { margin: 5px 0; }
+.circle-meal ul, .circle-recipe ul, .circle-recipe ol { margin: 10px 0 0 22px; font-size: .76rem; line-height: 1.6; }
+.circle-recipe-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,280px),1fr)); gap: 12px; }
+.circle-recipe h4 { margin-top: 16px; font-size: .78rem; }
+.circle-comment { padding: 14px 18px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+.circle-comment p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.circle-comment small { color: var(--muted); }
+.circle-members { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.circle-review { margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.circle-review h4 { margin-bottom: 8px; }
+.circle-review p { margin: 8px 0; }
+.circle-review ul { margin: 12px 0 12px 20px; font-size: .76rem; line-height: 1.7; overflow-wrap: anywhere; }
+.circle-members h4 { margin-bottom: 8px; font-size: .8rem; }
+.circle-member { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 0; color: var(--muted); font-size: .73rem; overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .topbar:has(.household-picker:not([hidden])) { flex-wrap: wrap; gap: 12px; }
   .topbar:has(.household-picker:not([hidden])) .top-actions { width: 100%; }
@@ -341,7 +373,7 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
   .form-grid, .dialog-fields { grid-template-columns: 1fr; }
   .field.wide { grid-column: auto; }
   .planning-areas { grid-template-columns: 1fr; }
-  .mobile-nav { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 20; display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); padding: 6px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,252,247,.95); box-shadow: 0 12px 40px rgba(39,37,46,.14); backdrop-filter: blur(15px); }
+  .mobile-nav { position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 20; display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); padding: 6px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,252,247,.95); box-shadow: 0 12px 40px rgba(39,37,46,.14); backdrop-filter: blur(15px); }
   .mobile-nav button { display: grid; place-items: center; gap: 1px; min-height: 48px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: .57rem; font-weight: 700; }
   .mobile-nav .nav-svg { width: 19px; height: 19px; }
   .mobile-nav button.active { background: var(--primary); color: white; }
