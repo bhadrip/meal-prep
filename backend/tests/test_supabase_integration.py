@@ -68,6 +68,17 @@ async def test_local_friend_circle_sharing_and_inbox_isolation():
                 await peer.save_shared_recipe(old_share["id"], recipe["id"])
             shared = await own.share_week(circle["id"], week)
             assert (await peer.list_shared_with_me())["items"][0]["id"] == shared["id"]
+            message = await own.send_message(circle["id"], "What are you making tonight?")
+            assert [item["id"] for item in (await peer.list_shared_with_me(circle_id=circle["id"], kind="message"))["items"]] == [message["id"]]
+            assert (await peer.get_shared_item(message["id"]))["snapshot"]["text"] == "What are you making tonight?"
+            message_reply = await peer.comment(message["id"], "Dal bowls")
+            assert message_reply["body"] == "Dal bowls"
+            assert (await own.list_shared_with_me(circle_id=circle["id"], kind="message"))["items"][0]["commentCount"] == 1
+            with pytest.raises(RepositoryError):
+                await stranger.send_message(circle["id"], "I should not be here")
+            with pytest.raises(RepositoryError):
+                await stranger.get_shared_item(message["id"])
+            assert await friend.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_message"})
             friend_inbox = await friend.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_share"})
             assert friend_inbox and friend_inbox[0]["kind"] == "circle_share"
             snap = (await peer.get_shared_item(shared["id"]))["snapshot"]
@@ -132,6 +143,7 @@ async def test_local_friend_circle_sharing_and_inbox_isolation():
             with pytest.raises(RepositoryError):
                 await peer.get_shared_item(shared["id"])
             await own.revoke_share(shared["id"])
+            await own.delete_comment(message_reply["id"])
             assert await owner.request("GET", "notifications", params={"select": "kind", "kind": "eq.circle_comment"}) == []
             with pytest.raises(RepositoryError):
                 await peer.get_shared_item(shared["id"])
@@ -573,3 +585,95 @@ async def test_local_supabase_meal_library_roundtrip_validation_and_rls():
             for user in users:
                 deleted=await client.delete(f'/auth/v1/admin/users/{user}',headers=admin)
                 assert deleted.status_code in (200,204),deleted.text
+
+@pytest.mark.asyncio
+async def test_local_sharing_hub_direct_mentions_and_public_broadcasts():
+    """Private recipients, mention scope, and public bearer links stay separate."""
+    from app.application.meal_library import MealLibrary
+    from app.sharing import read_shared_food
+    url, anon, secret = (os.environ.get(key) for key in
+        ('MEAL_PREP_TEST_SUPABASE_URL', 'MEAL_PREP_TEST_ANON_KEY', 'MEAL_PREP_TEST_SERVICE_ROLE_KEY'))
+    if not all((url, anon, secret)):
+        pytest.skip('local Supabase test credentials are not configured')
+    admin = {'apikey': secret, 'Authorization': f'Bearer {secret}'}
+    users = []
+    async with httpx.AsyncClient(base_url=url, timeout=20) as client:
+        try:
+            repos = []
+            for role in ('owner', 'friend', 'outsider'):
+                email, password = f'hub-{role}-{uuid4()}@example.test', str(uuid4())
+                response = await client.post('/auth/v1/admin/users', headers=admin,
+                    json={'email': email, 'password': password, 'email_confirm': True})
+                assert response.status_code in (200, 201), response.text
+                users.append(response.json()['id'])
+                login = await client.post('/auth/v1/token', params={'grant_type': 'password'},
+                    headers={'apikey': anon}, json={'email': email, 'password': password})
+                assert login.status_code == 200
+                repo = SupabaseRepository(Settings(supabase_url=url, supabase_anon_key=anon, auth_required=True),
+                    login.json()['access_token'])
+                await repo.get_household_context()
+                repos.append((repo, email))
+            (owner, _), (friend, friend_email), (outsider, _) = repos
+            own, peer, stranger = CircleService(owner), CircleService(friend), CircleService(outsider)
+            recipe = await RecipePantryService(owner).save_recipe({'title': 'Hub dal', 'servings': 4,
+                'ingredients': [{'name': 'Lentils', 'quantity': 1, 'unit': 'cup'}]})
+            meal = await MealLibrary(owner).save({'name': 'Dal dinner', 'servings': 4,
+                'components': [{'id': str(uuid4()), 'name': 'Dal', 'source': 'cook',
+                    'action': 'cook', 'recipeId': recipe['id']}]})
+            circle = await own.create_circle('Small table')
+            await own.invite_friend(circle['id'], friend_email)
+            await peer.respond_invitation(circle['id'], True)
+            candidates = (await own.mention_candidates(circle['id']))['items']
+            assert {item['id'] for item in candidates} == {users[0], users[1]}
+            reviewed_audience = sorted(f"{item['userId']}:{item['membershipId']}" for item in
+                (await own.list_circles())['items'][0]['audience'])
+            assert await outsider.circle_mention_candidates(circle['id']) == []
+            with pytest.raises(RepositoryError, match='Mentioned friend'):
+                await own.send_message(circle['id'], 'Hello', mention_ids=[users[2]])
+            attached = await own.send_message(circle['id'], 'Try this', 'meal', meal['id'], [users[1]], reviewed_audience)
+            assert attached['kind'] == 'meal' and attached['snapshot']['meal']['name'] == 'Dal dinner'
+            assert (await peer.get_shared_item(attached['id']))['snapshot']['recipes'][0]['title'] == 'Hub dal'
+            assert (await friend.request('GET', 'notifications', params={'select': 'kind', 'kind': 'eq.circle_mention'}))
+            await own.invite_friend(circle['id'], repos[2][1])
+            await stranger.respond_invitation(circle['id'], True)
+            with pytest.raises(RepositoryError, match='Circle audience changed'):
+                await own.send_message(circle['id'], 'Stale share', 'recipe', recipe['id'],
+                    expected_audience=reviewed_audience)
+            await PlanningService(owner).save_meal_plan({'weekStart': '2030-02-04', 'entries': [
+                {'date': '2030-02-04', 'slot': 'dinner', 'meal': 'Dal'}]})
+            with pytest.raises(RepositoryError, match='Circle audience changed'):
+                await own.share_week(circle['id'], '2030-02-04', reviewed_audience)
+            assert not any(item['snapshot'].get('text') == 'Stale share' for item in
+                (await own.list_shared_with_me(circle_id=circle['id']))['items'])
+            assert users[2] not in (await own.get_shared_item(attached['id']))['recipientUserIds']
+            with pytest.raises(RepositoryError, match='Mentioned friend'):
+                await own.comment(attached['id'], 'Can you see this?', mention_ids=[users[2]])
+            direct = await own.share_direct(friend_email, 'recipe', recipe['id'])
+            assert direct['roomType'] == 'direct'
+            assert (await peer.list_direct_shares())['items'][0]['id'] == direct['id']
+            assert (await peer.list_circles())['items'][0]['name'] == 'Small table'
+            assert (await peer.get_shared_item(direct['id']))['snapshot']['recipe']['title'] == 'Hub dal'
+            with pytest.raises(RepositoryError):
+                await stranger.get_shared_item(direct['id'])
+            with pytest.raises(RepositoryError):
+                await outsider.circle_invite(direct['circleId'], users[2])
+            await peer.comment(direct['id'], 'Sounds good')
+            assert (await own.get_shared_item(direct['id']))['comments'][0]['body'] == 'Sounds good'
+            direct_meal = await own.share_direct(friend_email, 'meal', meal_id=meal['id'])
+            assert (await peer.get_shared_item(direct_meal['id']))['snapshot']['meal']['name'] == 'Dal dinner'
+            with pytest.raises(RepositoryError):
+                await own.share_direct(friend_email, 'meal', meal_id=str(uuid4()))
+            public = await RecipePantryService(owner).create_meal_share(meal['id'])
+            links = await RecipePantryService(owner).list_public_shares()
+            assert links[0]['token'] == public['token'] and links[0]['kind'] == 'meal'
+            assert (await read_shared_food(public['token'], Settings(supabase_url=url,
+                supabase_anon_key=anon, auth_required=True)))['meal']['name'] == 'Dal dinner'
+            assert await RecipePantryService(owner).revoke_public_share(public['id'])
+            assert await read_shared_food(public['token'], Settings(supabase_url=url,
+                supabase_anon_key=anon, auth_required=True)) is None
+            assert (await RecipePantryService(owner).list_public_shares())[0]['token'] is None
+            with pytest.raises(ApplicationError):
+                await RecipePantryService(friend).revoke_public_share(public['id'])
+        finally:
+            for user_id in users:
+                await client.delete(f'/auth/v1/admin/users/{user_id}', headers=admin)

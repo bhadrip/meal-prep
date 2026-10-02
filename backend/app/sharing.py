@@ -1,4 +1,4 @@
-"""Public recipe-share read path and deliberately limited HTML presentation."""
+"""Public food-share read path and deliberately limited HTML presentation."""
 
 from __future__ import annotations
 
@@ -33,6 +33,39 @@ async def read_shared_recipe(token: str, settings: Settings) -> dict[str, Any] |
     response.raise_for_status()
     share = response.json()
     return share or (DemoRepository.read_shared_recipe(token) if not settings.auth_required else None)
+
+
+async def read_shared_food(token: str, settings: Settings) -> dict[str, Any] | None:
+    if not TOKEN_PATTERN.fullmatch(token):
+        return None
+    if not settings.supabase_configured:
+        return DemoRepository.read_shared_food(token)
+    async with httpx.AsyncClient(timeout=12) as client:
+        response = await client.post(
+            f"{settings.supabase_url.rstrip('/')}/rest/v1/rpc/read_shared_food",
+            headers={"apikey": settings.supabase_anon_key,
+                     "Authorization": f"Bearer {settings.supabase_anon_key}",
+                     "Content-Type": "application/json"},
+            json={"raw_token": token},
+        )
+    response.raise_for_status()
+    share = response.json()
+    return share or (DemoRepository.read_shared_food(token) if not settings.auth_required else None)
+
+
+def render_shared_meal_page(share: dict[str, Any]) -> str:
+    meal = share["meal"]
+    name = escape(str(meal.get("name") or "Shared meal"))
+    notes = escape(str(meal.get("notes") or ""))
+    parts = "".join(f"<li>{escape(str(part.get('name') or ''))}</li>"
+                    for part in meal.get("components") or [])
+    recipes = "".join(f"<article><h2>{escape(str(recipe.get('title') or 'Recipe'))}</h2>"
+                      + "".join(f"<p>{escape(_instruction_text(step))}</p>" for step in recipe.get("instructions") or [])
+                      + "</article>" for recipe in meal.get("recipes") or [])
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive"><title>{name} · Meal Prep</title>
+<style>:root{{font-family:ui-sans-serif,system-ui,sans-serif;color:#17211e;background:#f5f7f2}}body{{margin:0;padding:24px}}main{{max-width:760px;margin:32px auto;background:white;border:1px solid #dfe5de;border-radius:24px;padding:clamp(24px,5vw,48px)}}h1,h2{{font-family:Georgia,serif}}h1{{font-size:clamp(2rem,5vw,3rem)}}p,li{{line-height:1.6}}</style>
+</head><body><main><p>Shared meal · Read only</p><h1>{name}</h1><p>{notes}</p><p>{escape(str(meal.get('servings') or ''))} servings</p><h2>Components</h2><ul>{parts}</ul>{recipes}</main></body></html>"""
 
 
 def _ingredient_text(value: Any) -> str:

@@ -80,7 +80,7 @@ def test_direct_mcp_can_discover_and_discuss_friend_shares(client: TestClient):
         return rpc(client, "tools/call", {"name": name, "arguments": arguments}, request_id)
 
     names = {tool["name"] for tool in rpc(client, "tools/list", {}, 800)["tools"]}
-    assert {"list_shared_with_me", "get_shared_item", "save_circle_recipe", "share_week_to_circle"} <= names
+    assert {"list_shared_with_me", "get_shared_item", "save_circle_recipe", "share_week_to_circle", "send_circle_message"} <= names
     circle = call("create_circle", {"name": "MCP friends"}, 801)["structuredContent"]
     week = call("get_meal_plan", {}, 802)["structuredContent"]["plan"]["weekStart"]
     shared = call("share_week_to_circle", {"circle_id": circle["id"], "week_start": week}, 803)["structuredContent"]
@@ -102,6 +102,11 @@ def test_direct_mcp_can_discover_and_discuss_friend_shares(client: TestClient):
     saved = call("save_circle_recipe", {"share_id": recipe_share["id"], "recipe_id": recipe_id}, 809)["structuredContent"]
     assert saved["recipeId"] != recipe_id
     assert call("save_circle_recipe", {"share_id": recipe_share["id"], "recipe_id": recipe_id}, 810)["structuredContent"]["alreadySaved"]
+    message = call("send_circle_message", {"circle_id": circle["id"], "body": "What did you cook?"}, 815)["structuredContent"]
+    scoped = call("list_shared_with_me", {"circle_id": circle["id"], "kind": "message"}, 816)["structuredContent"]
+    assert [item["id"] for item in scoped["items"]] == [message["id"]]
+    assert call("get_shared_item", {"share_id": message["id"]}, 817)["structuredContent"]["snapshot"]["text"] == "What did you cook?"
+    assert call("send_circle_message", {"circle_id": circle["id"], "body": "   "}, 818)["isError"]
     assert client.get("/invite").status_code == 200
 
 

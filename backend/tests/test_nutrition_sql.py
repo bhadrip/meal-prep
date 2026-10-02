@@ -33,7 +33,7 @@ def test_nutrition_sql_roundtrip_completed_guard_and_household_scope():
             if sql(f"select to_regclass('{relation}') is null;").strip() == b't':
                 sql((migrations / filename).read_text())
         if sql("select count(*) from information_schema.columns where table_schema='public' and table_name='meal_plan_entries' and column_name='nutrition';").strip() == b'0':
-            sql((migrations / '202610020004_meal_nutrition.sql').read_text())
+            sql((migrations / '202610020007_meal_nutrition.sql').read_text())
         sql("""
         do $$
         declare
