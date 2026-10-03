@@ -42,7 +42,7 @@ Each receipt/completion can be retried without adding or consuming stock twice.
 Apply `202610020001_unified_planning.sql` after the existing migrations to enable
 the shared website and MCP storage.
 
-The website also has a personal notification inbox for household invitations and activity. Alerts stay in the website; they do not send email or push messages. The inbox shows activity from households you still belong to, and opening an alert switches to its household when needed.
+The website also has a personal notification inbox for household invitations and activity. Alerts stay in the website; they do not send email or push messages. The inbox shows activity from households you still belong to, and opening an alert switches to its household when needed and marks it read. You can also mark notifications read or unread, archive them to clear the inbox, and restore them from View archive. Direct MCP clients have the same list, read, and archive operations.
 
 ```text
 Website           → HTTP API ─┐

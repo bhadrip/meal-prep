@@ -64,7 +64,7 @@ let circleMentionInstances = [];
 const state = { browserUi: {}, view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, mealPlanRules: null, ruleHistory: null, planTab: 'plan', ruleRevisionId: null, rulePreview: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, recipeShareReview: null, circles: [], circleId: null, circleFeed: [], circleNextOffset: null, circleDetail: null, circleComposer: null, circleReview: null, directShares: [], publicShares: [], circleHub: 'home', directReview: null, circleFoodReview: null, circleSearch: '', circleMentions: [], circleMeals: [], search: '', recipeTag: '', mealRecipes: [], pantrySearch: '', pantryCategory: 'all', pantryStock: 'on-hand', pantryReview: false, pantryQuantityId: null, pantrySection: 'items', pantryPhotos: [], pantryPhotosHasMore: false, pantryPhotosLoading: false, pantryPhotosError: null, pantryPhotosRequest: 0, client: null, session: null, config: null, editor: null };
 const VIEW_SECTIONS = { overview: ['mealPlan', 'shoppingList', 'pantry'], plan: ['mealPlan', 'schedule'], recipes: ['recipes'], pantry: ['pantry'], shopping: ['shoppingList'], reviews: ['feedback', 'memories'], circles: [], settings: [], notifications: [] };
 const SECTION_NAMES = { mealPlan: 'meals and prep', shoppingList: 'shopping list', pantry: 'pantry', schedule: 'weekly rhythm', mealPlanRules: 'meal preferences', recipes: 'recipes', meals: 'saved meals', feedback: 'reviews', memories: 'household memory' };
-Object.assign(state, { dataGeneration: 0, sectionRequests: new Map(), sectionWeeks: {}, dashboardExpanded: false, todayMode: 'meals', notificationsLoading: true, circleManageOpenId: null, circleLoadRequest: 0 });
+Object.assign(state, { dataGeneration: 0, sectionRequests: new Map(), sectionWeeks: {}, dashboardExpanded: false, todayMode: 'meals', notificationsLoading: true, notificationsArchived: false, archivedNotifications: [], circleManageOpenId: null, circleLoadRequest: 0 });
 function routeFromUrl() {
   const params = new URLSearchParams(location.search);
   const requestedView = params.get('view');
@@ -230,9 +230,10 @@ async function refresh(message) {
 async function loadNotifications(generation) {
   state.notificationsLoading = true;
   try {
-    const data = await api('/api/notifications');
+    const [data, archive] = await Promise.all([api('/api/notifications'), state.notificationsArchived ? api('/api/notifications?archived=true') : Promise.resolve(null)]);
     if (generation !== state.dataGeneration) return;
     state.notifications = arr(data.items);
+    if (archive) state.archivedNotifications = arr(archive.items);
     state.notificationError = false;
   } catch {
     if (generation !== state.dataGeneration) return;
@@ -302,7 +303,7 @@ async function loadViewData(force = false) {
 }
 
 function updateNotificationCount() {
-  const count = state.notifications.filter((item) => !item.read_at).length;
+  const count = state.notifications.filter((item) => !item.read_at && !item.archived_at).length;
   const badge = document.querySelector('#notification-count');
   badge.hidden = count === 0;
   badge.textContent = count > 99 ? '99+' : String(count);
@@ -442,13 +443,14 @@ function renderOverview() {
 function renderNotifications() {
   if (state.notificationsLoading) return '<div class="section-loading" role="status">Loading notifications…</div>';
   if (state.notificationError) return empty('Notifications unavailable', 'Refresh the page to try again.');
-  if (!state.notifications.length) return empty('All caught up', 'Household and circle activity will appear here.');
+  const items = state.notificationsArchived ? state.archivedNotifications : state.notifications;
   return `<section class="page-heading"><div><p class="eyebrow">Household and circle activity</p><h2>Your notifications</h2></div></section>
-    <div class="stack">${state.notifications.map((item) => `<article class="card notification-item ${item.read_at ? '' : 'unread'}">
-      <div class="card-head"><h3>${esc(item.title)}</h3>${item.read_at ? '' : '<span class="notification-new">New</span>'}</div>
+    <div class="actions" style="margin-bottom:16px">${action(state.notificationsArchived ? 'Back to inbox' : 'View archive', 'toggle-notification-archive')}</div>
+    ${!items.length ? empty(state.notificationsArchived ? 'Archive is empty' : 'All caught up', 'Household and circle activity will appear here.') : `<div class="stack">${items.map((item) => `<article class="card notification-item ${item.read_at ? '' : 'unread'}">
+      <div class="card-head"><h3>${esc(item.title)}</h3><span class="notification-new">${item.read_at ? 'Read' : 'Unread'}</span></div>
       <p class="muted tiny">${esc(new Date(item.created_at).toLocaleString())}</p>
-      <div style="margin-top:14px">${action('Open', 'open-notification', item.id)}</div>
-    </article>`).join('')}</div>`;
+      <div class="actions" style="margin-top:14px">${action('Open', 'open-notification', item.id)}${action(item.read_at ? 'Mark unread' : 'Mark read', 'toggle-notification-read', item.id)}${action(state.notificationsArchived ? 'Restore to inbox' : 'Archive', 'archive-notification', item.id)}</div>
+    </article>`).join('')}</div>`}`;
 }
 
 async function loadCircleData(quiet = false) {
@@ -1439,8 +1441,30 @@ async function handleAction(actionName, id) {
   if (actionName === 'archive-library-meal') {
     await api(`/api/meals/${encodeURIComponent(id)}`, {method: 'DELETE'}); return refresh('Meal archived.');
   }
+  if (actionName === 'toggle-notification-archive') {
+    const archived = !state.notificationsArchived;
+    if (archived) state.archivedNotifications = arr((await api('/api/notifications?archived=true')).items);
+    state.notificationsArchived = archived;
+    return render();
+  }
+  if (actionName === 'toggle-notification-read' || actionName === 'archive-notification') {
+    const items = state.notificationsArchived ? state.archivedNotifications : state.notifications;
+    const item = items.find((notification) => notification.id === id);
+    if (!item) return;
+    if (actionName === 'toggle-notification-read') {
+      const result = await api(`/api/notifications/${encodeURIComponent(id)}/read?read=${!item.read_at}`, { method: 'PATCH' });
+      item.read_at = result.readAt;
+    } else {
+      const result = await api(`/api/notifications/${encodeURIComponent(id)}/archive?archived=${!state.notificationsArchived}`, { method: 'PATCH' });
+      item.archived_at = result.archivedAt;
+      items.splice(items.indexOf(item), 1);
+      (state.notificationsArchived ? state.notifications : state.archivedNotifications).unshift(item);
+    }
+    updateNotificationCount();
+    return render();
+  }
   if (actionName === 'open-notification') {
-    const item = state.notifications.find((notification) => notification.id === id);
+    const item = [...state.notifications, ...state.archivedNotifications].find((notification) => notification.id === id);
     if (!item) return;
     if (!item.read_at) {
       const result = await api(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH' });

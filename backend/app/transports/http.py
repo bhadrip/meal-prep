@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..application import MealPrepServices
+from ..application.notifications import list_inbox, update_inbox
 from ..application.nutrition import weekly_nutrition, with_weekly_nutrition
 from ..auth import SupabaseTokenVerifier
 from ..config import get_settings
@@ -136,15 +137,8 @@ async def app_bootstrap(services: WebServices, include_sections: bool = True) ->
 
 
 @router.get("/api/notifications")
-async def list_notifications(services: WebServices) -> dict:
-    repository = services.household.repository
-    if not isinstance(repository, SupabaseRepository):
-        return {"items": [], "unreadCount": 0}
-    rows = await repository.request("GET", "notifications", params={
-        "select": "id,household_id,kind,title,target_path,created_at,read_at",
-        "order": "created_at.desc", "limit": "100",
-    }) or []
-    return {"items": rows, "unreadCount": sum(row["read_at"] is None for row in rows)}
+async def list_notifications(services: WebServices, archived: bool = False) -> dict:
+    return await list_inbox(services.household.repository, archived)
 
 
 @router.get("/api/circles")
@@ -242,17 +236,21 @@ async def revoke_circle_share(share_id: UUID, services: WebServices) -> dict:
     return await services.circles.revoke_share(str(share_id))
 
 
+async def change_notification(services, notification_id, field, enabled):
+    try:
+        return await update_inbox(services.household.repository, str(notification_id), field, enabled)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @router.patch("/api/notifications/{notification_id}/read")
-async def mark_notification_read(notification_id: UUID, services: WebServices) -> dict:
-    repository = services.household.repository
-    if not isinstance(repository, SupabaseRepository):
-        raise HTTPException(status_code=404, detail="Notification not found")
-    rows = await repository.request("PATCH", "notifications",
-        params={"id": f"eq.{notification_id}"},
-        json={"read_at": datetime.now(UTC).isoformat()}) or []
-    if not rows:
-        raise HTTPException(status_code=404, detail="Notification not found")
-    return {"id": rows[0]["id"], "readAt": rows[0]["read_at"]}
+async def mark_notification_read(notification_id: UUID, services: WebServices, read: bool = True) -> dict:
+    return await change_notification(services, notification_id, "read_at", read)
+
+
+@router.patch("/api/notifications/{notification_id}/archive")
+async def archive_notification(notification_id: UUID, services: WebServices, archived: bool = True) -> dict:
+    return await change_notification(services, notification_id, "archived_at", archived)
 
 
 @router.get("/api/household")

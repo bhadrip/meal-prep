@@ -10,6 +10,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict
 
+from ..application.notifications import list_inbox, update_inbox
 from ..application.nutrition import weekly_nutrition, with_weekly_nutrition
 from ..auth import SupabaseTokenVerifier
 from ..config import MCP_AUTH_SCOPES, get_settings
@@ -84,6 +85,24 @@ WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHin
 APPEND = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 ARCHIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
 SHARE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True)
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_notifications(archived: bool = False) -> dict[str, Any]:
+    """List your active inbox, or archived notifications when archived is true."""
+    return await list_inbox(services_for_request().household.repository, archived)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def set_notification_read(notification_id: str, read: bool = True) -> dict[str, Any]:
+    """Mark your notification read or unread without opening its destination."""
+    return await update_inbox(services_for_request().household.repository, notification_id, "read_at", read)
+
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def archive_notification(notification_id: str, archived: bool = True) -> dict[str, Any]:
+    """Clear a notification from your inbox by archiving it, or restore it with archived=false."""
+    return await update_inbox(services_for_request().household.repository, notification_id, "archived_at", archived)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
