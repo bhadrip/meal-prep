@@ -433,3 +433,5 @@ omitted for variation-only records. A basis is required once any nutrient
 guidance, food source or numeric amount is provided. Do not infer nutrient data
 from variation names. The editor starts with no variations; saved choices alone
 populate the toggle, and removing all variations clears it.
+
+Show nutrition only when saved facts or assessments exist. Do not insert demonstration meals, previews, or empty nutrition cards in the website or MCP App. Saved preparation-only variations remain visible as variations, without empty nutrition messages. Weekly numeric summaries contain only variations with at least one recorded number (zero is a recorded value); notes and qualitative levels alone do not create weekly totals.

@@ -115,7 +115,9 @@ def weekly_nutrition(plan):
                 number['total'] = round(number['total'], 3)
         profile['micronutrients'] = [{**item, 'total': round(item['total'], 6)}
                                     for item in profile['micronutrients'].values()]
-    return {'mealCount': len(entries), 'profiles': list(profiles.values()),
+    return {'mealCount': len(entries), 'profiles': [profile for profile in profiles.values()
+                if any(value['total'] is not None for value in profile['amounts'].values())
+                or profile['micronutrients']],
             'basis': 'One stated plate per variation per planned meal. Known values only; not household consumption or daily targets.'}
 
 

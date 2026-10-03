@@ -10,11 +10,8 @@ async function choose(row, nutrient, value) {
 test('serving variations save macro amounts and food sources, reject invalid amounts, and clear', async ({page}) => {
   await page.request.put('/api/meal-plan', {data: {weekStart: week, entries: [], tasks: []}});
   await page.goto(`/app?view=plan&week=${week}`);
-  await page.locator('.nutrition-example summary').click();
-  await expect(page.locator('.nutrition-example .nutrition-profile:visible')).toHaveCount(1);
-  await page.locator('.nutrition-example').getByRole('button', {name:'Protein-heavy', exact:true}).click();
-  await expect(page.locator('.nutrition-example [data-nutrient="protein"][data-level="high"]')).toBeVisible();
-  await page.locator('.nutrition-card').filter({has: page.locator('.nutrition-example')}).screenshot({path: '/tmp/meal-nutrition-preview.png'});
+  await expect(page.locator('.nutrition-card')).toHaveCount(0);
+  await expect(page.getByText('One meal, different plates', {exact:true})).toHaveCount(0);
   await page.getByRole('button', {name: 'Add meal', exact: true}).click();
   const editor = page.locator('#editor-dialog');
   await editor.locator('[name="meal"]').fill('Teriyaki noodles');
@@ -65,9 +62,8 @@ test('serving variations save macro amounts and food sources, reject invalid amo
   await editor.getByLabel('Variation name').first().fill('Quick');
   await editor.locator('#dialog-save').click();
   await expect(editor).toBeHidden();
-  await expect(page.locator('[data-weekly-profile="Quick"]')).toBeVisible();
-  await page.locator('.weekly-nutrition').getByRole('button', {name:'Protein-heavy',exact:true}).click();
-  await expect(page.locator('[data-weekly-profile="Quick"]')).toBeHidden();
+  await expect(page.locator('[data-weekly-profile="Quick"]')).toHaveCount(0);
+  await expect(meal.locator('.nutrition-details')).toContainText('Quick');
 
   await expect(page.locator('[data-weekly-profile="Protein-heavy"] [data-weekly-amount="protein"]')).toHaveText('35.5 g');
   await meal.getByRole('button', {name:'Edit', exact:true}).click();
@@ -76,7 +72,8 @@ test('serving variations save macro amounts and food sources, reject invalid amo
   await editor.getByRole('button', {name:'Remove variation'}).click();
   await editor.locator('#dialog-save').click();
   await expect(editor).toBeHidden();
-  await expect(meal).toContainText('Nutrition not added yet');
+  await expect(meal.locator('.nutrition-details')).toHaveCount(0);
+  await expect(page.locator('.weekly-nutrition')).toHaveCount(0);
   expect((await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan.entries[0].nutrition).toBeNull();
 });
 
@@ -126,6 +123,17 @@ test('self-contained MCP App shows the saved plates and preserves nutrition when
   await frame.locator('.recipe-nutrition').getByRole('button',{name:'Protein-heavy',exact:true}).click();
   await expect(frame.locator('.recipe-nutrition .nutrition-profile:visible [data-amount="protein"]')).toHaveText('28 g');
   await expect(frame.locator('.recipe-nutrition')).toContainText('Iron · 3 mg · Tofu');
+  const emptyPlan = await (await page.request.put('/api/meal-plan', {data:{weekStart:'2045-02-20', entries:[{date:'2045-02-20',slot:'dinner',meal:'No facts dinner'}],tasks:[]}})).json();
+  await page.evaluate(plan => document.querySelector('iframe').contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{kind:'meal_plan',plan}}},'*'),emptyPlan);
+  await expect(frame.locator('[data-plan-meal]')).toContainText('No facts dinner');
+  await expect(frame.locator('.nutrition-details')).toHaveCount(0);
+  await expect(frame.locator('.weekly-nutrition')).toHaveCount(0);
+  await expect(frame.getByText('preview only', {exact:false})).toHaveCount(0);
+  const noFacts = await (await page.request.put('/api/recipes', {data:{title:'MCP no facts'}})).json();
+  await page.evaluate(recipe => document.querySelector('iframe').contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:{kind:'recipe_library',recipes:[recipe]}}},'*'),noFacts);
+  await frame.getByRole('button',{name:'Open MCP no facts'}).click();
+  await expect(frame.getByRole('heading',{name:'MCP no facts',exact:true})).toBeVisible();
+  await expect(frame.locator('.recipe-nutrition')).toHaveCount(0);
 });
 
 test('weekly totals update after removing a meal and show incomplete coverage', async ({page}) => {
@@ -155,7 +163,7 @@ test('recipe nutrition edits persist, reject invalid units, and clear without ch
   const saved = await (await page.request.put('/api/recipes',{data:{title:`Numeric recipe ${Date.now()}`,servings:4}})).json();
   await page.goto(`/app?view=recipes&recipe=${saved.id}`);
   const section = page.locator('.recipe-nutrition');
-  await expect(section).toContainText('Nutrition not added yet');
+  await expect(section).toHaveCount(0);
   await page.getByRole('button',{name:'Edit recipe',exact:true}).click();
   const editor = page.locator('#editor-dialog');
   await editor.getByLabel('Nutrition basis / assumptions').fill('Ingredient estimate');
@@ -182,7 +190,7 @@ test('recipe nutrition edits persist, reject invalid units, and clear without ch
   await editor.getByRole('button',{name:'Remove variation'}).click();
   await editor.locator('#dialog-save').click();
   await expect(editor).toBeHidden();
-  await expect(section).toContainText('Nutrition not added yet');
+  await expect(section).toHaveCount(0);
   await expect(page.getByRole('heading',{name:saved.title,exact:true})).toBeVisible();
 });
 
@@ -229,6 +237,8 @@ test('adding a recipe accepts custom variations without nutrition, shows only sa
   await expect(card.locator('.nutrition-profile:visible')).toContainText(notes[1]);
   await expect(card.locator('.nutrition-profile:visible')).toHaveCount(1);
   await expect(card.locator('.nutrition-macros')).toHaveCount(0);
+  await expect(card.getByRole('heading', {name:'Variations',exact:true})).toBeVisible();
+  await expect(card).not.toContainText('Nutrition');
   await page.reload();
   await card.getByRole('button',{name:'Heart healthy',exact:true}).click();
   await expect(card.locator('.nutrition-profile:visible')).toContainText(notes[2]);
@@ -242,6 +252,6 @@ test('adding a recipe accepts custom variations without nutrition, shows only sa
   }
   await editor.locator('#dialog-save').click();
   await expect(editor).toBeHidden();
-  await expect(card.locator('.nutrition-toggle')).toHaveCount(0);
+  await expect(card).toHaveCount(0);
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
 });

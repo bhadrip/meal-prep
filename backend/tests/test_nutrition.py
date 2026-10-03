@@ -198,3 +198,25 @@ async def test_recipe_variations_need_no_nutrition_and_reject_duplicate_names():
     with pytest.raises(ApplicationError, match='basis'):
         await service.save_recipe({'title':'Unexplained numbers', 'nutrition':{'profiles':[
             {'name':'Tasty', 'serving':'Original plate', 'portion':'1 bowl', 'amounts':{'protein':20}}]}})
+
+
+@pytest.mark.asyncio
+async def test_weekly_summary_omits_unrecorded_numbers_without_inventing_facts():
+    service = PlanningService(DemoRepository())
+    guide = {'profiles': [{'name': 'Tasty', 'serving': 'Toast sesame seeds'}]}
+    saved = await service.save_meal_plan({'weekStart': WEEK, 'entries': [
+        {'date': WEEK, 'slot': 'dinner', 'meal': 'Noodles', 'nutrition': guide},
+        {'date': WEEK, 'slot': 'lunch', 'meal': 'Sandwich'}]})
+    assert (await service.get_weekly_nutrition(WEEK))['profiles'] == []
+    with pytest.raises(ApplicationError, match='not found'):
+        await service.get_weekly_nutrition(WEEK, 'Tasty')
+    assert await service.get_meal_plan(WEEK) == saved
+    numeric = {'basis': 'Recorded label', 'profiles': [
+        {'name': 'Tasty', 'serving': 'Toast sesame seeds', 'portion': '1 bowl', 'amounts': {'fat': 0}},
+        {'name': 'Decadent', 'serving': 'Add butter'}]}
+    await service.update_plan_item(WEEK, 'meal', {'id': saved['entries'][0]['id'], 'nutrition': numeric})
+    summary = await service.get_weekly_nutrition(WEEK)
+    assert [profile['name'] for profile in summary['profiles']] == ['Tasty']
+    assert summary['profiles'][0]['amounts']['fat'] == {'total': 0, 'coveredMeals': 1}
+    await service.update_plan_item(WEEK, 'meal', {'id': saved['entries'][0]['id'], 'nutrition': None})
+    assert (await service.get_plan_view(WEEK))['nutritionSummary']['profiles'] == []
