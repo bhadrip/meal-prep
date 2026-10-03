@@ -32,8 +32,8 @@ jobs:
           backend/.venv/bin/python -m pip install -e 'backend[dev]'
       - name: Install UI dependencies
         run: pnpm install --frozen-lockfile
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install desktop and mobile browser engines
+        run: pnpm exec playwright install --with-deps chromium webkit
       - name: Run backend tests
         run: backend/.venv/bin/python -m pytest backend/tests
       - name: Run UI tests

@@ -1,5 +1,10 @@
 const {test, expect} = require('@playwright/test');
 
+async function switchCircle(page, id) {
+  if (await page.locator('.circle-rail').isHidden()) await page.getByRole('button', {name: '‹ Chats', exact: true}).click();
+  await page.locator(`.circle-room[data-id="${id}"]`).click();
+}
+
 async function circle(page, name) {
   const response = await page.request.post('/api/circles', {data: {name}});
   expect(response.ok()).toBe(true);
@@ -54,16 +59,16 @@ test('cached room switches render before the network responds and retain separat
   await page.goto(`/app?view=circles&circle=${first.id}`);
   await expect(page.locator('.circle-post')).toContainText('Breakfast history');
   await page.getByLabel('Message Cached breakfast').fill('Breakfast draft');
-  await page.locator(`.circle-room[data-id="${second.id}"]`).click();
+  await switchCircle(page, second.id);
   await expect(page.locator('.circle-post')).toContainText('Dinner history');
   await page.getByLabel('Message Cached dinner').fill('Dinner draft');
   let release;
   const held = new Promise(resolve => { release = resolve; });
   await page.route('**/api/circle-shares?circle_id=*', async route => { await held; await route.continue(); });
-  await page.locator(`.circle-room[data-id="${first.id}"]`).click();
+  await switchCircle(page, first.id);
   await expect(page.locator('.circle-post')).toContainText('Breakfast history');
   await expect(page.getByLabel('Message Cached breakfast')).toHaveValue('Breakfast draft');
-  await page.locator(`.circle-room[data-id="${second.id}"]`).click();
+  await switchCircle(page, second.id);
   await expect(page.locator('.circle-post')).toContainText('Dinner history');
   await expect(page.getByLabel('Message Cached dinner')).toHaveValue('Dinner draft');
   release();

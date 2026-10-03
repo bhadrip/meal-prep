@@ -456,7 +456,7 @@ test('Save combination copies a mixed dinner while single recipes need no duplic
 });
 
 async function mountMcp(page, data) {
-  await page.route('**/meal-library-host', route=>route.fulfill({contentType:'text/html',body:`<!doctype html><iframe src="/static/mcp-app.html" style="width:100%;height:1000px"></iframe><script>
+  await page.route('**/meal-library-host', route=>route.fulfill({contentType:'text/html',body:`<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>@media(pointer:coarse){iframe{height:calc(100dvh - 16px)!important}}</style><iframe src="/static/mcp-app.html" style="width:100%;max-width:100%;box-sizing:border-box;height:1000px"></iframe><script>
   window.ready=false;window.calls=[];addEventListener('message',async event=>{const m=event.data;if(m?.jsonrpc!=='2.0'||!m.method)return;
   if(m.method==='ui/notifications/initialized'){window.ready=true;return;}
   if(m.method==='ui/initialize'){event.source.postMessage({jsonrpc:'2.0',id:m.id,result:{}},'*');return;}

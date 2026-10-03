@@ -57,7 +57,7 @@ test('self-contained MCP App shows saved plates without meal completion actions'
   plan.nutritionSummary = await (await page.request.get(`/api/meal-plan/nutrition?week_start=${week}`)).json();
   const resource = await page.request.post('/mcp', {headers:{Accept:'application/json, text/event-stream'}, data:{jsonrpc:'2.0', id:1, method:'resources/read', params:{uri:'ui://meal-prep/meal-plan-v2.html'}}});
   const html = (await resource.json()).result.contents[0].text;
-  await page.route('**/nutrition-host', route => route.fulfill({contentType:'text/html',body:`<!doctype html><iframe style="width:100%;height:900px"></iframe><script>
+  await page.route('**/nutrition-host', route => route.fulfill({contentType:'text/html',body:`<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>@media(pointer:coarse){iframe{height:calc(100dvh - 16px)!important}}</style><iframe style="width:100%;max-width:100%;box-sizing:border-box;height:900px"></iframe><script>
     window.ready=false;
     addEventListener('message',async event=>{const m=event.data;if(m?.jsonrpc!=='2.0'||!m.method)return;
       if(m.method==='ui/notifications/initialized'){window.ready=true;return;}

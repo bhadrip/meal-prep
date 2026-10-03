@@ -800,11 +800,16 @@ def _ui_resource() -> str:
     html = mcp_app_html()
     css = (STATIC_DIR / "choices.css").read_text(encoding="utf-8")
     script = (STATIC_DIR / "choices.js").read_text(encoding="utf-8")
-    return html.replace(
+    html = html.replace(
         '<link rel="stylesheet" href="/static/choices.css?v=1" />', f"<style>{css}</style>",
     ).replace(
-        '<script src="/static/choices.js?v=1" defer></script>', f"<script>{script}</script>",
+        '<script src="/static/choices.js?v=2" defer></script>', f"<script>{script}</script>",
     )
+    css = (STATIC_DIR / "mobile.css").read_text(encoding="utf-8")
+    script = (STATIC_DIR / "mobile.js").read_text(encoding="utf-8")
+    return html.replace(
+        '<link rel="stylesheet" href="/static/mobile.css?v=1" />', f"<style>{css}</style>",
+    ).replace('<script src="/static/mobile.js?v=1" defer></script>', f"<script>{script}</script>")
 
 
 @mcp.resource(

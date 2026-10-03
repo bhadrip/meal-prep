@@ -1,0 +1,26 @@
+/* Shared by the website, public pages, and self-contained MCP resources. */
+[hidden] { display: none !important; }
+@media (max-width: 780px), (pointer: coarse) {
+  a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; max-width: 100%; overflow-wrap: anywhere; touch-action: manipulation; }
+  button, [role="button"], summary {
+    min-height: 44px !important;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), textarea, select {
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    font-size: 16px !important; /* Prevent Safari zoom when editing a field. */
+  }
+  input[type="checkbox"], input[type="radio"] { flex-shrink: 0; }
+  label:has(input[type="checkbox"]), label:has(input[type="radio"]) { min-height: 44px; }
+  label, fieldset, form, main { min-width: 0; }
+  input { width: 100%; }
+  input[type="checkbox"], input[type="radio"], input[type="hidden"] { width: auto; }
+  h1, h2, h3, p, li, label { overflow-wrap: anywhere; }
+  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

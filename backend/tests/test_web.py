@@ -192,7 +192,7 @@ def test_weekly_reviews_are_visible_and_saved_as_feedback():
     demo_repository.cache_clear()
     client = TestClient(app)
     html = client.get("/app").text
-    mobile_nav = html.split('<nav class="mobile-nav"', 1)[1].split("</nav>", 1)[0]
+    mobile_nav = html.split('<dialog id="mobile-menu-dialog"', 1)[1].split("</dialog>", 1)[0]
     assert 'data-view="reviews"' in mobile_nav
     script = client.get("/static/app.js").text
     assert "Review this week" in script
@@ -210,6 +210,50 @@ def test_weekly_reviews_are_visible_and_saved_as_feedback():
     assert saved.json()["next_time"] == "Prep extra vegetables."
     reviews = client.get("/api/feedback?week_start=2026-09-28").json()["items"]
     assert any(item["id"] == saved.json()["id"] for item in reviews)
+    demo_repository.cache_clear()
+
+
+def test_mobile_website_serves_shared_assets_and_preserves_a_rejected_edit():
+    demo_repository.cache_clear()
+    client = TestClient(app, headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"})
+    for path in ("/", "/app", "/login", "/invite", "/oauth/consent"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert 'name="viewport" content="width=device-width, initial-scale=1"' in response.text
+        assert "/static/mobile.css?v=1" in response.text
+        assert "/static/mobile.js?v=1" in response.text
+    for asset in ("mobile.css", "mobile.js"):
+        assert client.get(f"/static/{asset}").status_code == 200
+    assert client.get("/static/missing-mobile.css").status_code == 404
+    stock = client.put("/api/pantry", json={"name": "Phone pantry rice", "quantity": 4, "unit": "cups"}).json()
+    rejected = client.post("/api/pantry/use", json={"itemId": stock["id"], "quantity": 5})
+    assert rejected.status_code == 422
+    unchanged = next(item for item in client.get("/api/pantry").json()["items"] if item["id"] == stock["id"])
+    assert unchanged["quantity"] == 4
+    saved = client.post("/api/pantry/use", json={"itemId": stock["id"], "quantity": 1})
+    assert saved.status_code == 200
+    assert saved.json()["quantityRemaining"] == 3
+    snapshot = client.get("/api/app/snapshot?sections=pantry").json()
+    assert next(item for item in snapshot["sections"]["pantry"]["value"] if item["id"] == stock["id"])["quantity"] == 3
+    demo_repository.cache_clear()
+
+
+def test_mobile_circle_saved_recipe_reads_preserve_the_thread_on_a_missing_recipe():
+    demo_repository.cache_clear()
+    client = TestClient(app, headers={"User-Agent": "Mozilla/5.0 (iPhone)"})
+    recipe = client.put("/api/recipes", json={"title": "Phone circle soup"}).json()
+    circle = client.post("/api/circles", json={"name": "Phone friends"}).json()
+    shared = client.post(f"/api/circles/{circle['id']}/recipes", json={"recipeId": recipe["id"]}).json()
+    copied = client.post(f"/api/circle-shares/{shared['id']}/recipes/{recipe['id']}/save").json()
+    detail = client.get(f"/api/recipes/{copied['recipeId']}")
+    assert detail.status_code == 200
+    assert detail.json()["title"] == "Phone circle soup"
+    thread = client.get(f"/api/circle-shares/{shared['id']}").json()
+    assert thread["savedRecipeIds"][recipe["id"]] == copied["recipeId"]
+    missing = client.get(f"/api/recipes/{uuid4()}")
+    assert missing.status_code == 422
+    assert missing.json()["detail"] == "Recipe was not found"
+    assert client.get(f"/api/circle-shares/{shared['id']}").json() == thread
     demo_repository.cache_clear()
 
 

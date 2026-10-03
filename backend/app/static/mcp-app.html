@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/static/choices.css?v=1" />
-    <script src="/static/choices.js?v=1" defer></script>
+    <script src="/static/choices.js?v=2" defer></script>
     <link rel="stylesheet" href="/static/nutrition.css" />
     <script src="/static/nutrition.js"></script>
     <style>
@@ -258,6 +258,21 @@
     <script src="/static/recipe-graph.js"></script>
     <link rel="stylesheet" href="/static/recipe-browser.css" />
     <script src="/static/recipe-browser.js"></script>
+    <link rel="stylesheet" href="/static/mobile.css?v=1" />
+    <style>
+      @media (max-width: 700px) {
+        header, .section-head, .snapshot-head, .feedback-row-head { flex-wrap: wrap; }
+        .grid { grid-template-columns: minmax(0,1fr); overflow: visible; }
+        .tabs { grid-template-columns: repeat(3,minmax(0,1fr)); }
+        .store-row, .pantry-use-actions { flex-wrap: wrap; }
+        .compact-row { grid-template-columns: minmax(0,1fr); }
+        .compact-row strong { white-space: normal; overflow-wrap: anywhere; }
+        .pantry-amount { justify-content: space-between; }
+        label input[type="checkbox"] { width: 44px; height: 44px; margin: 0; }
+        .form-grid { grid-template-columns: minmax(0,1fr); }
+      }
+    </style>
+    <script src="/static/mobile.js?v=1" defer></script>
   </head>
   <body>
     <main id="root"><div class="empty">Loading meal-prep data…</div></main>
