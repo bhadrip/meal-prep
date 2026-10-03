@@ -315,3 +315,47 @@ async def test_comments_can_be_removed_by_author_share_author_or_circle_owner_on
     assert (await own.get_shared_item(authors_post["id"]))["comments"] == []
     with pytest.raises(RepositoryError, match="not found"):
         await own.delete_comment(str(uuid4()))
+
+
+@pytest.mark.asyncio
+async def test_send_acknowledgement_can_render_without_refetch_and_failure_does_not_publish():
+    owner = DemoRepository()
+    owner.user_id = 'ack-owner@example.test'
+    owner._circles, owner._circle_posts, owner._circle_comments = {}, {}, {}
+    service = CircleService(owner)
+    circle = await service.create_circle('Fast conversation')
+    post = await service.send_message(circle['id'], '  Dinner is ready  ')
+    assert post['circleId'] == circle['id']
+    assert post['kind'] == 'message'
+    assert post['snapshot'] == {'text': 'Dinner is ready'}
+    assert post['createdBy'] == owner.user_id
+    assert post['createdByName'] and post['createdAt']
+    assert post['commentCount'] == 0
+    assert (await service.list_shared_with_me(circle_id=circle['id']))['items'] == [post]
+    with pytest.raises(ApplicationError, match='message'):
+        await service.send_message(circle['id'], ' ')
+    with pytest.raises(RepositoryError, match='Circle is not available'):
+        await CircleService(owner.as_user('outsider@example.test')).send_message(circle['id'], 'No access')
+    assert (await service.list_shared_with_me(circle_id=circle['id']))['items'] == [post]
+
+
+@pytest.mark.asyncio
+async def test_member_management_preserves_conversation_and_refresh_removes_revoked_access():
+    owner = DemoRepository()
+    owner.user_id = 'panel-owner@example.test'
+    owner._circles, owner._circle_posts, owner._circle_comments = {}, {}, {}
+    service = CircleService(owner)
+    circle = await service.create_circle('Member management')
+    friend = owner.as_user('panel-friend@example.test')
+    friend_service = CircleService(friend)
+    await service.invite_friend(circle['id'], friend.user_id)
+    await friend_service.respond_invitation(circle['id'], True)
+    sent = await service.send_message(circle['id'], 'Keep this conversation')
+    with pytest.raises(RepositoryError):
+        await friend_service.remove_friend(circle['id'], owner.user_id)
+    assert (await friend_service.list_shared_with_me(circle_id=circle['id']))['items'][0]['id'] == sent['id']
+    await service.remove_friend(circle['id'], friend.user_id)
+    assert (await service.list_shared_with_me(circle_id=circle['id']))['items'][0]['id'] == sent['id']
+    assert (await friend_service.list_shared_with_me(circle_id=circle['id']))['items'] == []
+    with pytest.raises(RepositoryError):
+        await friend_service.get_shared_item(sent['id'])

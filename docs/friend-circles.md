@@ -2,7 +2,9 @@
 
 Circles are small, private groups for sharing food plans with friends. A person creates a circle and invites existing Meal Prep accounts. Invitees see an in-app notification and can accept or decline. The owner can remove a member; members can leave. Only accepted members who were in the circle when a post was published can read or comment on it. A new member sees future posts only. Leaving or removal immediately ends access to posts and circle notifications; joining again does not restore earlier access. Saved recipe copies remain in the recipient's own household.
 
-The Circle tab shows a concise wall of two post types:
+The Circles tab opens a conversation list and one active chat. Member management, share selection and review, and recipe/week discussions open in a temporary side panel; mobile returns to the same conversation and draft. Text messages appear as pending until the server acknowledges them. Failed sends preserve their draft. Active conversations refresh even while typing. See [responsiveness research and implementation](circles-performance.md).
+
+Food shares have two main post types:
 
 - **Weekly plan:** one explicit, immutable snapshot of the whole week. Before publishing in the website, the author reviews the accepted audience and every meal and note. It includes every planned meal slot, meal notes and components, plus the full saved recipe or ready food details referenced by those meals. A repeated recipe appears once in the snapshot. Pantry IDs and stock quantities, prep tasks, shopping data, household preferences, and unrelated recipes are excluded. Changing the source plan or recipe later does not alter the post; the author can share the week again to publish an update.
 - **Recipe or ready food:** one explicit, immutable snapshot of that library item.
