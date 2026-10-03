@@ -146,11 +146,15 @@ One-off components may also use a name without a saved entry.
   It drops pantry links and converts task references to their recipe (or ready
   food). Set default servings explicitly if the original entry has no yield.
 - Use `plan_saved_meal` with `meal_id`, `week_start`, `planned_date`, enabled
-  `slot`, and optional `servings`. It scales amounts, creates fresh occurrence
+  `slot`, and optional `servings` and `notes`. It scales amounts, creates fresh occurrence
   and component IDs, and snapshots current recipe ingredients. The copy keeps
   `sourceMeal` identity/name/revision. Editing or archiving the library meal
   never rewrites prior plans. Read the copy before linking actual pantry lots
   or replacing cooking components with a batch task to avoid counting twice.
+- Use `plan_recipe` with a household `recipe_id`, week, date, enabled slot,
+  and optional servings and notes when the user chooses one recipe or ready
+  food directly. It creates a planned meal with one linked component and a
+  recipe snapshot. It does not save another library meal or use pantry stock.
 - `archive_meal` hides future choices while preserving existing dated copies.
   None of these operations consume stock or reserve pantry quantities.
 

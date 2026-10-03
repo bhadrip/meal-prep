@@ -52,6 +52,7 @@ test('unavailable planning rules leave the plan usable and retry from the rules 
   await page.getByRole('tab', { name: 'Meals', exact: true }).click();
   await expect(page.locator('#week-picker')).toBeVisible();
   await page.getByRole('button', { name: 'Add meal', exact: true }).click();
+  await editor(page).getByRole('button', { name: 'Build a custom planned meal' }).click();
   await editor(page).locator('[name="meal"]').fill('Dinner after retry');
   await editor(page).locator('#dialog-save').click();
   await expect(editor(page)).toBeHidden();
@@ -217,6 +218,7 @@ test('mobile notes editing preserves a failed draft, saves an empty week, and ke
   expect(secondBox.y).toBeGreaterThan(firstBox.y + firstBox.height);
   expect(secondBox.x).toBe(firstBox.x);
   await tuesday.getByRole('button', { name: 'Add meal to Tuesday' }).click();
+  await editor(page).getByRole('button', { name: 'Build a custom planned meal' }).click();
   await expect(editor(page).locator('[name="date"]')).toHaveValue('2031-04-08');
   await editor(page).locator('[name="meal"]').fill('Ambta baaji leftovers');
   await editor(page).locator('#dialog-save').click();

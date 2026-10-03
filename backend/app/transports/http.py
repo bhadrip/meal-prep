@@ -292,7 +292,13 @@ async def archive_meal(meal_id: str, services: WebServices) -> dict:
 @router.post("/api/meals/{meal_id}/plan")
 async def plan_saved_meal(meal_id: str, payload: dict[str, Any], services: WebServices) -> dict:
     return await services.planning.plan_saved_meal(payload.get("weekStart"), meal_id, payload.get("date"),
-                                                  payload.get("slot"), payload.get("servings"))
+                                                  payload.get("slot"), payload.get("servings"), payload.get("notes"))
+
+
+@router.post("/api/recipes/{recipe_id}/plan")
+async def plan_recipe(recipe_id: str, payload: dict[str, Any], services: WebServices) -> dict:
+    return await services.planning.plan_recipe(payload.get("weekStart"), recipe_id, payload.get("date"),
+                                              payload.get("slot"), payload.get("servings"), payload.get("notes"))
 
 
 @router.patch("/api/meal-plan/items")

@@ -575,7 +575,8 @@ class PlanningService:
         self.repository = repository
         self.meals = MealLibrary(repository)
 
-    async def plan_saved_meal(self, week_start: str, meal_id: str, planned_date: str, slot: str, servings=None) -> dict:
+    async def plan_saved_meal(self, week_start: str, meal_id: str, planned_date: str, slot: str,
+                              servings=None, notes: str | None = None) -> dict:
         self._week(week_start)
         meal = await self.meals.get(meal_id)
         if meal.get("archivedAt"):
@@ -583,8 +584,23 @@ class PlanningService:
         target = positive(servings if servings is not None else meal["servings"], "Servings")
         components = copy_components(meal["components"], Decimal(str(target)) / Decimal(str(meal["servings"])))
         return await self.update_plan_item(week_start, "meal", {"date": planned_date, "slot": slot,
-            "meal": meal["name"], "servings": target, "notes": meal["notes"], "components": components,
+            "meal": meal["name"], "servings": target, "notes": meal["notes"] if notes is None else notes, "components": components,
             "sourceMeal": {"id": meal["id"], "name": meal["name"], "revision": meal["revision"]}})
+
+    async def plan_recipe(self, week_start: str, recipe_id: str, planned_date: str, slot: str,
+                          servings=None, notes: str | None = None) -> dict:
+        self._week(week_start)
+        recipe = await self.repository.get_recipe(recipe_id)
+        if not recipe or recipe.get("archived_at"):
+            raise ApplicationError("Recipe was not found in this household")
+        target = positive(servings if servings is not None else recipe.get("servings") or 1, "Servings")
+        ready = recipe.get("kind") == "ready_food"
+        return await self.update_plan_item(week_start, "meal", {
+            "date": planned_date, "slot": slot, "meal": recipe["title"], "servings": target,
+            "notes": notes if notes is not None else "", "components": [{"name": recipe["title"], "quantity": target,
+                "unit": "servings", "source": "ready" if ready else "cook",
+                "action": "serve" if ready else "cook", "recipeId": recipe_id}],
+        })
 
     async def save_planned_meal(self, week_start: str, item_id: str, name=None, servings=None) -> dict:
         self._week(week_start)

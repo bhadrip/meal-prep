@@ -13,6 +13,7 @@ test('serving variations save macro amounts and food sources, reject invalid amo
   await expect(page.locator('.nutrition-card')).toHaveCount(0);
   await expect(page.getByText('One meal, different plates', {exact:true})).toHaveCount(0);
   await page.getByRole('button', {name: 'Add meal', exact: true}).click();
+  await page.locator('#editor-dialog').getByRole('button', {name: 'Build a custom planned meal'}).click();
   const editor = page.locator('#editor-dialog');
   await editor.locator('[name="meal"]').fill('Teriyaki noodles');
   await editor.getByLabel('Food or dish', {exact: true}).fill('Noodles, tofu, edamame and broccoli');

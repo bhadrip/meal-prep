@@ -42,6 +42,77 @@ test.afterEach(async ({page}) => {
   for (const id of createdRecipes) await request(page, 'delete', `/api/recipes/${id}`);
 });
 
+test('Add meal searches saved food, changes only servings and notes, and opens linked recipe', async ({page}) => {
+  const recipe = await request(page, 'put', '/api/recipes', {title: `Teriyaki udon ${suffix}`, servings: 4,
+    ingredients: [{name: 'Udon', quantity: 400, unit: 'g'}], instructions: ['Cook udon', 'Add tofu']});
+  const saved = await request(page, 'put', '/api/meals', {name: `Udon dinner ${suffix}`, servings: 4,
+    notes: 'Original library note', components: [{name: recipe.title, quantity: 4, unit: 'servings',
+      source: 'cook', action: 'cook', recipeId: recipe.id}]});
+  await page.goto(`/app?view=plan&week=${week}`);
+  await page.getByRole('button', {name: 'Add meal', exact: true}).click();
+  const picker = dialog(page);
+  await expect(picker.locator('[name="meal"]')).toHaveCount(0);
+  await expect(picker.locator('.component-row')).toHaveCount(0);
+  await expect(picker.locator('#dialog-save')).toBeDisabled();
+  await picker.locator('#plan-food-search').fill(`Teriyaki udon ${suffix}`);
+  await picker.locator('.plan-food-result').filter({hasText: recipe.title}).click();
+  await expect(picker.locator('#dialog-save')).toBeEnabled();
+  await picker.locator('#plan-food-search').fill('No such dinner in this library');
+  await expect(picker.locator('#dialog-save')).toBeDisabled();
+  await picker.locator('#plan-food-search').fill(`Teriyaki udon ${suffix}`);
+  await picker.locator('.plan-food-result').filter({hasText: recipe.title}).click();
+  await picker.locator('[name="servings"]').fill('2');
+  await picker.locator('[name="notes"]').fill('Extra chili crunch');
+  await save(page);
+  const entry = page.locator('.meal').filter({hasText: recipe.title});
+  await entry.locator('strong .planned-recipe-link').click();
+  await expect(page.locator('#view-title')).toHaveText('Recipes');
+  await expect(page.locator('.hero-copy')).toContainText(recipe.title);
+  await page.goto(`/app?view=plan&week=${week}`);
+  await page.locator('.meal').filter({hasText: recipe.title}).getByRole('button', {name: 'Meal details'}).click();
+  const detail = page.locator('#planned-meal-dialog');
+  await expect(detail).toContainText('Extra chili crunch');
+  await expect(detail).toContainText('2 servings');
+  await detail.getByRole('button', {name: `Open recipe: ${recipe.title}`}).click();
+  await expect(page.locator('#view-title')).toHaveText('Recipes');
+  await expect(page.locator('.hero-copy')).toContainText(recipe.title);
+  await expect(page.locator('.card-grid')).toContainText('Cook udon');
+  const first = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(first.components[0]).toMatchObject({recipeId: recipe.id, quantity: 2});
+  expect(first.notes).toBe('Extra chili crunch');
+
+  await page.goto(`/app?view=plan&week=${week}`);
+  await page.getByRole('button', {name: 'Add meal', exact: true}).click();
+  await picker.locator('#plan-food-search').fill(`Udon dinner ${suffix}`);
+  await picker.locator('.plan-food-result').filter({hasText: saved.name}).click();
+  await expect(picker.locator('[name="notes"]')).toHaveValue('Original library note');
+  await picker.locator('[name="servings"]').fill('8');
+  await picker.locator('[name="notes"]').fill('Feed friends tonight');
+  await save(page);
+  const plan = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan;
+  const second = plan.entries.find(row => row.sourceMeal?.id === saved.id);
+  expect(second.components[0].quantity).toBe(8);
+  expect(second.notes).toBe('Feed friends tonight');
+  expect((await request(page, 'get', `/api/meals/${saved.id}`)).notes).toBe('Original library note');
+});
+
+test('a named planned meal opens details without inventing a recipe or saving a copy', async ({page}) => {
+  await request(page, 'put', '/api/recipes', {title: `Friends dinner ${suffix}`, servings: 2});
+  await request(page, 'put', '/api/meal-plan', {weekStart: week, entries: [{date: week, slot: 'dinner',
+    meal: `Friends dinner ${suffix}`, notes: 'Bring salad'}], tasks: []});
+  await page.goto(`/app?view=plan&week=${week}`);
+  await page.locator('.planned-meal-title').click();
+  const detail = page.locator('#planned-meal-dialog');
+  await expect(detail).toContainText('Bring salad');
+  await expect(detail).toContainText('No recipe or other components are attached');
+  await expect(detail.getByRole('button', {name: /Open recipe/})).toHaveCount(0);
+  await detail.getByRole('button', {name: 'Search recipes for this meal'}).click();
+  await expect(page.locator('#view-title')).toHaveText('Recipes');
+  await expect(page.locator('#recipe-search')).toHaveValue(`Friends dinner ${suffix}`);
+  await expect(page.locator('#recipe-results')).toContainText(`Friends dinner ${suffix}`);
+  expect((await request(page, 'get', `/api/meals?query=${encodeURIComponent(suffix)}`)).items).toHaveLength(0);
+});
+
 test('Meals category creates recipes plus ready food, scales a dated copy, and calculates pantry-aware shopping', async ({page}) => {
   const dal = await request(page, 'put', '/api/recipes', {title: `Dal ${suffix}`, servings: 4, ingredients: [{name: `Lentils ${suffix}`, quantity: 200, unit: 'g'}]});
   const salad = await request(page, 'put', '/api/recipes', {title: `Salad ${suffix}`, servings: 2, ingredients: [{name: `Carrots ${suffix}`, quantity: 100, unit: 'g'}]});
@@ -131,7 +202,8 @@ test('Save as meal from a dated batch detaches pantry/task links and single reci
   const recipe = await request(page,'put','/api/recipes',{title:`Batch dal ${suffix}`,servings:4,ingredients:[{name:'Lentils',quantity:200,unit:'g'}]});
   const taskId=require('crypto').randomUUID(), stock=await request(page,'put','/api/pantry',{name:`Roti ${suffix}`,quantity:8,unit:'pieces'});
   const plan=await request(page,'put','/api/meal-plan',{weekStart:week,tasks:[{id:taskId,title:'Cook once',recipeId:recipe.id,servings:8}],entries:[{date:week,slot:'dinner',meal:`Batch dinner ${suffix}`,servings:4,components:[{name:recipe.title,quantity:4,unit:'servings',source:'task',taskId},{name:stock.name,quantity:8,unit:'pieces',pantryItemId:stock.id}]}]});
-  await page.goto(`/app?view=plan&week=${week}`); await page.locator('.meal').getByRole('button',{name:'Save as meal'}).click();
+  await page.goto(`/app?view=plan&week=${week}`); await page.locator('.meal').getByRole('button',{name:'Meal details'}).click();
+  await page.locator('#planned-meal-dialog').getByRole('button',{name:'Save reusable copy'}).click();
   await expect(dialog(page).locator('[data-source="task"]')).toHaveCount(0); await save(page);
   const saved=(await request(page,'get',`/api/meals?query=${suffix}`)).items.find(row=>row.name===`Batch dinner ${suffix}`);
   expect(saved.components[0]).toMatchObject({source:'cook',recipeId:recipe.id,taskId:null,pantryItemId:null});
@@ -143,7 +215,8 @@ test('Save as meal from a dated batch detaches pantry/task links and single reci
   const ready=await request(page,'put','/api/recipes',{title:`Ready rotis ${suffix}`,kind:'ready_food'});
   const readyTask=require('crypto').randomUUID();
   await request(page,'put','/api/meal-plan',{weekStart:week,tasks:[{id:readyTask,title:'Heat rotis',recipeId:ready.id,servings:4}],entries:[{date:week,slot:'dinner',meal:`Heated rotis ${suffix}`,servings:4,components:[{name:ready.title,source:'task',taskId:readyTask,action:'heat',quantity:8,unit:'pieces'}]}]});
-  await page.goto(`/app?view=plan&week=${week}`); await page.locator('.meal').getByRole('button',{name:'Save as meal'}).click();await save(page);
+  await page.goto(`/app?view=plan&week=${week}`); await page.locator('.meal').getByRole('button',{name:'Meal details'}).click();
+  await page.locator('#planned-meal-dialog').getByRole('button',{name:'Save reusable copy'}).click();await save(page);
   const heated=(await request(page,'get',`/api/meals?query=Heated%20rotis%20${suffix}`)).items[0];createdMeals.push(heated.id);
   expect(heated.components[0]).toMatchObject({source:'ready',recipeId:ready.id,action:'heat',taskId:null});
 });
