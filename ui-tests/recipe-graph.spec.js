@@ -115,7 +115,7 @@ test('sandboxed MCP resource edits and restores real relationships through host 
   } });
   const html = (await response.json()).result.contents[0].text;
   // Exercise the actual self-contained resource in a sandbox without form permission.
-  await page.route('**/graph-test-host', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html><html><head><meta charset="utf-8"></head><body><iframe sandbox="allow-scripts allow-same-origin" style="width:100%;height:1100px;border:0"></iframe><script>
+  await page.route('**/graph-test-host', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>@media(pointer:coarse){iframe{height:calc(100dvh - 16px)!important}}</style></head><body><iframe sandbox="allow-scripts allow-same-origin" style="width:100%;max-width:100%;box-sizing:border-box;height:1100px;border:0"></iframe><script>
     window.calls=[]; window.ready=false;
     window.addEventListener('message', async event => {
       const m=event.data; if(!m.method)return;

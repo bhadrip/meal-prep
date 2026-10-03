@@ -125,9 +125,10 @@
 .mention-dropdown { z-index: 20; border-radius: 8px; box-shadow: 0 12px 30px rgba(30,45,35,.15); }
 .mention-item { font-size: .76rem; }
 @media (max-width: 1000px) { .circle-layout { grid-template-columns: 210px minmax(0,1fr); } .circle-panel-layer { left: 211px; } .circle-hub-groups { grid-template-columns: 1fr; } }
-@media (max-width: 740px) {
+@media (max-width: 780px) {
   .circle-page { margin: -8px -12px; }
   .circle-layout { grid-template-columns: minmax(0,1fr); height: max(450px,calc(100dvh - 190px)); border-radius: 8px; }
+  .circle-mode-activity .circle-rail { display: none; }
   .circle-mode-group .circle-rail, .circle-mode-direct .circle-rail, .circle-mode-world .circle-rail { display: none; }
   .circle-mode-home:not(.composing) > .circle-hub { display: none; }
   .circle-mode-home.composing .circle-rail { display: none; }

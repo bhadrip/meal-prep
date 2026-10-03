@@ -1,3 +1,4 @@
+const { navigateToView } = require('./navigation');
 const { test, expect } = require('@playwright/test');
 
 test.use({ timezoneId: 'America/Los_Angeles' });
@@ -201,7 +202,7 @@ test('returning to a slow week does not display the current week’s meals', asy
   try {
     await page.goto('/app?view=plan&week=2030-02-04');
     await expect(page.locator('#app-content .section-loading')).toBeVisible();
-    await page.locator('.sidebar [data-view="overview"]').click();
+    await navigateToView(page, 'overview');
     await expect(home(page, 'mealPlan')).toContainText('Current-week dinner');
     await page.goBack();
     await expect(page.locator('#view-title')).toHaveText('Weekly plan');

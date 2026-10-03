@@ -11,8 +11,10 @@ test('landing shows circles and direct shares, and @recipe attaches a snapshot t
   const recipe = await (await page.request.put('/api/recipes', {data: {
     title: 'Ginger noodles', servings: 2, ingredients: [{name: 'Noodles'}], instructions: ['Cook noodles']}})).json();
   await page.goto('/app?view=circles');
+  if (await page.locator('.mobile-nav').isVisible()) await page.getByRole('button', {name: '⌂ All activity', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'All activity'})).toBeVisible();
   await expect(page.locator('.circle-hub-groups')).toContainText('Supper club');
+  if (await page.locator('.circle-rail').isHidden()) await page.getByRole('button', {name: '‹ Chats', exact: true}).click();
   await page.getByRole('searchbox', {name: 'Search conversations'}).fill('Supper');
   await expect(page.locator('.circle-room').filter({hasText: 'Supper club'})).toBeVisible();
   await page.getByRole('searchbox', {name: 'Search conversations'}).fill('No matching conversation');
@@ -42,7 +44,13 @@ test('landing shows circles and direct shares, and @recipe attaches a snapshot t
   await page.locator('.circle-post').first().getByRole('button', {name: /Reply in thread/}).click();
   await expect(page.locator('.circle-thread-panel')).toContainText('@demo');
   await page.getByRole('button', {name: 'Close thread'}).click();
-  await page.getByRole('button', {name: 'All activity'}).first().click();
+  if (await page.locator('.circle-rail').isHidden()) await page.getByRole('button', {name: '‹ Chats', exact: true}).click();
+  else await page.getByRole('button', {name: 'All activity'}).first().click();
+  if (await page.locator('.mobile-nav').isVisible()) await page.getByRole('button', {name: '⌂ All activity', exact: true}).click();
+  await expect(page.locator('.circle-hub-groups')).toBeVisible();
+  await expect(page.locator('.circle-hub-groups')).toContainText('@demo');
+  await page.reload();
+  await expect(page.locator('.circle-hub-groups')).toBeVisible();
   await expect(page.locator('.circle-hub-groups')).toContainText('@demo');
 });
 

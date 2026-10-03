@@ -51,9 +51,11 @@
     const rect = trigger.getBoundingClientRect();
     const viewport = window.visualViewport;
     const left = Math.max(viewport?.offsetLeft || 0, frameBounds?.left || 0);
-    const top = Math.max(viewport?.offsetTop || 0, frameBounds?.top || 0);
+    const fields = trigger.closest('.dialog-fields');
+    const fieldBounds = fields?.getBoundingClientRect();
+    const top = Math.max(viewport?.offsetTop || 0, frameBounds?.top || 0, fieldBounds?.top || 0);
     const right = Math.min((viewport?.offsetLeft || 0) + (viewport?.width || document.documentElement.clientWidth), frameBounds?.right ?? Infinity);
-    const bottom = Math.min((viewport?.offsetTop || 0) + (viewport?.height || window.innerHeight), frameBounds?.bottom ?? Infinity);
+    const bottom = Math.min((viewport?.offsetTop || 0) + (viewport?.height || window.innerHeight), frameBounds?.bottom ?? Infinity, fieldBounds?.bottom ?? Infinity);
     if (rect.bottom <= top || rect.top >= bottom || rect.right <= left || rect.left >= right) return close();
     const width = Math.min(Math.max(rect.width, 200), right - left - 16);
     menu.style.width = `${width}px`;

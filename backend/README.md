@@ -93,13 +93,13 @@ npx -y @modelcontextprotocol/inspector
 
 Choose Streamable HTTP in the Inspector and use `http://127.0.0.1:8000/mcp`.
 
-The browser suite runs the website in in-memory demo mode. It covers navigation, household settings, weekly planning, recipes and sharing, pantry, shopping, reviews, and sign-in UI with a mocked auth provider. It also exercises the embedded MCP App views with a simulated chat host. See [`docs/test-coverage.md`](../docs/test-coverage.md) for the UI and backend path inventory. From the repository root:
+The browser suite runs complete website and embedded MCP App interactions in desktop Chrome, Android Chrome, and iPhone Safari emulation, with independent in-memory demo servers. It covers navigation, household settings, weekly planning, recipes and sharing, pantry, shopping, reviews, and sign-in UI with a mocked auth provider, plus touch targets, narrow/landscape layouts and editor resizing. See [`docs/test-coverage.md`](../docs/test-coverage.md) for the path inventory. From the repository root:
 
 ```bash
 python3 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -e 'backend[dev]'
 pnpm install --frozen-lockfile
-pnpm exec playwright install chromium
+pnpm exec playwright install chromium webkit
 pnpm test:ui
 ```
 
