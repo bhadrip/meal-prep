@@ -142,6 +142,9 @@ One-off components may also use a name without a saved entry.
   servings; a recipe component uses `quantity` in `servings`, and requires
   `recipeId`. Omit dates, pantry lot IDs, and task IDs. To edit, read `get_meal`
   first and send the full record with its stable ID.
+- Prefer `save_combination` when the user wants a reusable meal made by
+  combining 2–10 existing recipes or ready foods. Pass their IDs, default
+  servings, and optional notes or name. All items are validated before saving.
 - Use `save_planned_meal` to save a requested plan entry as a reusable meal.
   It drops pantry links and converts task references to their recipe (or ready
   food). Set default servings explicitly if the original entry has no yield.
@@ -155,6 +158,11 @@ One-off components may also use a name without a saved entry.
   and optional servings and notes when the user chooses one recipe or ready
   food directly. It creates a planned meal with one linked component and a
   recipe snapshot. It does not save another library meal or use pantry stock.
+- Use `plan_combination` when the user wants one dated meal made from 2–10
+  existing recipes or ready foods. Pass their IDs in serving order, the date,
+  slot, servings for each item, and optional notes. The server verifies every
+  item in the household before writing and keeps each recipe link independently
+  openable. It does not create a new library meal or consume pantry stock.
 - `archive_meal` hides future choices while preserving existing dated copies.
   None of these operations consume stock or reserve pantry quantities.
 

@@ -602,6 +602,36 @@ class PlanningService:
                 "action": "serve" if ready else "cook", "recipeId": recipe_id}],
         })
 
+    async def plan_combination(self, week_start: str, recipe_ids: list[str], planned_date: str,
+                               slot: str, servings, notes: str | None = None) -> dict:
+        """Plan one dinner made from several existing recipes or ready foods."""
+        self._week(week_start)
+        if not isinstance(recipe_ids, list) or not 2 <= len(recipe_ids) <= 10:
+            raise ApplicationError("Choose between 2 and 10 recipes or ready foods")
+        if any(not isinstance(recipe_id, str) or not recipe_id for recipe_id in recipe_ids):
+            raise ApplicationError("Choose existing recipes or ready foods")
+        normalized_ids = [identifier(recipe_id) for recipe_id in recipe_ids]
+        if len(set(normalized_ids)) != len(normalized_ids):
+            raise ApplicationError("Choose each recipe or ready food only once")
+        target = positive(servings, "Servings")
+        recipes = []
+        for recipe_id in normalized_ids:
+            recipe = await self.repository.get_recipe(recipe_id)
+            if not recipe or recipe.get("archived_at"):
+                raise ApplicationError("Recipe or ready food was not found in this household")
+            recipes.append(recipe)
+        title = " + ".join(recipe["title"] for recipe in recipes)
+        if len(title) > 180:
+            title = f"{recipes[0]['title'][:155]} + {len(recipes) - 1} more"
+        return await self.update_plan_item(week_start, "meal", {
+            "date": planned_date, "slot": slot, "meal": title, "servings": target,
+            "notes": notes if notes is not None else "",
+            "components": [{"name": recipe["title"], "quantity": target, "unit": "servings",
+                "source": "ready" if recipe.get("kind") == "ready_food" else "cook",
+                "action": "serve" if recipe.get("kind") == "ready_food" else "cook",
+                "recipeId": recipe["id"]} for recipe in recipes],
+        })
+
     async def save_planned_meal(self, week_start: str, item_id: str, name=None, servings=None) -> dict:
         self._week(week_start)
         plan = await self.repository.get_meal_plan(week_start) or {}

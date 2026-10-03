@@ -135,7 +135,7 @@ test('planned meals can be added and edited with compact actions', async ({ page
   await expect(content(page).getByRole('button', { name: 'Edit weekly rhythm' })).toHaveCount(0);
   const meal = unique('Playwright dinner');
   await content(page).getByRole('button', { name: 'Add meal', exact: true }).click();
-  await editor(page).getByRole('button', { name: 'Build a custom planned meal' }).click();
+  await editor(page).getByRole('button', { name: 'Advanced meal details' }).click();
   await editor(page).locator('[name="date"]').fill(week);
   await editor(page).locator('[name="meal"]').fill(meal);
   await choose(page, 'slot', 'dinner');
@@ -172,7 +172,7 @@ test('an empty week can be planned from its day card without losing the previous
   const mondayCard = content(page).locator('.day-card').filter({ has: page.locator('b', { hasText: 'Monday' }) });
   await expect(mondayCard.getByRole('button', { name: 'Add meal to Monday' })).toBeVisible({ timeout: 1500 });
   await mondayCard.getByRole('button', { name: 'Add meal to Monday' }).click();
-  await editor(page).getByRole('button', { name: 'Build a custom planned meal' }).click();
+  await editor(page).getByRole('button', { name: 'Advanced meal details' }).click();
   await expect(editor(page).locator('[name="date"]')).toHaveValue(nextWeek);
   const meal = unique('Next week dinner');
   await editor(page).locator('[name="meal"]').fill(meal);
@@ -192,7 +192,7 @@ test('day form supports recipe components and guards the selected week', async (
   const selectedDate = `${thursday.getFullYear()}-${String(thursday.getMonth() + 1).padStart(2, '0')}-${String(thursday.getDate()).padStart(2, '0')}`;
   await page.setViewportSize({ width: 320, height: 720 });
   await content(page).getByRole('button', { name: 'Add meal to Thursday' }).click();
-  await editor(page).getByRole('button', { name: 'Build a custom planned meal' }).click();
+  await editor(page).getByRole('button', { name: 'Advanced meal details' }).click();
   await expect(editor(page).locator('[name="date"]')).toHaveValue(selectedDate);
   await choose(page, 'slot', 'dinner');
   const component = editor(page).locator('.component-row');

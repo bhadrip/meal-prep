@@ -768,10 +768,27 @@ def test_mcp_searchable_meal_category_and_http_plan_roundtrip_preserve_copies(cl
         'notes': 'More tofu'}})['structuredContent']
     assert quick['entries'][-1]['components'][0]['recipeId'] == recipe['id']
     assert quick['entries'][-1]['notes'] == 'More tofu'
+    ready = client.put('/api/recipes', json={'title': f'Ready salad {suffix}', 'kind': 'ready_food'}).json()
+    reusable = rpc(client, 'tools/call', {'name': 'save_combination', 'arguments': {
+        'recipe_ids': [recipe['id'], ready['id']], 'servings': 3}})['structuredContent']
+    assert [row['recipeId'] for row in reusable['components']] == [recipe['id'], ready['id']]
+    assert reusable['name'] == f"{recipe['title']} + {ready['title']}"
+    invalid_reusable = client.post('/api/meals/combine', json={'recipeIds': [recipe['id'], str(uuid4())], 'servings': 3})
+    assert invalid_reusable.status_code == 422
+    assert client.get(f"/api/meals/{reusable['id']}").json() == reusable
+    combined = rpc(client, 'tools/call', {'name': 'plan_combination', 'arguments': {
+        'week_start': '2038-01-04', 'recipe_ids': [recipe['id'], ready['id']],
+        'planned_date': '2038-01-04', 'slot': 'dinner', 'servings': 3}})['structuredContent']
+    assert [row['recipeId'] for row in combined['entries'][-1]['components']] == [recipe['id'], ready['id']]
+    assert combined['entries'][-1]['components'][1]['source'] == 'ready'
+    rejected_combo = client.post('/api/meal-plan/combine', json={'weekStart': '2038-01-04',
+        'recipeIds': [recipe['id'], str(uuid4())], 'date': '2038-01-04', 'slot': 'dinner', 'servings': 3})
+    assert rejected_combo.status_code == 422
+    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == combined
     missing = rpc(client, 'tools/call', {'name': 'plan_recipe', 'arguments': {'week_start': '2038-01-04',
         'recipe_id': str(uuid4()), 'planned_date': '2038-01-04', 'slot': 'dinner'}})
     assert missing['isError']
-    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == quick
+    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == combined
     invalid = rpc(client, 'tools/call', {'name': 'save_meal', 'arguments': {'meal': {**meal, 'components': []}}})
     assert invalid['isError'] and 'component' in str(invalid['content'])
     assert client.get(f"/api/meals/{meal['id']}").json() == meal
@@ -781,7 +798,7 @@ def test_mcp_searchable_meal_category_and_http_plan_roundtrip_preserve_copies(cl
     assert archive['archivedAt']
     rejected = client.post(f"/api/meals/{meal['id']}/plan", json={'weekStart': '2038-01-04', 'date': '2038-01-04', 'slot': 'dinner'})
     assert rejected.status_code == 422
-    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == quick
+    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == combined
     resource = rpc(client, 'resources/read', {'uri': 'ui://meal-prep/recipe-library-v1.html'})['contents'][0]['text']
     assert '/static/choices.js' not in resource
     metadata = next(tool for tool in rpc(client, 'tools/list', {})['tools'] if tool['name'] == 'render_meal_library')

@@ -64,7 +64,7 @@ test('households add, reorder, rename, and disable slots without losing planned 
   expect((await request(page, 'get', '/api/household')).mealSlots[0].id).toBe(id);
   await openPlan(page);
   await page.getByRole('button', { name: 'Add meal', exact: true }).click();
-  await editor(page).getByRole('button', { name: 'Build a custom planned meal' }).click();
+  await editor(page).getByRole('button', { name: 'Advanced meal details' }).click();
   await choose(editor(page), 'slot', id);
   await editor(page).locator('[name="meal"]').fill('School popcorn');
   await addComponent(page, editor(page).locator('.component-row'), { name: 'Popcorn', quantity: 1, unit: 'portion' });
@@ -127,12 +127,12 @@ test('mixed meals reuse one batch, calculate shortages once, and preserve manual
   await page.getByRole('tab', {name:'Meals',exact:true}).click();
   for (let day = 0; day < 2; day++) {
     await page.locator('.day-card').nth(day).getByRole('button', { name: `Add meal to ${day ? 'Tuesday' : 'Monday'}` }).click();
-    await editor(page).getByRole('button', { name: 'Build a custom planned meal' }).click();
+    await editor(page).getByRole('button', { name: 'Advanced meal details' }).click();
     await editor(page).locator('[name="meal"]').fill(`Roti dinner ${suffix} ${day}`);
     await addComponent(page, editor(page).locator('.component-row').first(), { name: `Rotis ${suffix}`, quantity: 8, unit: 'pieces', pantryItemId: stocks.Rotis.id });
-    await editor(page).getByRole('button', { name: 'Add component', exact: true }).click();
+    await editor(page).getByRole('button', { name: 'Add food', exact: true }).click();
     await addComponent(page, editor(page).locator('.component-row').last(), { name: dal.title, quantity: 4, unit: 'servings', source: 'task', taskId: task.id });
-    await editor(page).getByRole('button', { name: 'Add component', exact: true }).click();
+    await editor(page).getByRole('button', { name: 'Add food', exact: true }).click();
     await addComponent(page, editor(page).locator('.component-row').last(), { name: `Yogurt ${suffix}`, quantity: 200, unit: 'g', pantryItemId: stocks.Yogurt.id });
     await saveEditor(page);
   }
@@ -208,7 +208,7 @@ test('mobile meal editor retains a failed task link and saves a corrected mixed 
   await page.setViewportSize({ width: 390, height: 844 });
   await openPlan(page);
   await page.getByRole('button', { name: 'Add meal', exact: true }).click();
-  await editor(page).getByRole('button', { name: 'Build a custom planned meal' }).click();
+  await editor(page).getByRole('button', { name: 'Advanced meal details' }).click();
   await editor(page).locator('[name="meal"]').fill('Snack box and popcorn');
   const row = editor(page).locator('.component-row');
   await addComponent(page, row, { name: 'Snack box', quantity: 1, unit: 'portion', source: 'task' });

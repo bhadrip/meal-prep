@@ -82,6 +82,51 @@ async def test_quick_plan_uses_selected_food_with_servings_and_occurrence_notes_
 
 
 @pytest.mark.asyncio
+async def test_combining_recipes_and_ready_food_keeps_links_and_rejects_bad_selections_atomically():
+    repo, service, food, dal, _ = await example()
+    ready = await food.save_recipe({'title': 'Ready rotis', 'kind': 'ready_food', 'servings': 4})
+    plan = await service.plan_combination(WEEK, [dal['id'], ready['id']], WEEK, 'dinner', 3, 'Serve together')
+    entry = plan['entries'][0]
+    assert entry['meal'] == 'Dal + Ready rotis'
+    assert entry['servings'] == 3 and entry['notes'] == 'Serve together'
+    assert [(row['recipeId'], row['quantity'], row['source']) for row in entry['components']] == [
+        (dal['id'], 3, 'cook'), (ready['id'], 3, 'ready')]
+    assert [row['recipeSnapshot']['title'] for row in entry['components']] == ['Dal', 'Ready rotis']
+    assert await food.get_recipe(dal['id'])
+    before = deepcopy(plan)
+    invalid = [[dal['id'], dal['id']], [dal['id'], str(uuid4())], [dal['id']],
+               [dal['id'], {}], [str(uuid4()) for _ in range(11)]]
+    for ids in invalid:
+        with pytest.raises(ApplicationError):
+            await service.plan_combination(WEEK, ids, WEEK, 'dinner', 3)
+        assert await service.get_meal_plan(WEEK) == before
+    await food.archive_recipe(ready['id'])
+    with pytest.raises(ApplicationError, match='not found'):
+        await service.plan_combination(WEEK, [dal['id'], ready['id']], WEEK, 'dinner', 3)
+    assert await service.get_meal_plan(WEEK) == before
+
+
+@pytest.mark.asyncio
+async def test_reusable_combination_uses_only_existing_library_food_and_preserves_sources():
+    _, service, food, dal, _ = await example()
+    ready = await food.save_recipe({'title': 'Ready rotis', 'kind': 'ready_food'})
+    saved = await service.meals.save_combination([dal['id'], ready['id']], 4, 'Weeknight dinner')
+    assert saved['name'] == 'Dal + Ready rotis'
+    assert saved['notes'] == 'Weeknight dinner'
+    assert [(row['recipeId'], row['quantity'], row['source']) for row in saved['components']] == [
+        (dal['id'], 4, 'cook'), (ready['id'], 4, 'ready')]
+    before = await service.meals.search()
+    for ids in ([dal['id']], [dal['id'], dal['id']], [dal['id'], str(uuid4())], [dal['id'], {}]):
+        with pytest.raises(ApplicationError):
+            await service.meals.save_combination(ids, 4)
+        assert await service.meals.search() == before
+    await food.archive_recipe(ready['id'])
+    with pytest.raises(ApplicationError, match='not found'):
+        await service.meals.save_combination([dal['id'], ready['id']], 4)
+    assert await service.meals.search() == before
+
+
+@pytest.mark.asyncio
 async def test_library_edits_archives_and_recipe_edits_preserve_planned_snapshots():
     repo, service, food, dal, meal = await example()
     plan = await service.plan_saved_meal(WEEK, meal['id'], WEEK, 'dinner')

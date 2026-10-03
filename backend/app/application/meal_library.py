@@ -56,6 +56,30 @@ class MealLibrary:
             "servings": positive(value.get("servings"), "Default servings"),
             "notes": text(value.get("notes"), "Meal notes", optional=True), "components": cleaned})
 
+    async def save_combination(self, recipe_ids, servings, notes=None, name=None):
+        if not isinstance(recipe_ids, list) or not 2 <= len(recipe_ids) <= 10:
+            raise ApplicationError("Choose between 2 and 10 recipes or ready foods")
+        if any(not isinstance(recipe_id, str) or not recipe_id for recipe_id in recipe_ids):
+            raise ApplicationError("Choose existing recipes or ready foods")
+        ids = [identifier(recipe_id) for recipe_id in recipe_ids]
+        if len(set(ids)) != len(ids):
+            raise ApplicationError("Choose each recipe or ready food only once")
+        target = positive(servings, "Default servings")
+        foods = []
+        for recipe_id in ids:
+            recipe = await self.repository.get_recipe(recipe_id)
+            if not recipe or recipe.get("archived_at"):
+                raise ApplicationError("Recipe or ready food was not found in this household")
+            foods.append(recipe)
+        title = name or " + ".join(recipe["title"] for recipe in foods)
+        if len(title) > 180 and not name:
+            title = f"{foods[0]['title'][:155]} + {len(foods) - 1} more"
+        return await self.save({"name": title, "servings": target, "notes": notes,
+            "components": [{"name": recipe["title"], "quantity": target, "unit": "servings",
+                "source": "ready" if recipe.get("kind") == "ready_food" else "cook",
+                "action": "serve" if recipe.get("kind") == "ready_food" else "cook",
+                "recipeId": recipe["id"]} for recipe in foods]})
+
     async def archive(self, meal_id):
         meal = await self.get(meal_id)
         return await self.repository.archive_meal(meal["id"])

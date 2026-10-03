@@ -469,6 +469,13 @@ async def save_meal(meal: dict[str, Any]) -> dict[str, Any]:
     return await services_for_request().planning.meals.save(meal)
 
 
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def save_combination(recipe_ids: list[str], servings: float, notes: str | None = None,
+                           name: str | None = None) -> dict[str, Any]:
+    """Save a reusable combination of 2–10 existing household recipes or ready foods. Each item uses the stated servings; no date or pantry stock is changed. Validate all selections before saving."""
+    return await services_for_request().planning.meals.save_combination(recipe_ids, servings, notes, name)
+
+
 @mcp.tool(annotations=ARCHIVE, structured_output=True)
 async def archive_meal(meal_id: str) -> dict[str, Any]:
     """Archive a reusable meal from future choices. Existing planned meals and stock stay unchanged."""
@@ -487,6 +494,13 @@ async def plan_recipe(week_start: str, recipe_id: str, planned_date: str, slot: 
                       notes: str | None = None) -> dict[str, Any]:
     """Add a household recipe or ready food to a weekly meal slot with optional servings and notes. Save a dated component and recipe snapshot; do not alter the library recipe or pantry stock."""
     return await services_for_request().planning.plan_recipe(week_start, recipe_id, planned_date, slot, servings, notes)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def plan_combination(week_start: str, recipe_ids: list[str], planned_date: str, slot: str,
+                           servings: float, notes: str | None = None) -> dict[str, Any]:
+    """Combine 2–10 existing household recipes or ready foods into one dated meal. Each item gets the specified servings. Validate all IDs before writing; preserve the linked recipes for opening and shopping. No new library entry or pantry use."""
+    return await services_for_request().planning.plan_combination(week_start, recipe_ids, planned_date, slot, servings, notes)
 
 
 @mcp.tool(annotations=APPEND, structured_output=True)

@@ -60,7 +60,7 @@ function openPlannedMeal(entry) {
     return `<li><span>${esc(part.name)}${amount}</span>${recipeId ? `<button type="button" class="text-button" data-action="open-recipe" data-id="${esc(recipeId)}">Open ${esc(snapshot?.kind === 'ready_food' ? 'ready food' : 'recipe')}: ${esc(snapshot?.title || part.name)}</button>` : ''}</li>`;
   }).join('');
   document.querySelector('#planned-meal-title').textContent = entry.meal;
-  document.querySelector('#planned-meal-body').innerHTML = `<p class="muted tiny">${esc(entry.date)} · ${esc(slotName(entry))}${entry.servings ? ` · ${esc(entry.servings)} servings` : ''}${entry.completedAt ? ' · Eaten' : ''}</p>${entry.notes ? `<p>${esc(entry.notes)}</p>` : ''}<section class="planned-meal-components"><h3>What’s in this meal</h3>${rows ? `<ul>${rows}</ul>` : '<p>No recipe or other components are attached to this planned meal. Edit it to link a recipe.</p>'}${hasRecipe ? '' : `<p class="muted tiny">A meal name alone does not identify a recipe.</p>${action('Search recipes for this meal', 'search-planned-recipe', entry.id)}`}</section>${entry.sourceMeal ? `<p class="muted tiny">Planned from saved meal: ${esc(entry.sourceMeal.name)}</p>` : ''}<div class="planned-meal-reuse"><p>Want to use this combination again? Save a reusable copy to your meal library. Your weekly plan stays as it is.</p>${action('Save reusable copy', 'save-as-meal', entry.id)}${entry.completedAt ? '' : action('Edit planned meal', 'edit-meal', entry.id)}</div>`;
+  document.querySelector('#planned-meal-body').innerHTML = `<p class="muted tiny">${esc(entry.date)} · ${esc(slotName(entry))}${entry.servings ? ` · ${esc(entry.servings)} servings` : ''}${entry.completedAt ? ' · Eaten' : ''}</p>${entry.notes ? `<p>${esc(entry.notes)}</p>` : ''}<section class="planned-meal-components"><h3>What’s in this meal</h3>${rows ? `<ul>${rows}</ul>` : '<p>No recipe or ready food is linked to this planned meal. Edit it to choose one.</p>'}${hasRecipe ? '' : `<p class="muted tiny">A meal name alone does not identify a recipe.</p>${action('Search recipes for this meal', 'search-planned-recipe', entry.id)}`}</section>${entry.sourceMeal ? `<p class="muted tiny">Planned from saved meal: ${esc(entry.sourceMeal.name)}</p>` : ''}<div class="planned-meal-reuse">${components.length > 1 ? `<p>Want to use this combination again? Save it to your meal library. Your weekly plan stays as it is.</p>${action('Save combination', 'save-as-meal', entry.id)}` : ''}${entry.completedAt ? '' : action('Edit planned meal', 'edit-meal', entry.id)}</div>`;
   plannedMealDialog.showModal();
   plannedMealDialog.querySelector('[aria-label="Close meal details"]').focus();
 }
@@ -555,7 +555,7 @@ function foodReviewMarkup(place) {
     ? review.email : review.audienceNames.join(', ');
   const detail = review.kind === 'recipe'
     ? `${arr(review.source.ingredients).length} ingredients · ${arr(review.source.instructions).length} steps`
-    : `${arr(review.source.components).length} components · ${review.source.servings || '—'} servings`;
+    : `${arr(review.source.components).length} foods · ${review.source.servings || '—'} servings`;
   const source = review.source;
   const details = review.kind === 'recipe'
     ? `${source.description ? `<p>${esc(source.description)}</p>` : ''}<ul>${arr(source.ingredients).map((item) => `<li>${esc(item.name || item)}${item.quantity ? ` · ${esc(item.quantity)} ${esc(item.unit || '')}` : ''}</li>`).join('')}</ul><ol>${arr(source.instructions).map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction || '')}</li>`).join('')}</ol>${source.source_url || source.sourceUrl ? `<p>Source: ${esc(source.source_url || source.sourceUrl)}</p>` : ''}`
@@ -564,7 +564,7 @@ function foodReviewMarkup(place) {
 }
 
 function weekReviewRows(plan) {
-  return arr(plan?.entries).map((meal) => `<li><strong>${esc(meal.date)} · ${esc(meal.slotName || label(meal.slot))}: ${esc(meal.meal)}</strong>${meal.notes ? `<span>Note: ${esc(meal.notes)}</span>` : ''}${arr(meal.components).length ? `<span>Components: ${esc(meal.components.map((part) => part.name).join(', '))}</span>` : ''}</li>`).join('');
+  return arr(plan?.entries).map((meal) => `<li><strong>${esc(meal.date)} · ${esc(meal.slotName || label(meal.slot))}: ${esc(meal.meal)}</strong>${meal.notes ? `<span>Note: ${esc(meal.notes)}</span>` : ''}${arr(meal.components).length ? `<span>Included food: ${esc(meal.components.map((part) => part.name).join(', '))}</span>` : ''}</li>`).join('');
 }
 
 function renderCircles() {
@@ -595,10 +595,10 @@ function renderCircles() {
   const owner = selected && (selected.ownerId === state.session?.user?.id || !state.client);
   const friends = owner ? arr(selected.members).filter((member) => member.userId !== selected.ownerId) : [];
   const groupHead = selected ? `<header class="circle-pane-head circle-card"><div>${action('‹ Chats', 'circle-home', '', 'circle-mobile-back')}<p class="eyebrow">Private circle · ${esc(selected.memberCount || 1)} members</p><h2>${esc(selected.name)}</h2></div><div class="circle-actions">${action('Share this week', 'circle-share-week', selected.id, 'primary')}${action('Share a recipe', 'circle-compose-recipe', selected.id)}</div></header>
-    ${foodReviewMarkup('group')}${state.circleReview?.circleId === selected.id ? `<section class="circle-review"><h3>Review before sharing</h3><p>Week of ${esc(state.circleReview.weekStart)} · ${arr(state.circleReview.plan.entries).length} meals</p><p>Visible to ${esc(arr(selected.memberNames).join(', ') || 'you')} (${esc(selected.memberCount || 1)} accepted members). Future members cannot see this share.</p><ul>${weekReviewRows(state.circleReview.plan)}</ul><p class="muted tiny">All meal notes, components, and referenced recipes or ready foods become a snapshot. Friends can save recipes as independent copies. Pantry stock, prep tasks, and shopping stay private.</p><div class="circle-actions">${action('Publish week', 'circle-publish-week', selected.id, 'primary')}${action('Cancel', 'circle-cancel-review')}</div></section>` : ''}
+    ${foodReviewMarkup('group')}${state.circleReview?.circleId === selected.id ? `<section class="circle-review"><h3>Review before sharing</h3><p>Week of ${esc(state.circleReview.weekStart)} · ${arr(state.circleReview.plan.entries).length} meals</p><p>Visible to ${esc(arr(selected.memberNames).join(', ') || 'you')} (${esc(selected.memberCount || 1)} accepted members). Future members cannot see this share.</p><ul>${weekReviewRows(state.circleReview.plan)}</ul><p class="muted tiny">All meal notes and linked recipes or ready foods become a snapshot. Friends can save recipes as independent copies. Pantry stock, prep tasks, and shopping stay private.</p><div class="circle-actions">${action('Publish week', 'circle-publish-week', selected.id, 'primary')}${action('Cancel', 'circle-cancel-review')}</div></section>` : ''}
 
     <details class="circle-manage" data-circle-id="${esc(selected.id)}" ${state.circleManageOpenId === selected.id ? 'open' : ''}><summary>Members and circle settings</summary>${owner ? `<form class="circle-form circle-invite-form" data-circle-id="${esc(selected.id)}"><label>Invite an existing friend<input name="email" type="email" required placeholder="friend@example.com" /></label><button class="button ghost" type="submit">Invite friend</button></form>${friends.length ? `<div class="circle-members"><h4>Friends</h4>${friends.map((member) => `<div class="circle-member"><span>${esc(member.email)} · ${esc(member.status)}</span>${action(member.status === 'pending' ? 'Cancel invite' : 'Remove friend', 'circle-remove-friend', `${selected.id}:${member.userId}`, 'danger')}</div>`).join('')}</div>` : ''}` : `<div class="circle-actions">${action('Leave circle', 'circle-leave', selected.id, 'danger')}</div>`}</details>` : '';
-  const posts = state.circleFeed.map((post) => `<article data-initial="${esc((post.createdByName || 'F').slice(0, 1).toUpperCase())}" class="circle-post ${post.createdBy === state.session?.user?.id || !state.client ? 'mine' : ''} ${post.id === state.circleShareId ? 'thread-open' : ''}"><div class="circle-message-meta"><strong>${esc(post.createdByName || 'Friend')}</strong><time datetime="${esc(post.createdAt)}">${esc(new Date(post.createdAt).toLocaleString())}</time></div>${post.kind === 'message' ? `<p class="circle-message-body">${esc(post.snapshot.text)}</p>` : `<button type="button" class="circle-share-preview" data-action="circle-open-share" data-id="${esc(post.id)}" aria-label="Open ${post.kind === 'week' ? 'weekly plan' : post.kind === 'meal' ? 'meal' : 'recipe'} snapshot: ${esc(postTitle(post))}"><small>Shared ${post.kind === 'week' ? 'a weekly plan' : post.kind === 'meal' ? 'a saved meal' : 'a recipe'}</small><h3>${esc(postTitle(post))}</h3><p>${post.kind === 'week' ? `${arr(post.snapshot.entries).length} meals · ${arr(post.snapshot.recipes).length} recipes` : post.kind === 'meal' ? `${arr(post.snapshot.meal?.components).length} components` : 'Open recipe snapshot'}</p></button>`}<div class="circle-actions">${action(`${post.commentCount ? `${post.commentCount} ${post.commentCount === 1 ? 'reply' : 'replies'} · ` : ''}Reply in thread`, 'circle-open-share', post.id)}</div></article>`).join('');
+  const posts = state.circleFeed.map((post) => `<article data-initial="${esc((post.createdByName || 'F').slice(0, 1).toUpperCase())}" class="circle-post ${post.createdBy === state.session?.user?.id || !state.client ? 'mine' : ''} ${post.id === state.circleShareId ? 'thread-open' : ''}"><div class="circle-message-meta"><strong>${esc(post.createdByName || 'Friend')}</strong><time datetime="${esc(post.createdAt)}">${esc(new Date(post.createdAt).toLocaleString())}</time></div>${post.kind === 'message' ? `<p class="circle-message-body">${esc(post.snapshot.text)}</p>` : `<button type="button" class="circle-share-preview" data-action="circle-open-share" data-id="${esc(post.id)}" aria-label="Open ${post.kind === 'week' ? 'weekly plan' : post.kind === 'meal' ? 'meal' : 'recipe'} snapshot: ${esc(postTitle(post))}"><small>Shared ${post.kind === 'week' ? 'a weekly plan' : post.kind === 'meal' ? 'a saved meal' : 'a recipe'}</small><h3>${esc(postTitle(post))}</h3><p>${post.kind === 'week' ? `${arr(post.snapshot.entries).length} meals · ${arr(post.snapshot.recipes).length} recipes` : post.kind === 'meal' ? `${arr(post.snapshot.meal?.components).length} foods` : 'Open recipe snapshot'}</p></button>`}<div class="circle-actions">${action(`${post.commentCount ? `${post.commentCount} ${post.commentCount === 1 ? 'reply' : 'replies'} · ` : ''}Reply in thread`, 'circle-open-share', post.id)}</div></article>`).join('');
   const group = `<section class="circle-feed" aria-label="Circle conversation">${groupHead}<div class="circle-timeline">${posts || '<p class="muted tiny">No messages yet. Say hello or share a week or recipe.</p>'}${state.circleNextOffset !== null ? action('Show earlier activity', 'circle-load-more') : ''}</div>${selected && !state.circleFoodReview ? `<form id="circle-message-form" class="circle-chat-composer circle-message-form" data-circle-id="${esc(selected.id)}"><label class="sr-only" for="circle-message">Message ${esc(selected.name)}</label><textarea id="circle-message" name="body" data-mention="group" maxlength="2000" placeholder="Message ${esc(selected.name)}… type @ for people, @recipe or @meal to share"></textarea><div class="circle-attachment" hidden></div><div class="circle-composer-footer"><small>Enter to send · Shift+Enter for a new line</small><button class="button primary" type="submit">Send message</button></div></form>` : ''}</section>`;
   const activeLinks = state.publicShares.filter((item) => !item.revokedAt && (!item.expiresAt || new Date(item.expiresAt) > new Date()));
   const historyLinks = state.publicShares.filter((item) => !activeLinks.includes(item));
@@ -676,7 +676,7 @@ function renderRecipes() {
         ? `<div class="stack">${arr(recipe.feedback).slice(0, 5).map((item) => row(item.note, item.next_time || '')).join('')}</div>`
         : '<p class="muted tiny">No feedback yet.</p>';
     const feedbackAction = recipe.feedbackUnavailable ? '' : `<div style="margin-top:20px">${action('Add feedback', 'add-feedback', recipe.id)}</div>`;
-    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div class="recipe-detail-actions">${action('Explore this recipe', 'explore-recipe', recipe.id)}${action('Save as meal', 'recipe-as-meal', recipe.id)}${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">${recipe.kind === 'ready_food' ? 'Ready food' : 'Saved recipe'}</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p>${recipeCategories(recipe)}${recipeTags(recipe.tags)}</div><div class="hero-stat"><strong>${esc(recipe.total_minutes ?? recipe.totalMinutes ?? '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section>${MealNutrition.renderCard(recipe.nutrition)}<div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody + recipePublicReviewMarkup(), state.recipeSharesUnavailable || state.recipeShareReview ? '' : `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
+    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div class="recipe-detail-actions">${action('Explore this recipe', 'explore-recipe', recipe.id)}${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">${recipe.kind === 'ready_food' ? 'Ready food' : 'Saved recipe'}</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p>${recipeCategories(recipe)}${recipeTags(recipe.tags)}</div><div class="hero-stat"><strong>${esc(recipe.total_minutes ?? recipe.totalMinutes ?? '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section>${MealNutrition.renderCard(recipe.nutrition)}<div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody + recipePublicReviewMarkup(), state.recipeSharesUnavailable || state.recipeShareReview ? '' : `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
   }
   return `<div class="toolbar"><span></span><div class="recipe-detail-actions">${action('Create meal', 'create-library-meal')}${action('Add recipe', 'add-recipe', '', 'primary')}</div></div><div id="recipe-browser"></div>`;
 }
@@ -1013,7 +1013,7 @@ function componentEditor(item = {}) {
   const recipes = reusable ? state.mealRecipes : arr(section('recipes'));
   const sources = [{ value: 'ready', label: 'Bought / ready food' }, { value: 'cook', label: 'Cook a recipe' }, ...(!reusable ? [{ value: 'task', label: 'From a task' }] : []), { value: 'external', label: 'Takeout / eating out' }];
   const choices = (rows, title) => [{ value: '', label: title }, ...rows];
-  return `<div class="component-row form-grid" data-component="${key}">${field(`${key}-name`, 'Food or dish', item.name, {wide: true, required: reusable})}${field(`${key}-quantity`, 'Amount', item.quantity, {type: 'number', min: 0.001, step: 0.001})}${field(`${key}-unit`, 'Unit', item.unit)}${field(`${key}-source`, 'Where it comes from', source, {choices: sources})}${field(`${key}-action`, 'Preparation', item.action || 'serve', {choices: [{value: 'serve', label: 'Serve'}, {value: 'heat', label: 'Heat'}, {value: 'cook', label: 'Cook'}]})}<div class="wide component-reference" data-library-reference ${['cook','ready'].includes(source) ? '' : 'hidden'}>${field(`${key}-recipeId`, 'Recipe', item.recipeId, {choices: choices(recipes.map(row => ({value: row.id, label: `${row.title}${row.kind === 'ready_food' ? ' · Ready food' : ''}`})), 'Choose a recipe')})}</div>${reusable ? '' : `<div class="wide component-reference" data-source="ready" ${source === 'ready' ? '' : 'hidden'}>${field(`${key}-pantryItemId`, 'Pantry item (optional)', item.pantryItemId, {choices: choices(arr(section('pantry')).map(row => ({value: row.id, label: `${row.name} · ${row.quantity ?? '?'} ${row.unit || ''}`})), 'No pantry link')})}</div><div class="wide component-reference" data-source="task" ${source === 'task' ? '' : 'hidden'}>${field(`${key}-taskId`, 'Prepared by', item.taskId, {choices: choices(arr(state.plan?.tasks).map(row => ({value: row.id, label: row.title})), 'Choose a task')})}</div>`}${field(`${key}-notes`, 'Component notes', item.notes, {wide: true})}<button type="button" class="button ghost small" data-editor-action="remove-row">Remove component</button></div>`;
+  return `<div class="component-row form-grid" data-component="${key}">${field(`${key}-name`, 'Food or dish', item.name, {wide: true, required: reusable})}${field(`${key}-quantity`, 'Amount', item.quantity, {type: 'number', min: 0.001, step: 0.001})}${field(`${key}-unit`, 'Unit', item.unit)}${field(`${key}-source`, 'Where it comes from', source, {choices: sources})}${field(`${key}-action`, 'Preparation', item.action || 'serve', {choices: [{value: 'serve', label: 'Serve'}, {value: 'heat', label: 'Heat'}, {value: 'cook', label: 'Cook'}]})}<div class="wide component-reference" data-library-reference ${['cook','ready'].includes(source) ? '' : 'hidden'}>${field(`${key}-recipeId`, 'Recipe', item.recipeId, {choices: choices(recipes.map(row => ({value: row.id, label: `${row.title}${row.kind === 'ready_food' ? ' · Ready food' : ''}`})), 'Choose a recipe')})}</div>${reusable ? '' : `<div class="wide component-reference" data-source="ready" ${source === 'ready' ? '' : 'hidden'}>${field(`${key}-pantryItemId`, 'Pantry item (optional)', item.pantryItemId, {choices: choices(arr(section('pantry')).map(row => ({value: row.id, label: `${row.name} · ${row.quantity ?? '?'} ${row.unit || ''}`})), 'No pantry link')})}</div><div class="wide component-reference" data-source="task" ${source === 'task' ? '' : 'hidden'}>${field(`${key}-taskId`, 'Prepared by', item.taskId, {choices: choices(arr(state.plan?.tasks).map(row => ({value: row.id, label: row.title})), 'Choose a task')})}</div>`}${field(`${key}-notes`, 'Notes for this food', item.notes, {wide: true})}<button type="button" class="button ghost small" data-editor-action="remove-row">Remove food</button></div>`;
 }
 
 function readComponents(data) {
@@ -1068,12 +1068,39 @@ fields.addEventListener('click', async (event) => {
   if (action === 'select-plan-food') {
     const selected = arr(state.editor?.results).find((row) => row.id === button.dataset.id && row.itemType === button.dataset.itemType);
     if (!selected) return;
-    state.editor.selected = selected;
-    fields.querySelector('#plan-food-selection').textContent = `${selected.itemType === 'meals' ? 'Saved meal' : selected.itemType === 'ready_food' ? 'Ready food' : 'Recipe'}: ${selected.title || selected.name}`;
-    fields.querySelector('[name="servings"]').value = selected.servings || 1;
-    fields.querySelector('[name="notes"]').value = selected.itemType === 'meals' ? selected.notes || '' : '';
-    fields.querySelector('#plan-food-results').innerHTML = '';
-    document.querySelector('#dialog-save').disabled = false;
+    if (state.editor.combining) {
+      if (selected.itemType === 'meals' || state.editor.selectedFoods.length >= 10 ||
+          state.editor.selectedFoods.some((food) => food.id === selected.id)) return;
+      state.editor.selectedFoods.push(selected);
+      fields.querySelector('#plan-food-search').value = '';
+      updatePlanFoodSelection();
+      await updatePlanFoodResults();
+    } else {
+      state.editor.selectedFoods = [selected];
+      fields.querySelector('[name="servings"]').value = selected.servings || 1;
+      fields.querySelector('[name="notes"]').value = selected.itemType === 'meals' ? selected.notes || '' : '';
+      fields.querySelector('#plan-food-results').innerHTML = '';
+      updatePlanFoodSelection();
+    }
+    return;
+  }
+  if (action === 'combine-plan-food') {
+    state.editor.combining = true;
+    fields.querySelector('#plan-food-search').value = '';
+    updatePlanFoodSelection();
+    await updatePlanFoodResults();
+    fields.querySelector('#plan-food-search').focus();
+    return;
+  }
+  if (action === 'advanced-library-meal') {
+    await loadMealRecipes();
+    return openEditor('library-meal');
+  }
+  if (action === 'remove-plan-food') {
+    state.editor.selectedFoods = state.editor.selectedFoods.filter((food) => food.id !== button.dataset.id);
+    if (!state.editor.selectedFoods.length) state.editor.combining = false;
+    updatePlanFoodSelection();
+    await updatePlanFoodResults();
     return;
   }
   if (action === 'custom-plan-meal') {
@@ -1093,27 +1120,45 @@ fields.addEventListener('click', async (event) => {
   if (action === 'slot-down' && slot.nextElementSibling) slot.nextElementSibling.after(slot);
 });
 
+function updatePlanFoodSelection() {
+  if (!['plan-search', 'library-combine'].includes(state.editor?.kind)) return;
+  const foods = state.editor.selectedFoods;
+  fields.querySelector('#plan-food-selection').textContent = foods.length === 1
+    ? `${foods[0].itemType === 'meals' ? 'Saved meal' : foods[0].itemType === 'ready_food' ? 'Ready food' : 'Recipe'}: ${foods[0].title || foods[0].name}`
+    : foods.length > 1 ? `${foods.length} recipes and ready foods combined` : '';
+  fields.querySelector('#plan-food-selected').innerHTML = state.editor.combining
+    ? foods.map((food) => `<div class="plan-food-selected-row"><span>${esc(food.title || food.name)} <small>· ${food.itemType === 'ready_food' ? 'Ready food' : 'Recipe'}</small></span><button type="button" class="button ghost small" data-editor-action="remove-plan-food" data-id="${esc(food.id)}" aria-label="Remove ${esc(food.title || food.name)}">Remove</button></div>`).join('') : '';
+  fields.querySelector('#combine-plan-food').hidden = state.editor.combining || foods.length !== 1 || foods[0].itemType === 'meals';
+  document.querySelector('#dialog-save').disabled = foods.length < (state.editor.kind === 'library-combine' ? 2 : 1);
+}
+
 async function updatePlanFoodResults() {
-  if (state.editor?.kind !== 'plan-search') return;
+  if (!['plan-search', 'library-combine'].includes(state.editor?.kind)) return;
   const query = fields.querySelector('#plan-food-search')?.value.trim() || '';
   const request = ++state.editor.searchRequest;
   const resultBox = fields.querySelector('#plan-food-results');
+  if (state.editor.combining && state.editor.selectedFoods.length >= 10) {
+    resultBox.innerHTML = '<p class="muted tiny">A meal can include up to 10 recipes or ready foods.</p>';
+    return;
+  }
   resultBox.innerHTML = '<p class="muted tiny">Searching your library…</p>';
   try {
     const result = await api(`/api/recipe-library?item_type=all&limit=25&query=${encodeURIComponent(query)}`);
-    if (state.editor?.kind !== 'plan-search' || request !== state.editor.searchRequest) return;
-    state.editor.results = arr(result.items);
-    resultBox.innerHTML = state.editor.results.length ? state.editor.results.map((item) => `<button type="button" class="plan-food-result" data-editor-action="select-plan-food" data-id="${esc(item.id)}" data-item-type="${esc(item.itemType)}"><strong>${esc(item.title || item.name)}</strong><small>${item.itemType === 'meals' ? 'Saved meal' : item.itemType === 'ready_food' ? 'Ready food' : 'Recipe'} · ${esc(item.servings || 1)} servings</small></button>`).join('') : '<p class="muted tiny">No matching saved meals or recipes. Create one in the library, or build a custom planned meal.</p>';
+    if (!['plan-search', 'library-combine'].includes(state.editor?.kind) || request !== state.editor.searchRequest) return;
+    state.editor.results = arr(result.items).filter((item) => !state.editor.combining ||
+      (item.itemType !== 'meals' && !state.editor.selectedFoods.some((food) => food.id === item.id)));
+    resultBox.innerHTML = state.editor.results.length ? state.editor.results.map((item) => `<button type="button" class="plan-food-result" data-editor-action="select-plan-food" data-id="${esc(item.id)}" data-item-type="${esc(item.itemType)}"><strong>${esc(item.title || item.name)}</strong><small>${item.itemType === 'meals' ? 'Saved meal' : item.itemType === 'ready_food' ? 'Ready food' : 'Recipe'} · ${esc(item.servings || 1)} servings</small></button>`).join('') : '<p class="muted tiny">No matching library items. Add a recipe or ready food in the library first.</p>';
   } catch (error) {
-    if (state.editor?.kind === 'plan-search' && request === state.editor.searchRequest) resultBox.innerHTML = `<p class="form-error" role="alert">${esc(error.message || 'Could not search the library.')}</p>`;
+    if (['plan-search', 'library-combine'].includes(state.editor?.kind) && request === state.editor.searchRequest) resultBox.innerHTML = `<p class="form-error" role="alert">${esc(error.message || 'Could not search the library.')}</p>`;
   }
 }
 
 fields.addEventListener('input', (event) => {
-  if (event.target.id !== 'plan-food-search' || state.editor?.kind !== 'plan-search') return;
-  state.editor.selected = null;
-  fields.querySelector('#plan-food-selection').textContent = '';
-  document.querySelector('#dialog-save').disabled = true;
+  if (event.target.id !== 'plan-food-search' || !['plan-search', 'library-combine'].includes(state.editor?.kind)) return;
+  if (!state.editor.combining) {
+    state.editor.selectedFoods = [];
+    updatePlanFoodSelection();
+  }
   clearTimeout(state.editor.searchTimer);
   state.editor.searchTimer = setTimeout(updatePlanFoodResults, 180);
 });
@@ -1160,15 +1205,24 @@ function openEditor(kind, item = null, selectedDate = null) {
     title = item ? 'Edit recipe' : 'Add recipe';
     markup = field('kind', 'Library type', item?.kind || 'recipe', {choices: [{value: 'recipe', label: 'Recipe'}, {value: 'ready_food', label: 'Ready food'}]}) + field('title', 'Recipe name', item?.title, { required: true, wide: true }) + field('description', 'Description', item?.description, { type: 'textarea', wide: true }) + field('servings', 'Servings', item?.servings || 4, { type: 'number', min: 1 }) + field('totalMinutes', 'Total minutes', item?.total_minutes ?? item?.totalMinutes, { type: 'number', min: 1 }) + field('activeMinutes', 'Active minutes', item?.active_minutes ?? item?.activeMinutes, { type: 'number', min: 1 }) + field('tags', 'Tags, separated by commas', joinNames(item?.tags), { wide: true }) + ['cuisines','eating_goals','meal_types','diets'].map((key, index) => field(key, ['Cuisines','Eating goals (e.g. protein rich)','Meals (e.g. dinner)','Diets (e.g. vegetarian)'][index] + ', separated by commas', joinNames(item?.[key]), { wide: true })).join('') + field('ingredients', 'Ingredients — one per line: name | quantity | unit', arr(item?.ingredients).map((entry) => typeof entry === 'string' ? entry : `${entry.name || ''} | ${entry.quantity ?? ''} | ${entry.unit || ''}`).join('\n'), { type: 'textarea', wide: true }) + field('instructions', 'Instructions — one step per line', arr(item?.instructions).map((entry) => typeof entry === 'string' ? entry : entry.text || entry.instruction || '').join('\n'), { type: 'textarea', wide: true }) + field('sourceUrl', 'Source URL', item?.source_url || item?.sourceUrl, { type: 'url', wide: true });
     markup += nutritionEditor(item?.nutrition);
+  } else if (kind === 'library-combine') {
+    title = 'Combine recipes and ready food';
+    markup = `<div class="wide plan-food-picker"><label class="field">Find a recipe or ready food<input id="plan-food-search" type="search" autocomplete="off" placeholder="Search your food library" /></label><div id="plan-food-results" class="plan-food-results" role="group" aria-label="Food search results"></div><p id="plan-food-selection" class="plan-food-selection" role="status"></p><div id="plan-food-selected"></div><button id="combine-plan-food" type="button" hidden></button></div>` + field('servings', 'Default servings', 4, {type: 'number', min: 0.001, step: 0.001, required: true}) + field('notes', 'Notes', '', {type: 'textarea', wide: true}) + '<p class="wide muted tiny">Choose at least two library foods. The combination will use their names and stay available for future weeks.</p><button type="button" class="button ghost small wide" data-editor-action="advanced-library-meal">Advanced meal details</button>';
+    state.editor.searchRequest = 0;
+    state.editor.results = [];
+    state.editor.selectedFoods = [];
+    state.editor.combining = true;
   } else if (kind === 'library-meal') {
     title = item?.id ? 'Edit saved meal' : 'Save meal';
-    markup = field('name', 'Meal name', item?.name, {required: true, wide: true}) + field('servings', 'Default servings', item?.servings || 4, {type: 'number', min: 0.001, step: 0.001, required: true}) + `<p class="muted tiny">Amounts below are for these servings. They scale when you plan the meal.</p>` + field('notes', 'Notes', item?.notes, {type: 'textarea', wide: true}) + `<section class="wide editor-components"><h3>What’s in this meal?</h3><p class="muted tiny">Combine recipes and ready food. For a recipe, use servings as its unit. Link pantry food and prep tasks after adding this meal to a week.</p><div id="component-rows">${(item?.components?.length ? item.components : [{}]).map(componentEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-component">Add component</button></section>`;
+    markup = field('name', 'Meal name', item?.name, {required: true, wide: true}) + field('servings', 'Default servings', item?.servings || 4, {type: 'number', min: 0.001, step: 0.001, required: true}) + `<p class="muted tiny">Amounts below are for these servings. They scale when you plan the meal.</p>` + field('notes', 'Notes', item?.notes, {type: 'textarea', wide: true}) + `<section class="wide editor-components"><h3>What’s in this meal?</h3><p class="muted tiny">Combine recipes and ready food. For a recipe, use servings as its unit. Link pantry food and prep tasks after adding this meal to a week.</p><div id="component-rows">${(item?.components?.length ? item.components : [{}]).map(componentEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-component">Add food</button></section>`;
   } else if (kind === 'plan-search') {
     title = 'Add meal to plan';
     const slots = mealSlots().filter((slot) => slot.enabled);
-    markup = `<div class="wide plan-food-picker"><label class="field">Find a saved meal or recipe<input id="plan-food-search" type="search" autocomplete="off" placeholder="Search your food library" /></label><div id="plan-food-results" class="plan-food-results" role="group" aria-label="Food search results"></div><p id="plan-food-selection" class="plan-food-selection" role="status"></p></div>` + field('date', 'Day', item?.date || state.weekStart, {type: 'date', required: true}) + field('slot', 'Meal slot', slots.find((slot) => slot.id === 'dinner')?.id || slots[0]?.id, {choices: slots.map((slot) => ({value: slot.id, label: slot.name}))}) + field('servings', 'People / servings', '', {type: 'number', min: 0.001, step: 0.001, required: true}) + field('notes', 'Notes for this time', '', {type: 'textarea', wide: true}) + '<p class="wide muted tiny">The recipe or meal stays in your library. This adds one dated copy to the plan.</p><button type="button" class="button ghost small wide" data-editor-action="custom-plan-meal">Build a custom planned meal</button>';
+    markup = `<div class="wide plan-food-picker"><label class="field">Find a recipe or ready food<input id="plan-food-search" type="search" autocomplete="off" placeholder="Search your food library" /></label><div id="plan-food-results" class="plan-food-results" role="group" aria-label="Food search results"></div><p id="plan-food-selection" class="plan-food-selection" role="status"></p><div id="plan-food-selected"></div><button id="combine-plan-food" type="button" class="button ghost small" data-editor-action="combine-plan-food" hidden>Add another recipe or ready food</button></div>` + field('date', 'Day', item?.date || state.weekStart, {type: 'date', required: true}) + field('slot', 'Meal slot', slots.find((slot) => slot.id === 'dinner')?.id || slots[0]?.id, {choices: slots.map((slot) => ({value: slot.id, label: slot.name}))}) + field('servings', 'People / servings', '', {type: 'number', min: 0.001, step: 0.001, required: true}) + field('notes', 'Notes for this time', '', {type: 'textarea', wide: true}) + '<p class="wide muted tiny">Recipes and ready food stay in your library. This adds them together to one dated plan entry.</p><button type="button" class="button ghost small wide" data-editor-action="custom-plan-meal">Advanced meal details</button>';
     state.editor.searchRequest = 0;
     state.editor.results = [];
+    state.editor.selectedFoods = [];
+    state.editor.combining = false;
   } else if (kind === 'plan-library') {
     title = 'Plan a saved meal';
     const slots = mealSlots().filter(slot => slot.enabled);
@@ -1183,7 +1237,7 @@ function openEditor(kind, item = null, selectedDate = null) {
     title = item ? 'Edit planned meal' : 'Add meal';
     const date = item?.date || selectedDate || state.weekStart;
     const slots = mealSlots().filter((slot) => slot.enabled || slot.id === item?.slot);
-    markup = field('date', 'Date', date, { type: 'date', required: true }) + field('slot', 'Meal slot', item?.slot || slots.find((slot) => slot.id === 'dinner')?.id || slots[0]?.id, { choices: slots.map((slot) => ({ value: slot.id, label: slot.name + (slot.enabled ? '' : ' (disabled)') })) }) + field('meal', 'Meal name', item?.meal, { required: true, wide: true }) + field('servings', 'People / servings', item?.servings, { type: 'number', min: 0.001, step: 0.001 }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true }) + `<section class="wide editor-components"><h3>What’s in this meal?</h3><p class="muted tiny">Combine bought food, recipes, or food prepared by a task.</p><div id="component-rows">${(item?.components?.length ? item.components : [{}]).map(componentEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-component">Add component</button></section>`;
+    markup = field('date', 'Date', date, { type: 'date', required: true }) + field('slot', 'Meal slot', item?.slot || slots.find((slot) => slot.id === 'dinner')?.id || slots[0]?.id, { choices: slots.map((slot) => ({ value: slot.id, label: slot.name + (slot.enabled ? '' : ' (disabled)') })) }) + field('meal', 'Meal name', item?.meal, { required: true, wide: true }) + field('servings', 'People / servings', item?.servings, { type: 'number', min: 0.001, step: 0.001 }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true }) + `<section class="wide editor-components"><h3>What’s in this meal?</h3><p class="muted tiny">Combine bought food, recipes, or food prepared by a task.</p><div id="component-rows">${(item?.components?.length ? item.components : [{}]).map(componentEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-component">Add food</button></section>`;
     markup += nutritionEditor(item?.nutrition);
   } else if (kind === 'task') {
     title = item ? 'Edit task' : 'Add task';
@@ -1228,12 +1282,12 @@ function openEditor(kind, item = null, selectedDate = null) {
     markup = field('content', 'What should be remembered?', item?.content, { type: 'textarea', required: true, wide: true }) + field('scope', 'Scope', item?.scope || 'persistent', { choices: ['persistent', 'this_week'] }) + (item ? field('action', 'Action', 'update', { choices: ['update', 'forget'] }) : '<p class="muted tiny">New memories are saved as suggestions until confirmed.</p>');
   }
   document.querySelector('#dialog-title').textContent = title;
-  document.querySelector('#dialog-save').textContent = kind === 'pantry-use' ? 'Record use' : kind === 'activity' ? 'Record completion' : kind === 'receive' ? 'Record received' : kind === 'shopping-preview' ? 'Update shopping list' : 'Save';
+  document.querySelector('#dialog-save').textContent = kind === 'pantry-use' ? 'Record use' : kind === 'activity' ? 'Record completion' : kind === 'receive' ? 'Record received' : kind === 'shopping-preview' ? 'Update shopping list' : kind === 'library-combine' ? 'Save combination' : 'Save';
   fields.innerHTML = markup;
   if (!dialog.open) dialog.showModal();
   fields.querySelector('input,textarea,select')?.focus();
-  document.querySelector('#dialog-save').disabled = kind === 'plan-search';
-  if (kind === 'plan-search') updatePlanFoodResults();
+  document.querySelector('#dialog-save').disabled = ['plan-search', 'library-combine'].includes(kind);
+  if (['plan-search', 'library-combine'].includes(kind)) updatePlanFoodResults();
 }
 
 async function submitEditor(data) {
@@ -1247,16 +1301,27 @@ async function submitEditor(data) {
     await loadRecipe(saved.id);
     state.view = 'recipes';
     writeRoute();
+  } else if (kind === 'library-combine') {
+    if (state.editor.selectedFoods.length < 2) throw new Error('Choose at least two recipes or ready foods.');
+    await save('/api/meals/combine', 'POST', {recipeIds: state.editor.selectedFoods.map((food) => food.id),
+      servings: Number(value('servings')), notes: value('notes')});
+    recipeBrowser?.destroy(); recipeBrowser = null; state.browserUi = {itemType: 'meals', query: '', filters: {}};
+    state.recipe = null; state.view = 'recipes'; writeRoute();
   } else if (kind === 'library-meal') {
     await save('/api/meals', 'PUT', {id: item?.id, name: value('name'), servings: Number(value('servings')), notes: value('notes'), components: readComponents(data)});
     recipeBrowser?.destroy(); recipeBrowser = null; state.browserUi = {itemType: 'meals', query: '', filters: {}}; state.recipe = null; state.view = 'recipes'; writeRoute();
   } else if (kind === 'plan-search') {
-    const selected = state.editor.selected;
-    if (!selected) throw new Error('Choose a saved meal or recipe from the search results.');
+    const foods = state.editor.selectedFoods;
+    if (!foods.length) throw new Error('Choose a recipe or ready food from the search results.');
     const date = value('date');
     if (monday(`${date}T12:00:00`) !== state.weekStart) throw new Error('Choose a date in the selected week.');
     const payload = {weekStart: state.weekStart, date, slot: value('slot'), servings: Number(value('servings')), notes: value('notes')};
-    await save(`/api/${selected.itemType === 'meals' ? 'meals' : 'recipes'}/${encodeURIComponent(selected.id)}/plan`, 'POST', payload);
+    if (foods.length > 1) {
+      if (foods.some((food) => food.itemType === 'meals')) throw new Error('Combine recipes and ready food only.');
+      await save('/api/meal-plan/combine', 'POST', {...payload, recipeIds: foods.map((food) => food.id)});
+    } else {
+      await save(`/api/${foods[0].itemType === 'meals' ? 'meals' : 'recipes'}/${encodeURIComponent(foods[0].id)}/plan`, 'POST', payload);
+    }
     state.view = 'plan'; state.planTab = 'plan'; writeRoute();
   } else if (kind === 'plan-library') {
     const weekStart = monday(`${value('date')}T12:00:00`);
@@ -1513,7 +1578,8 @@ async function handleAction(actionName, id) {
   const shopping = arr(section('shoppingList')?.items);
   const plan = arr(state.plan?.entries);
   if (actionName === 'use-saved-meal') { recipeBrowser?.destroy(); recipeBrowser = null; state.browserUi = {itemType: 'meals', query: '', filters: {}}; state.recipe = null; return view('recipes'); }
-  if (['create-library-meal', 'edit-library-meal', 'save-as-meal', 'recipe-as-meal'].includes(actionName)) {
+  if (actionName === 'create-library-meal') return openEditor('library-combine');
+  if (['edit-library-meal', 'save-as-meal'].includes(actionName)) {
     if (plannedMealDialog.open) plannedMealDialog.close();
     await loadMealRecipes();
     let draft = null;
@@ -1526,10 +1592,6 @@ async function handleAction(actionName, id) {
         const ready = state.mealRecipes.find(recipe => recipe.id === recipeId)?.kind === 'ready_food';
         return {...row, id: crypto.randomUUID(), source: row.source === 'task' ? (recipeId && !ready ? 'cook' : 'ready') : row.source, recipeId: recipeId || null, pantryItemId: null, taskId: null, recipeSnapshot: undefined, action: row.source === 'task' ? (recipeId && !ready ? 'cook' : row.action === 'heat' ? 'heat' : 'serve') : row.action};
       })};
-    }
-    if (actionName === 'recipe-as-meal') {
-      const recipe = state.recipe;
-      draft = {name: recipe.title, servings: recipe.servings || 1, components: [{name: recipe.title, quantity: recipe.servings || 1, unit: 'servings', source: recipe.kind === 'ready_food' ? 'ready' : 'cook', action: recipe.kind === 'ready_food' ? 'serve' : 'cook', recipeId: recipe.id}]};
     }
     return openEditor('library-meal', draft);
   }
