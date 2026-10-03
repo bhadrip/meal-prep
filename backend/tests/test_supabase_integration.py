@@ -467,6 +467,18 @@ async def test_local_notification_inbox_respects_recipient_and_membership():
             assert await owner.request("PATCH", "notifications",
                 params={"id": f"eq.{inbox[0]['id']}"}, json={"read_at": "2026-09-30T12:00:00Z"}) == []
 
+            notification_id = inbox[0]["id"]
+            assert await owner.request("PATCH", "notifications",
+                params={"id": f"eq.{notification_id}"}, json={"archived_at": "2026-10-02T12:00:00Z"}) == []
+            archived = await invitee.request("PATCH", "notifications",
+                params={"id": f"eq.{notification_id}"}, json={"archived_at": "2026-10-02T12:00:00Z"})
+            assert archived[0]["archived_at"]
+            assert await invitee.request("GET", "notifications", params={"archived_at": "is.null"}) == []
+            assert (await invitee.request("GET", "notifications", params={"archived_at": "not.is.null"}))[0]["id"] == notification_id
+            restored = await invitee.request("PATCH", "notifications",
+                params={"id": f"eq.{notification_id}"}, json={"archived_at": None, "read_at": None})
+            assert restored[0]["archived_at"] is None and restored[0]["read_at"] is None
+
             await invitee.rpc("accept_household_invitation", {"invitation_id": invitation["id"]})
             await owner.save_recipe({"title": "Shared soup", "servings": 4})
             member_inbox = await invitee.request("GET", "notifications")
