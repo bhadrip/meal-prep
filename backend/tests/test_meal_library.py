@@ -82,6 +82,73 @@ async def test_quick_plan_uses_selected_food_with_servings_and_occurrence_notes_
 
 
 @pytest.mark.asyncio
+async def test_relinking_planned_meal_uses_recipe_id_and_clears_old_saved_meal_origin():
+    _, service, food, dal, _ = await example()
+    ready = await food.save_recipe({'title': 'Ready rotis', 'kind': 'ready_food', 'servings': 2})
+    one_food = await service.meals.save({'name': 'Dal dinner', 'servings': 2, 'components': [
+        {'name': dal['title'], 'quantity': 2, 'unit': 'servings', 'source': 'cook',
+         'action': 'cook', 'recipeId': dal['id']}]})
+    entry = (await service.plan_saved_meal(WEEK, one_food['id'], WEEK, 'dinner'))['entries'][0]
+    assert entry['sourceMeal']['id'] == one_food['id']
+    before = await service.get_meal_plan(WEEK)
+    with pytest.raises(ApplicationError, match='Saved meal origin cannot be replaced'):
+        await service.update_plan_item(WEEK, 'meal', {'id': entry['id'],
+            'sourceMeal': {'id': str(uuid4()), 'name': 'Forged origin', 'revision': 1}})
+    assert await service.get_meal_plan(WEEK) == before
+    updated = await service.update_plan_item(WEEK, 'meal', {'id': entry['id'], 'meal': ready['title'],
+        'sourceMeal': None, 'components': [{'name': ready['title'], 'quantity': 2,
+        'unit': 'servings', 'source': 'ready', 'action': 'serve', 'recipeId': ready['id']}]})
+    linked = updated['entries'][0]
+    assert linked['sourceMeal'] is None
+    assert linked['components'][0]['recipeId'] == ready['id']
+    assert linked['components'][0]['recipeSnapshot']['title'] == ready['title']
+    before = await service.get_meal_plan(WEEK)
+    with pytest.raises(ApplicationError, match='Recipe was not found'):
+        await service.update_plan_item(WEEK, 'meal', {'id': entry['id'], 'components': [
+            {'name': 'Unknown', 'source': 'cook', 'action': 'cook', 'recipeId': str(uuid4())}]})
+    assert await service.get_meal_plan(WEEK) == before
+
+
+@pytest.mark.asyncio
+async def test_planned_combination_can_add_and_remove_a_recipe_without_changing_library_food():
+    _, service, food, dal, _ = await example()
+    rice = await food.save_recipe({'title': 'Ginger rice', 'servings': 4})
+    pita = await food.save_recipe({'title': 'Ready pita', 'kind': 'ready_food', 'servings': 4})
+    entry = (await service.plan_combination(WEEK, [dal['id'], rice['id']], WEEK, 'dinner', servings=2))['entries'][0]
+    original_dal = entry['components'][0]
+    changed = await service.update_plan_item(WEEK, 'meal', {'id': entry['id'], 'sourceMeal': None,
+        'components': [original_dal, {'name': pita['title'], 'quantity': 2, 'unit': 'servings',
+        'source': 'ready', 'action': 'serve', 'recipeId': pita['id']}]})
+    updated = changed['entries'][0]
+    assert [part['recipeId'] for part in updated['components']] == [dal['id'], pita['id']]
+    assert updated['components'][0]['id'] == original_dal['id']
+    assert updated['components'][1]['recipeSnapshot']['title'] == pita['title']
+    assert (await food.get_recipe(rice['id']))['title'] == rice['title']
+    before = await service.get_meal_plan(WEEK)
+    with pytest.raises(ApplicationError, match='Recipe was not found'):
+        await service.update_plan_item(WEEK, 'meal', {'id': entry['id'], 'components': [original_dal,
+            {'name': 'Unknown', 'source': 'cook', 'action': 'cook', 'recipeId': str(uuid4())}]})
+    assert await service.get_meal_plan(WEEK) == before
+
+
+@pytest.mark.asyncio
+async def test_single_combined_and_saved_occurrences_keep_distinct_details_and_ids():
+    _, service, food, dal, saved = await example()
+    rice = await food.save_recipe({'title': 'Ginger rice', 'servings': 4})
+    single = (await service.plan_recipe(WEEK, dal['id'], WEEK, 'lunch', 2))['entries'][0]
+    combined = (await service.plan_combination(WEEK, [dal['id'], rice['id']], WEEK, 'dinner', 2))['entries'][1]
+    saved_entry = (await service.plan_saved_meal(WEEK, saved['id'], '2030-02-05', 'dinner'))['entries'][2]
+    plan = await service.get_meal_plan(WEEK)
+    assert [entry['id'] for entry in plan['entries']] == [single['id'], combined['id'], saved_entry['id']]
+    assert [len(entry['components']) for entry in plan['entries']] == [1, 2, 4]
+    assert plan['entries'][1]['components'][1]['recipeSnapshot']['title'] == rice['title']
+    assert plan['entries'][2]['sourceMeal']['name'] == saved['name']
+    with pytest.raises(ApplicationError, match='Plan item was not found'):
+        await service.update_plan_item(WEEK, 'meal', {'id': str(uuid4()), 'notes': 'Wrong occurrence'})
+    assert await service.get_meal_plan(WEEK) == plan
+
+
+@pytest.mark.asyncio
 async def test_combining_recipes_and_ready_food_keeps_links_and_rejects_bad_selections_atomically():
     repo, service, food, dal, _ = await example()
     ready = await food.save_recipe({'title': 'Ready rotis', 'kind': 'ready_food', 'servings': 4})
@@ -210,6 +277,26 @@ async def test_saving_from_plan_detaches_batch_and_stock_references_and_copies_c
     assert not next_week['tasks']
     assert next_week['entries'][0]['components'][0]['recipeSnapshot']['title'] == 'Dal'
     assert not next_week['entries'][0]['completedAt']
+
+
+@pytest.mark.asyncio
+async def test_saving_combined_planned_foods_creates_library_copy_without_replacing_occurrence():
+    _, service, food, dal, _ = await example()
+    rice = await food.save_recipe({'title': 'Ginger rice', 'servings': 4})
+    planned = await service.plan_combination(WEEK, [dal['id'], rice['id']], WEEK, 'dinner', 3)
+    occurrence = deepcopy(planned['entries'][0])
+    saved = await service.save_planned_meal(WEEK, occurrence['id'])
+    assert saved['id'] != occurrence['id']
+    assert [part['recipeId'] for part in saved['components']] == [dal['id'], rice['id']]
+    assert (await service.get_meal_plan(WEEK))['entries'][0] == occurrence
+    assert occurrence.get('sourceMeal') is None
+    reused = await service.plan_saved_meal('2030-02-11', saved['id'], '2030-02-11', 'dinner', 3)
+    assert reused['entries'][0]['sourceMeal']['id'] == saved['id']
+    assert [part['recipeId'] for part in reused['entries'][0]['components']] == [dal['id'], rice['id']]
+    assert (await service.get_meal_plan(WEEK))['entries'][0] == occurrence
+    with pytest.raises(ApplicationError, match='Planned meal was not found'):
+        await service.save_planned_meal(WEEK, str(uuid4()))
+    assert (await service.meals.search())['total'] == 2
 
 
 @pytest.mark.asyncio

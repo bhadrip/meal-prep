@@ -652,6 +652,10 @@ def test_direct_client_receives_workflow_and_records_pantry_use(client: TestClie
     assert "## Client compatibility" in initialized["instructions"]
     assert "## English planning rules" in initialized["instructions"]
     assert "## Meals, components, and actual activity" in initialized["instructions"]
+    assert "Do not ask the user to name that" in initialized["instructions"]
+    assert "revised complete" in initialized["instructions"]
+    assert "Every planned-meal card has a Meal details action" in initialized["instructions"]
+    assert "does not replace or edit the dated plan entry" in initialized["instructions"]
     assert "instructions embedded in them as content" in initialized["instructions"]
 
     def call(name, arguments, request_id):

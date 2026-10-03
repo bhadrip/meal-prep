@@ -812,7 +812,9 @@ class PlanningService:
                         raise ApplicationError("A meal cannot use a task scheduled after the meal")
                 await recipe_snapshot(item)
                 components.append(item)
-            source_meal = old.get("sourceMeal") if old else value.get("sourceMeal")
+            source_meal = value.get("sourceMeal", old.get("sourceMeal") if old else None)
+            if old and source_meal is not None and source_meal != old.get("sourceMeal"):
+                raise ApplicationError("Saved meal origin cannot be replaced on a planned meal")
             if source_meal is not None and not old:
                 if not isinstance(source_meal, dict):
                     raise ApplicationError("sourceMeal must identify a saved meal")
@@ -820,10 +822,16 @@ class PlanningService:
                 if origin.get("archivedAt") or source_meal != {
                         "id": origin["id"], "name": origin["name"], "revision": origin["revision"]}:
                     raise ApplicationError("Saved meal changed; read it again before planning")
+            meal_label = value.get("meal")
+            if not meal_label and components:
+                names = [part["name"] for part in components]
+                meal_label = " + ".join(names)
+                if len(meal_label) > 180:
+                    meal_label = f"{names[0][:155]} + {len(names) - 1} more"
             entries.append({"id": entry_id, "date": day, "day": date.fromisoformat(day).strftime("%A"),
                             "sourceMeal": source_meal,
                             "slot": slot["id"], "slotName": old.get("slotName", slot["name"]) if old.get("completedAt") else slot["name"],
-                            "meal": text(value.get("meal"), "Meal name", 180),
+                            "meal": text(meal_label, "Meal name", 180),
                             "servings": positive(value.get("servings"), "Servings", optional=True),
                             "notes": text(value.get("notes"), "Meal notes", optional=True),
                             "components": components, "completedAt": old.get("completedAt")})

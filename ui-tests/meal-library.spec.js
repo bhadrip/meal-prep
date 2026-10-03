@@ -93,7 +93,167 @@ test('Add meal searches saved food, changes only servings and notes, and opens l
   const second = plan.entries.find(row => row.sourceMeal?.id === saved.id);
   expect(second.components[0].quantity).toBe(8);
   expect(second.notes).toBe('Feed friends tonight');
+  const savedCard = page.locator(`.meal[data-meal-id="${second.id}"]`);
+  await expect(savedCard.getByRole('button', {name: 'Meal details'})).toHaveCount(1);
+  await savedCard.getByRole('button', {name: 'Meal details'}).click();
+  await expect(page.locator('#planned-meal-dialog')).toContainText('Planned from saved meal');
   expect((await request(page, 'get', `/api/meals/${saved.id}`)).notes).toBe('Original library note');
+});
+
+test('Edit planned meal links a recipe through one dropdown and keeps an unselected meal unchanged', async ({page}) => {
+  const dal = await request(page, 'put', '/api/recipes', {title: `Dal ${suffix}`, servings: 4});
+  const rotis = await request(page, 'put', '/api/recipes', {title: `Ready rotis ${suffix}`, kind: 'ready_food', servings: 4});
+  await request(page, 'put', '/api/meal-plan', {weekStart: week, entries: [
+    {date: week, slot: 'dinner', meal: `Friends dinner ${suffix}`, servings: 2, notes: 'Original note'}], tasks: []});
+  await page.goto(`/app?view=plan&week=${week}`);
+  const openEdit = () => page.locator('.meal').getByRole('button', {name: 'Edit', exact: true}).click();
+  await openEdit();
+  await expect(dialog(page).locator('[name="plannedRecipeId"]').locator('..').locator('.choice-trigger')).toBeVisible();
+  await expect(dialog(page).getByRole('status')).toContainText('saved by name only');
+  await expect(dialog(page).locator('.component-row')).toHaveCount(0);
+  await expect(dialog(page).getByLabel('Food or dish')).toHaveCount(0);
+  await expect(dialog(page).getByRole('button', {name: 'Advanced meal details'})).toHaveCount(0);
+  await dialog(page).locator('[name="notes"]').fill('Keep this dinner');
+  await save(page);
+  let entry = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(entry.meal).toBe(`Friends dinner ${suffix}`);
+  expect(entry.components).toEqual([]);
+  await openEdit();
+  await choose(dialog(page), 'plannedRecipeId', dal.id);
+  await page.route('**/api/meal-plan/items', route => {
+    const body = route.request().postDataJSON();
+    body.item.sourceMeal = {id: require('crypto').randomUUID(), name: 'Forged origin', revision: 1};
+    return route.continue({postData: JSON.stringify(body)});
+  });
+  await dialog(page).locator('#dialog-save').click();
+  await expect(dialog(page).locator('#dialog-error')).toContainText('Saved meal origin cannot be replaced');
+  await expect(dialog(page).locator('[name="plannedRecipeId"]')).toHaveValue(dal.id);
+  expect((await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0]).toEqual(entry);
+  await page.unroute('**/api/meal-plan/items');
+  await save(page);
+  entry = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(entry.meal).toBe(dal.title);
+  expect(entry.components[0]).toMatchObject({recipeId: dal.id, source: 'cook', quantity: 2});
+  expect(entry.notes).toBe('Keep this dinner');
+  await expect(page.locator('.meal').getByRole('link', {name: dal.title})).toBeVisible();
+  await openEdit();
+  await expect(dialog(page).locator('[name="plannedRecipeId"]')).toHaveValue(dal.id);
+  await choose(dialog(page), 'plannedRecipeId', rotis.id);
+  await save(page);
+  entry = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(entry.meal).toBe(rotis.title);
+  expect(entry.components).toHaveLength(1);
+  expect(entry.components[0]).toMatchObject({recipeId: rotis.id, source: 'ready', action: 'serve'});
+  expect(entry.components[0].recipeSnapshot.title).toBe(rotis.title);
+  await openEdit();
+  await dialog(page).locator('[name="servings"]').fill('3');
+  await save(page);
+  entry = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(entry.servings).toBe(3);
+  expect(entry.components[0]).toMatchObject({recipeId: rotis.id, quantity: 3});
+});
+
+test('recipe dropdown preserves other planned foods and rejects a duplicate link', async ({page}) => {
+  const dal = await request(page, 'put', '/api/recipes', {title: `Dal ${suffix}`, servings: 4});
+  const rice = await request(page, 'put', '/api/recipes', {title: `Rice ${suffix}`, servings: 4});
+  const salad = await request(page, 'put', '/api/recipes', {title: `Salad ${suffix}`, servings: 4});
+  await request(page, 'put', '/api/meal-plan', {weekStart: week, entries: [{date: week, slot: 'dinner',
+    meal: `Dinner ${suffix}`, servings: 2, components: [
+      {name: dal.title, quantity: 2, unit: 'servings', source: 'cook', action: 'cook', recipeId: dal.id},
+      {name: rice.title, quantity: 2, unit: 'servings', source: 'cook', action: 'cook', recipeId: rice.id},
+      {name: 'Takeout bread', quantity: 1, unit: 'loaf', source: 'external', action: 'serve'}]}], tasks: []});
+  await page.goto(`/app?view=plan&week=${week}`);
+  await page.locator('.meal').getByRole('button', {name: 'Edit', exact: true}).click();
+  await expect(dialog(page).locator('[data-planned-recipe]')).toHaveCount(2);
+  await expect(dialog(page).locator('.component-row')).toHaveCount(0);
+  await expect(dialog(page).getByRole('button', {name: 'Advanced meal details'})).toHaveCount(0);
+  await choose(dialog(page), 'plannedRecipeId-1', dal.id);
+  await dialog(page).locator('#dialog-save').click();
+  await expect(dialog(page).locator('#dialog-error')).toContainText('only once');
+  let entry = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(entry.components.map(part => part.recipeId)).toEqual([dal.id, rice.id, null]);
+  await choose(dialog(page), 'plannedRecipeId-1', salad.id);
+  await save(page);
+  entry = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(entry.meal).toBe(`${dal.title} + ${salad.title} + Takeout bread`);
+  expect(entry.components.map(part => part.recipeId)).toEqual([dal.id, salad.id, null]);
+  expect(entry.components[2]).toMatchObject({name: 'Takeout bread', quantity: 1, unit: 'loaf'});
+});
+
+test('edit a planned combination by adding, replacing, and removing recipes', async ({page}) => {
+  const tofu = await request(page, 'put', '/api/recipes', {title: `Tofu ${suffix}`});
+  const rice = await request(page, 'put', '/api/recipes', {title: `Rice ${suffix}`});
+  const greens = await request(page, 'put', '/api/recipes', {title: `Greens ${suffix}`});
+  const pita = await request(page, 'put', '/api/recipes', {title: `Pita ${suffix}`, kind: 'ready_food'});
+  const planned = await request(page, 'put', '/api/meal-plan', {weekStart: week, entries: [{date: week, slot: 'dinner',
+    meal: 'Original dinner', servings: 2, components: [tofu, rice, greens].map(recipe => ({
+      name: recipe.title, quantity: 2, unit: 'servings', source: 'cook', action: 'cook', recipeId: recipe.id}))}], tasks: []});
+  const id = planned.entries[0].id;
+  await page.goto(`/app?view=plan&week=${week}`);
+  const card = page.locator(`.meal[data-meal-id="${id}"]`);
+  await card.getByRole('button', {name: 'Edit', exact: true}).click();
+  const editor = dialog(page);
+  await expect(editor.locator('[data-planned-recipe]')).toHaveCount(3);
+  const recipeTabPromise = page.waitForEvent('popup');
+  await editor.locator('[data-planned-recipe]').first().getByRole('link', {name: 'Open in library to edit'}).click();
+  const recipeTab = await recipeTabPromise;
+  await expect(recipeTab.getByRole('heading', {name: tofu.title, exact: true})).toBeVisible();
+  await expect(recipeTab.getByRole('button', {name: 'Edit recipe'})).toBeVisible();
+  await recipeTab.close();
+  await editor.getByRole('button', {name: `Remove ${rice.title} from planned meal`}).click();
+  await editor.getByRole('button', {name: '+ Add food'}).click();
+  const added = editor.locator('[data-planned-recipe]').last();
+  const fieldName = await added.locator('input[type="hidden"]').getAttribute('name');
+  await choose(added, fieldName, tofu.id);
+  await editor.locator('#dialog-save').click();
+  await expect(editor.locator('#dialog-error')).toContainText('only once');
+  let entry = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(entry.components.map(part => part.recipeId)).toEqual([tofu.id, rice.id, greens.id]);
+  await choose(added, fieldName, pita.id);
+  await save(page);
+  entry = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(entry.components.map(part => part.recipeId)).toEqual([tofu.id, greens.id, pita.id]);
+  expect(entry.components[2]).toMatchObject({source: 'ready', action: 'serve'});
+  await expect(card).toContainText(pita.title);
+  await card.getByRole('button', {name: 'Edit', exact: true}).click();
+  await editor.getByRole('button', {name: `Remove ${tofu.title} from planned meal`}).click();
+  await save(page);
+  entry = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0];
+  expect(entry.components.map(part => part.recipeId)).toEqual([greens.id, pita.id]);
+  await card.getByRole('button', {name: 'Edit', exact: true}).click();
+  await editor.getByRole('button', {name: `Remove ${greens.title} from planned meal`}).click();
+  await editor.getByRole('button', {name: `Remove ${pita.title} from planned meal`}).click();
+  await editor.locator('#dialog-save').click();
+  await expect(editor.locator('#dialog-error')).toContainText('Choose another food');
+  expect((await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries[0].components).toHaveLength(2);
+  page.once('dialog', prompt => prompt.accept());
+  await editor.getByRole('button', {name: 'Remove this planned meal'}).click();
+  await expect(card).toHaveCount(0);
+  expect((await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries).toHaveLength(0);
+});
+
+test('a dated food selection displays as one unit without asking for a planned-meal name', async ({page}) => {
+  const curry = await request(page, 'put', '/api/recipes', {title: `Vegetable curry ${suffix}`});
+  const rice = await request(page, 'put', '/api/recipes', {title: `Ready rice ${suffix}`, kind: 'ready_food'});
+  const plan = await request(page, 'patch', '/api/meal-plan/items', {weekStart: week, kind: 'meal', item: {
+    date: week, slot: 'dinner', servings: 2, components: [
+      {name: curry.title, source: 'cook', action: 'cook', recipeId: curry.id},
+      {name: rice.title, source: 'ready', action: 'serve', recipeId: rice.id}]}});
+  expect(plan.entries[0].meal).toBe(`${curry.title} + ${rice.title}`);
+  await page.goto(`/app?view=plan&week=${week}`);
+  const card = page.locator(`.meal[data-meal-id="${plan.entries[0].id}"]`);
+  await expect(card.locator('strong')).toHaveText('2 foods together');
+  await expect(card.getByRole('link', {name: curry.title})).toBeVisible();
+  await expect(card.getByRole('link', {name: rice.title})).toBeVisible();
+  await expect(card.getByRole('button', {name: 'Meal details'})).toHaveCount(1);
+  await expect(card.getByRole('button', {name: '2 foods together'})).toHaveCount(0);
+  await card.getByRole('button', {name: 'Edit', exact: true}).click();
+  await expect(dialog(page).locator('[name="meal"]')).toHaveCount(0);
+  await expect(dialog(page).locator('[data-planned-recipe]')).toHaveCount(2);
+  await dialog(page).getByRole('button', {name: 'Cancel'}).click();
+  await card.getByRole('button', {name: 'Meal details'}).click();
+  await expect(page.locator('#planned-meal-dialog')).toContainText(curry.title);
+  await expect(page.locator('#planned-meal-dialog')).toContainText(rice.title);
 });
 
 test('Add meal combines a recipe and ready food into one planned dinner with separate links', async ({page}) => {
@@ -158,6 +318,12 @@ test('Create meal saves a reusable combination from library recipes and ready fo
   await expect(card).toContainText(bread.title);
   await card.getByRole('button', {name: bread.title}).click();
   await expect(page.locator('.hero-copy')).toContainText(bread.title);
+  const planned = await request(page, 'post', `/api/meals/${combined.id}/plan`, {weekStart: week, date: week, slot: 'dinner', servings: 3});
+  await page.goto(`/app?view=plan&week=${week}`);
+  await page.locator(`.meal[data-meal-id="${planned.entries[0].id}"]`).getByRole('button', {name: 'Meal details'}).click();
+  await expect(page.locator('#planned-meal-dialog')).toContainText('already saved in your meal library');
+  await expect(page.locator('#planned-meal-dialog').getByRole('button', {name: 'Save as reusable meal'})).toHaveCount(0);
+  await expect(page.locator('#planned-meal-dialog').getByRole('tooltip')).toHaveCount(0);
 });
 
 test('a named planned meal opens details without inventing a recipe or saving a copy', async ({page}) => {
@@ -165,7 +331,7 @@ test('a named planned meal opens details without inventing a recipe or saving a 
   await request(page, 'put', '/api/meal-plan', {weekStart: week, entries: [{date: week, slot: 'dinner',
     meal: `Friends dinner ${suffix}`, notes: 'Bring salad'}], tasks: []});
   await page.goto(`/app?view=plan&week=${week}`);
-  await page.locator('.planned-meal-title').click();
+  await page.locator('.meal').getByRole('button', {name: 'Meal details'}).click();
   const detail = page.locator('#planned-meal-dialog');
   await expect(detail).toContainText('Bring salad');
   await expect(detail).toContainText('No recipe or ready food is linked');
@@ -269,7 +435,10 @@ test('Save combination copies a mixed dinner while single recipes need no duplic
   const taskId=require('crypto').randomUUID(), stock=await request(page,'put','/api/pantry',{name:`Roti ${suffix}`,quantity:8,unit:'pieces'});
   const plan=await request(page,'put','/api/meal-plan',{weekStart:week,tasks:[{id:taskId,title:'Cook once',recipeId:recipe.id,servings:8}],entries:[{date:week,slot:'dinner',meal:`Batch dinner ${suffix}`,servings:4,components:[{name:recipe.title,quantity:4,unit:'servings',source:'task',taskId},{name:stock.name,quantity:8,unit:'pieces',pantryItemId:stock.id}]}]});
   await page.goto(`/app?view=plan&week=${week}`); await page.locator('.meal').getByRole('button',{name:'Meal details'}).click();
-  await page.locator('#planned-meal-dialog').getByRole('button',{name:'Save combination'}).click();
+  await expect(page.locator('#planned-meal-dialog').getByRole('tooltip')).toHaveCount(0);
+  await expect(page.locator('#planned-meal-dialog').getByRole('button',{name:'About saving this meal'})).toHaveCount(0);
+  await expect(page.locator('#planned-meal-dialog')).not.toContainText('These foods are already combined for this date');
+  await page.locator('#planned-meal-dialog').getByRole('button',{name:'Save as reusable meal'}).click();
   await expect(dialog(page).locator('[data-source="task"]')).toHaveCount(0); await save(page);
   const saved=(await request(page,'get',`/api/meals?query=${suffix}`)).items.find(row=>row.name===`Batch dinner ${suffix}`);
   createdMeals.push(saved.id);
@@ -282,7 +451,7 @@ test('Save combination copies a mixed dinner while single recipes need no duplic
   const readyTask=require('crypto').randomUUID();
   await request(page,'put','/api/meal-plan',{weekStart:week,tasks:[{id:readyTask,title:'Heat rotis',recipeId:ready.id,servings:4}],entries:[{date:week,slot:'dinner',meal:`Heated rotis ${suffix}`,servings:4,components:[{name:ready.title,source:'task',taskId:readyTask,action:'heat',quantity:8,unit:'pieces'}]}]});
   await page.goto(`/app?view=plan&week=${week}`); await page.locator('.meal').getByRole('button',{name:'Meal details'}).click();
-  await expect(page.locator('#planned-meal-dialog').getByRole('button',{name:'Save combination'})).toHaveCount(0);
+  await expect(page.locator('#planned-meal-dialog').getByRole('button',{name:'Save as reusable meal'})).toHaveCount(0);
   expect((await request(page,'get',`/api/meals?query=Heated%20rotis%20${suffix}`)).items).toHaveLength(0);
 });
 

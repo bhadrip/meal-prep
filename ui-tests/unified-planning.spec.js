@@ -41,16 +41,6 @@ async function openPlan(page) {
   await expect(page.getByRole('button', { name: 'Add meal', exact: true })).toBeVisible();
 }
 
-async function addComponent(page, row, data) {
-  await row.getByLabel('Food or dish', { exact: true }).fill(data.name);
-  if (data.quantity !== undefined) await row.getByLabel('Amount', { exact: true }).fill(String(data.quantity));
-  if (data.unit) await row.getByLabel('Unit', { exact: true }).fill(data.unit);
-  if (data.source) await choose(row, '-source', data.source);
-  if (data.taskId) await choose(row, '-taskId', data.taskId);
-  if (data.recipeId) await choose(row, '-recipeId', data.recipeId);
-  if (data.pantryItemId) await choose(row, '-pantryItemId', data.pantryItemId);
-}
-
 test('households add, reorder, rename, and disable slots without losing planned meals', async ({ page }) => {
   await page.goto('/app?view=settings');
   await page.getByRole('button', { name: 'Edit meal slots' }).click();
@@ -62,14 +52,14 @@ test('households add, reorder, rename, and disable slots without losing planned 
   for (let i = 1; i < count; i++) await editor(page).locator(`[data-slot-id="${id}"] [data-editor-action="slot-up"]`).click();
   await saveEditor(page);
   expect((await request(page, 'get', '/api/household')).mealSlots[0].id).toBe(id);
+  const popcorn = await request(page, 'put', '/api/recipes', {title: `School popcorn ${id}`, kind: 'ready_food'});
   await openPlan(page);
   await page.getByRole('button', { name: 'Add meal', exact: true }).click();
-  await editor(page).getByRole('button', { name: 'Advanced meal details' }).click();
+  await editor(page).locator('#plan-food-search').fill(popcorn.title);
+  await editor(page).locator('.plan-food-result').filter({hasText: popcorn.title}).click();
   await choose(editor(page), 'slot', id);
-  await editor(page).locator('[name="meal"]').fill('School popcorn');
-  await addComponent(page, editor(page).locator('.component-row'), { name: 'Popcorn', quantity: 1, unit: 'portion' });
   await saveEditor(page);
-  const meal = page.locator('.meal').filter({ hasText: 'School popcorn' });
+  const meal = page.locator('.meal').filter({ hasText: popcorn.title });
   await expect(meal).toContainText('Kids snack AM');
   const before = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan;
   await page.goto('/app?view=settings');
@@ -126,16 +116,16 @@ test('mixed meals reuse one batch, calculate shortages once, and preserve manual
   const task = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.tasks[0];
   await page.getByRole('tab', {name:'Meals',exact:true}).click();
   for (let day = 0; day < 2; day++) {
-    await page.locator('.day-card').nth(day).getByRole('button', { name: `Add meal to ${day ? 'Tuesday' : 'Monday'}` }).click();
-    await editor(page).getByRole('button', { name: 'Advanced meal details' }).click();
-    await editor(page).locator('[name="meal"]').fill(`Roti dinner ${suffix} ${day}`);
-    await addComponent(page, editor(page).locator('.component-row').first(), { name: `Rotis ${suffix}`, quantity: 8, unit: 'pieces', pantryItemId: stocks.Rotis.id });
-    await editor(page).getByRole('button', { name: 'Add food', exact: true }).click();
-    await addComponent(page, editor(page).locator('.component-row').last(), { name: dal.title, quantity: 4, unit: 'servings', source: 'task', taskId: task.id });
-    await editor(page).getByRole('button', { name: 'Add food', exact: true }).click();
-    await addComponent(page, editor(page).locator('.component-row').last(), { name: `Yogurt ${suffix}`, quantity: 200, unit: 'g', pantryItemId: stocks.Yogurt.id });
-    await saveEditor(page);
+    const date = new Date(`${week}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + day);
+    await request(page, 'patch', '/api/meal-plan/items', {weekStart: week, kind: 'meal', item: {
+      date: date.toISOString().slice(0, 10), slot: 'dinner', meal: `Roti dinner ${suffix} ${day}`,
+      components: [
+        {name: `Rotis ${suffix}`, quantity: 8, unit: 'pieces', source: 'ready', pantryItemId: stocks.Rotis.id},
+        {name: dal.title, quantity: 4, unit: 'servings', source: 'task', taskId: task.id},
+        {name: `Yogurt ${suffix}`, quantity: 200, unit: 'g', source: 'ready', pantryItemId: stocks.Yogurt.id},
+      ]}});
   }
+  await page.reload();
   expect((await request(page, 'get', '/api/pantry')).items.find((row) => row.id === stocks.Rotis.id).quantity).toBe(12);
   await page.getByRole('button', { name: 'Shopping needs', exact: true }).click();
   await expect(editor(page)).toContainText(`Lentils ${suffix}`);
@@ -203,21 +193,21 @@ test('receiving a bought pack records the actual pantry unit and survives reload
   expect(stocks[0]).toMatchObject({ quantity: 20, unit: 'pieces' });
 });
 
-test('mobile meal editor retains a failed task link and saves a corrected mixed meal', async ({ page }) => {
+test('mobile meal editor links a recipe without exposing legacy food fields or losing a task link', async ({ page }) => {
   const plan = await request(page, 'patch', '/api/meal-plan/items', { weekStart: week, kind: 'task', item: { title: 'Make a snack box' } });
+  const popcorn = await request(page, 'put', '/api/recipes', {title: `Popcorn ${week}`, kind: 'ready_food'});
+  const planned = await request(page, 'patch', '/api/meal-plan/items', {weekStart: week, kind: 'meal', item: {
+    date: week, slot: 'dinner', meal: 'Snack box and popcorn', components: [
+      {name: 'Snack box', quantity: 1, unit: 'portion', source: 'task', taskId: plan.tasks[0].id}]}});
   await page.setViewportSize({ width: 390, height: 844 });
   await openPlan(page);
-  await page.getByRole('button', { name: 'Add meal', exact: true }).click();
-  await editor(page).getByRole('button', { name: 'Advanced meal details' }).click();
-  await editor(page).locator('[name="meal"]').fill('Snack box and popcorn');
-  const row = editor(page).locator('.component-row');
-  await addComponent(page, row, { name: 'Snack box', quantity: 1, unit: 'portion', source: 'task' });
-  await editor(page).locator('#dialog-save').click();
-  await expect(editor(page).locator('#dialog-error')).toContainText('taskId');
-  await expect(row.getByLabel('Food or dish')).toHaveValue('Snack box');
-  await choose(row, '-taskId', plan.tasks[0].id);
+  await page.locator('.meal').filter({hasText: 'Snack box and popcorn'}).getByRole('button', {name: 'Edit'}).click();
+  await expect(editor(page).locator('.component-row')).toHaveCount(0);
+  await expect(editor(page).getByRole('button', {name: 'Advanced meal details'})).toHaveCount(0);
+  await choose(editor(page), 'plannedRecipeId', popcorn.id);
   await saveEditor(page);
-  await expect(page.locator('.meal')).toContainText('Snack box');
+  const updated = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.entries.find(row => row.id === planned.entries[0].id);
+  expect(updated.components.map(part => [part.taskId, part.recipeId])).toEqual([[plan.tasks[0].id, null], [null, popcorn.id]]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -282,18 +272,18 @@ test('meal cards open their saved recipes, hide descriptions and actions, and Me
   await expect(page.getByRole('tab',{name:'Meals',exact:true})).toHaveAttribute('aria-selected','true');
   await expect(page.locator('.plan-task')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Add task',exact:true})).toHaveCount(0);
-  const card = page.locator('.meal').filter({hasText:'Simple tofu dinner'});
+  const card = page.locator('.meal').filter({hasText:recipe.title});
   await expect(card).not.toContainText('A long description');
   await expect(card.getByRole('button',{name:'Remove',exact:true})).toHaveCount(0);
   await expect(card.getByRole('button',{name:'Record eaten',exact:true})).toHaveCount(0);
   await expect(page.locator('.meal').filter({hasText:'Meal without a saved recipe'}).getByRole('link')).toHaveCount(0);
-  await card.getByRole('link',{name:'Simple tofu dinner',exact:true}).click();
+  await card.getByRole('link',{name:recipe.title,exact:true}).click();
   await expect(page.getByRole('heading',{name:recipe.title,exact:true})).toBeVisible();
   await expect(page.locator('#app-content')).toContainText('Steam and serve.');
   await page.goBack();
   await expect(card).toBeVisible();
   await page.route(`**/api/recipes/${recipe.id}`, route=>route.fulfill({status:503,json:{detail:'Recipe temporarily unavailable'}}));
-  await card.getByRole('link',{name:'Simple tofu dinner',exact:true}).press('Enter');
+  await card.getByRole('link',{name:recipe.title,exact:true}).press('Enter');
   await expect(page.locator('#toast')).toContainText('Recipe temporarily unavailable');
   await expect(card).toBeVisible();
   await page.unroute(`**/api/recipes/${recipe.id}`);
