@@ -161,3 +161,23 @@ async def test_tasks_remain_available_without_display_preferences_and_meal_edits
         await planning.update_plan_item(WEEK, 'meal', {'date': WEEK, 'slot': 'lunch', 'meal': 'Invalid link',
             'components': [{'name': 'Wrong recipe', 'source': 'cook', 'recipeId': 'missing'}]})
     assert await planning.get_meal_plan(WEEK) == edited
+
+
+@pytest.mark.asyncio
+async def test_planned_foods_get_an_internal_display_label_without_a_user_supplied_meal_name():
+    repo = DemoRepository()
+    planning = PlanningService(repo)
+    food = RecipePantryService(repo)
+    recipe = await food.save_recipe({'title': 'Cucumber salad'})
+    ready = await food.save_recipe({'title': 'Ready rotis', 'kind': 'ready_food'})
+    plan = await planning.update_plan_item(WEEK, 'meal', {'date': WEEK, 'slot': 'dinner', 'servings': 2,
+        'components': [
+            {'name': recipe['title'], 'source': 'cook', 'action': 'cook', 'recipeId': recipe['id']},
+            {'name': ready['title'], 'source': 'ready', 'action': 'serve', 'recipeId': ready['id']}]})
+    entry = plan['entries'][0]
+    assert entry['id'] and entry['meal'] == 'Cucumber salad + Ready rotis'
+    assert [part['recipeId'] for part in entry['components']] == [recipe['id'], ready['id']]
+    before = await planning.get_meal_plan(WEEK)
+    with pytest.raises(ApplicationError, match='Meal name'):
+        await planning.update_plan_item(WEEK, 'meal', {'date': '2030-02-05', 'slot': 'dinner'})
+    assert await planning.get_meal_plan(WEEK) == before

@@ -123,7 +123,8 @@ Recipes are reusable instructions and yield. A saved Meal is a reusable
 combination of recipes and ready food, with a name, default servings, notes,
 and components. A planned meal is a dated eating occasion: a copy of a saved
 meal, a single recipe, or a one-off combination. Save bought food such as popcorn, rotis, or yogurt as Ready food entries.
-One-off components may also use a name without a saved entry.
+Older plans can contain name-only food. Keep that history readable, but choose
+saved food by ID for new plans so people can open the actual recipe or ready food.
 
 - Save ready foods such as bought rotis or popcorn using `save_recipe` with
   `kind="ready_food"`, instructions for heating/serving, and no ingredient demand.
@@ -146,6 +147,9 @@ One-off components may also use a name without a saved entry.
   combining 2–10 existing recipes or ready foods. Pass their IDs, default
   servings, and optional notes or name. All items are validated before saving.
 - Use `save_planned_meal` to save a requested plan entry as a reusable meal.
+  This creates a library copy; it does not replace or edit the dated plan entry.
+  If the entry already has `sourceMeal`, explain that it came from a saved meal
+  before making another library copy.
   It drops pantry links and converts task references to their recipe (or ready
   food). Set default servings explicitly if the original entry has no yield.
 - Use `plan_saved_meal` with `meal_id`, `week_start`, `planned_date`, enabled
@@ -163,6 +167,11 @@ One-off components may also use a name without a saved entry.
   slot, servings for each item, and optional notes. The server verifies every
   item in the household before writing and keeps each recipe link independently
   openable. It does not create a new library meal or consume pantry stock.
+- A planned meal is the dated selection of a saved meal, one recipe or ready
+  food, or several recipes and ready foods. Do not ask the user to name that
+  occurrence. Use the IDs above to select foods; the plan stores its own ID and
+  derives a display label when a lower-level plan write omits `meal`. Name a
+  reusable library meal only when the user chooses to save a combination.
 - `archive_meal` hides future choices while preserving existing dated copies.
   None of these operations consume stock or reserve pantry quantities.
 
@@ -177,6 +186,13 @@ One-off components may also use a name without a saved entry.
   replacing unrelated choices. The full `save_meal_plan` takes both entries and
   tasks. Meal dates belong to the selected week; tasks can be undated or on
   another date. Meal links are optional and must identify meals in that plan.
+- To add, replace, or remove a recipe or ready food in a planned meal, read the
+  current entry and call `update_plan_item` with its ID and the revised complete
+  `components` list. Keep unchanged component IDs, names, quantities, notes,
+  and recipe snapshots; use the chosen library recipe ID for a new food. Clear
+  `sourceMeal` when changing the foods copied from a saved meal. This edits the
+  dated selection, not the underlying library recipes. If no foods remain,
+  remove that planned entry with `save_meal_plan` instead of leaving a name-only meal.
 - `configure_meal_slots` saves the complete ordered slot list. Preserve IDs
   through renaming/reordering, disable existing slots rather than deleting
   them, and keep at least one enabled. Slot labels such as "Parents snack AM"
@@ -429,6 +445,6 @@ nutrition messages.
 
 The website's Weekly plan → Preferences area groups household food restrictions, size, cooking time, leftover defaults, stores, planning areas, meal slots, recurring meal/nutrition preferences, and changes for the selected week. The separate weekly-rhythm editor is removed. For direct clients, use the same saved data through `get_planning_context`, `update_household_preferences`, `configure_meal_slots`, `save_meal_plan_rules`, and schedule notes. Keep recurring preferences in household settings or English meal-plan rules; one-time needs belong in the selected week's notes. Do not require users to classify every day as quick, busy, cook, or prep before planning. Existing schedule records remain readable; editing notes preserves saved days.
 
-The existing Planning rules area is named Preferences in the website; it uses the same rules and revision history. The weekly plan opens Meals by default. Meals and Tasks are display views only: switching them does not change preferences, saved meals, or tasks, and task creation remains available through the API and MCP regardless of the selected view. Meal cards use saved component/task recipe IDs for links and omit description paragraphs and remove/eaten actions. Do not invent recipe IDs or turn unlinked meal names into fabricated links. Actual inventory completion remains available through MCP when requested.
+The existing Planning rules area is named Preferences in the website; it uses the same rules and revision history. The weekly plan opens Meals by default. Meals and Tasks are display views only: switching them does not change preferences, saved meals, or tasks, and task creation remains available through the API and MCP regardless of the selected view. Every planned-meal card has a Meal details action for that occurrence; linked food names open their recipes or ready food. Meal cards use saved component/task recipe IDs for links and omit description paragraphs and remove/eaten actions. Do not invent recipe IDs or turn unlinked meal names into fabricated links. Actual inventory completion remains available through MCP when requested.
 
 Use `list_notifications` for the caller's personal inbox, or `archived=true` for the archive. `set_notification_read` marks an item read or unread without navigation. `archive_notification` clears an item from the inbox without deleting it; `archived=false` restores it. Archived items do not contribute to the unread badge. These operations retain recipient and current household/circle access checks.
