@@ -125,7 +125,7 @@ test('direct weekly plan is reviewed before a friend receives the whole snapshot
   await expect(page.locator('.circle-review')).toContainText('Overnight oats');
   await expect(page.locator('.circle-review')).toContainText('Rice bowls');
   await expect(page.locator('.circle-review')).toContainText('Personal note shared with friend');
-  await expect(page.locator('.circle-review')).toContainText('Components: Milk');
+  await expect(page.locator('.circle-review')).toContainText('Included food: Milk');
   const before = await (await page.request.get('/api/direct-shares')).json();
   await page.getByRole('button', {name: 'Publish to friend'}).click();
   await expect(page.locator('.direct-room').first()).toContainText('Week of');
