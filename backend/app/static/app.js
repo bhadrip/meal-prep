@@ -1035,7 +1035,7 @@ function nutritionProfileEditor(profile = {}) {
 }
 
 function nutritionEditor(nutrition) {
-  return `<section class="wide"><h3>Variations (optional)</h3><p class="muted tiny">Add your own versions, such as Tasty, Decadent, Heart healthy or Protein-heavy. Give each a name and describe ingredient, preparation or serving changes. Nutrition is optional; record a basis only when adding nutrient guidance or numbers.</p>${field('nutrition-basis', 'Nutrition basis / assumptions', nutrition?.basis, {type: 'textarea', wide: true})}<div id="nutrition-rows">${arr(nutrition?.profiles).map(nutritionProfileEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-nutrition">Add variation</button></section>`;
+  return `<section class="wide"><h3>Recipe variations (optional)</h3><p class="muted tiny">Describe versions of this recipe, such as Tasty, Decadent, Heart healthy or Protein-heavy. Nutrition is optional; record a basis only when adding nutrient guidance or numbers.</p>${field('nutrition-basis', 'Nutrition basis / assumptions', nutrition?.basis, {type: 'textarea', wide: true})}<div id="nutrition-rows">${arr(nutrition?.profiles).map(nutritionProfileEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-nutrition">Add variation</button></section>`;
 }
 
 function readNutrition(data) {
@@ -1238,7 +1238,6 @@ function openEditor(kind, item = null, selectedDate = null) {
     const date = item?.date || selectedDate || state.weekStart;
     const slots = mealSlots().filter((slot) => slot.enabled || slot.id === item?.slot);
     markup = field('date', 'Date', date, { type: 'date', required: true }) + field('slot', 'Meal slot', item?.slot || slots.find((slot) => slot.id === 'dinner')?.id || slots[0]?.id, { choices: slots.map((slot) => ({ value: slot.id, label: slot.name + (slot.enabled ? '' : ' (disabled)') })) }) + field('meal', 'Meal name', item?.meal, { required: true, wide: true }) + field('servings', 'People / servings', item?.servings, { type: 'number', min: 0.001, step: 0.001 }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true }) + `<section class="wide editor-components"><h3>What’s in this meal?</h3><p class="muted tiny">Combine bought food, recipes, or food prepared by a task.</p><div id="component-rows">${(item?.components?.length ? item.components : [{}]).map(componentEditor).join('')}</div><button type="button" class="button ghost small" data-editor-action="add-component">Add food</button></section>`;
-    markup += nutritionEditor(item?.nutrition);
   } else if (kind === 'task') {
     title = item ? 'Edit task' : 'Add task';
     markup = field('title', 'Task name', item?.title, { required: true, wide: true }) + field('date', 'Date (optional)', item?.date || selectedDate, { type: 'date' }) + field('recipeId', 'Recipe to prepare (optional)', item?.recipeId, { choices: [{ value: '', label: 'No recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('servings', 'Batch servings (if cooking)', item?.servings, { type: 'number', min: 0.001, step: 0.001 }) + field('notes', 'Notes', item?.notes, { type: 'textarea', wide: true }) + `<fieldset class="wide task-meal-links"><legend>Supports these meals (optional)</legend>${arr(state.plan?.entries).map((meal) => `<label class="check-row"><input type="checkbox" name="mealIds" value="${esc(meal.id)}" ${item?.mealIds?.includes(meal.id) ? 'checked' : ''} /><span>${esc(meal.date)} · ${esc(slotName(meal))} · ${esc(meal.meal)}</span></label>`).join('') || '<p class="muted tiny">You can add links after planning meals.</p>'}</fieldset>`;
@@ -1334,7 +1333,7 @@ async function submitEditor(data) {
   } else if (kind === 'meal') {
     if (monday(`${value('date')}T12:00:00`) !== state.weekStart) throw new Error('Choose a date in the selected week.');
     const components = readComponents(data);
-    await save('/api/meal-plan/items', 'PATCH', { weekStart: state.weekStart, kind: 'meal', item: { id: item?.id, date: value('date'), slot: value('slot'), meal: value('meal'), servings: numberOrNull(value('servings')), notes: value('notes'), components, ...((item?.nutrition || fields.querySelector('[data-nutrition-profile]')) ? {nutrition: readNutrition(data)} : {}) } });
+    await save('/api/meal-plan/items', 'PATCH', { weekStart: state.weekStart, kind: 'meal', item: { id: item?.id, date: value('date'), slot: value('slot'), meal: value('meal'), servings: numberOrNull(value('servings')), notes: value('notes'), components } });
   } else if (kind === 'task') {
     await save('/api/meal-plan/items', 'PATCH', { weekStart: state.weekStart, kind: 'task', item: { id: item?.id, title: value('title'), date: value('date') || null, notes: value('notes'), recipeId: value('recipeId') || null, servings: numberOrNull(value('servings')), mealIds: data.getAll('mealIds') } });
   } else if (kind === 'meal-slots') {

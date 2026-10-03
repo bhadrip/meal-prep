@@ -16,6 +16,30 @@ GUIDE = {'basis': 'Ingredient-based estimate; portions unverified', 'profiles': 
 
 
 @pytest.mark.asyncio
+async def test_recipe_variations_stay_on_recipe_when_planned_and_legacy_plan_facts_survive_edit():
+    from app.application.services import RecipePantryService
+    repo = DemoRepository()
+    food, planning = RecipePantryService(repo), PlanningService(repo)
+    recipe = await food.save_recipe({'title': 'Teriyaki noodles', 'servings': 4, 'nutrition': GUIDE})
+    planned = await planning.plan_recipe(WEEK, recipe['id'], WEEK, 'dinner', 2, 'More tofu')
+    entry = planned['entries'][0]
+    assert entry['components'][0]['recipeId'] == recipe['id']
+    assert 'nutrition' not in entry
+    assert (await food.get_recipe(recipe['id']))['nutrition'] == recipe['nutrition']
+    invalid = deepcopy(GUIDE)
+    invalid['profiles'][1]['name'] = 'standard'
+    with pytest.raises(ApplicationError, match='unique'):
+        await food.save_recipe({'id': recipe['id'], 'title': recipe['title'], 'nutrition': invalid})
+    assert await planning.get_meal_plan(WEEK) == planned
+    assert (await food.get_recipe(recipe['id']))['nutrition'] == recipe['nutrition']
+
+    legacy = await planning.save_meal_plan({'weekStart': WEEK, 'entries': [
+        {**entry, 'nutrition': GUIDE}], 'tasks': []})
+    edited = await planning.update_plan_item(WEEK, 'meal', {'id': entry['id'], 'notes': 'Sauce on the side'})
+    assert edited['entries'][0]['nutrition'] == legacy['entries'][0]['nutrition']
+
+
+@pytest.mark.asyncio
 async def test_nutrition_persists_unknowns_and_partial_edits_then_clears():
     service = PlanningService(DemoRepository())
     saved = await service.save_meal_plan({'weekStart': WEEK, 'entries': [
