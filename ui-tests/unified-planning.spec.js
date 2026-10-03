@@ -89,6 +89,7 @@ test('households add, reorder, rename, and disable slots without losing planned 
 test('tasks need no slot, date, recipe, or meal link and completion preserves stock', async ({ page }) => {
   await openPlan(page);
   const before = (await request(page, 'get', '/api/pantry')).items;
+  await page.getByRole('tab', { name: 'Tasks', exact: true }).click();
   await page.getByRole('button', { name: 'Add task', exact: true }).click();
   await editor(page).locator('[name="title"]').fill('Pack kids and parents snacks');
   await editor(page).locator('[name="notes"]').fill('Put the bought popcorn in lunch bags.');
@@ -96,6 +97,7 @@ test('tasks need no slot, date, recipe, or meal link and completion preserves st
   const task = page.locator('.plan-task').filter({ hasText: 'Pack kids and parents snacks' });
   await expect(task).toBeVisible();
   await page.reload();
+  await expect(page.getByRole('tab', {name:'Tasks',exact:true})).toHaveAttribute('aria-selected','true');
   await task.getByRole('checkbox', { name: 'Complete Pack kids and parents snacks' }).check();
   await expect(task.getByRole('checkbox')).toBeChecked();
   await expect(task.getByRole('checkbox')).toBeDisabled();
@@ -112,6 +114,7 @@ test('mixed meals reuse one batch, calculate shortages once, and preserve manual
   for (const [name, quantity, unit] of [['Rotis', 12, 'pieces'], ['Lentils', 250, 'g'], ['Yogurt', 300, 'g']]) stocks[name] = await request(page, 'put', '/api/pantry', { name: `${name} ${suffix}`, quantity, unit, quantityConfidence: 'exact' });
   const soap = await request(page, 'post', '/api/shopping-list/items', { item: { name: `Soap ${suffix}`, quantity: 1, unit: 'bottle' } });
   await openPlan(page);
+  await page.getByRole('tab', { name: 'Tasks', exact: true }).click();
   await page.getByRole('button', { name: 'Add task', exact: true }).click();
   await editor(page).locator('[name="title"]').fill(`Cook dal ${suffix}`);
   await choose(editor(page), 'recipeId', dal.id);
@@ -120,6 +123,7 @@ test('mixed meals reuse one batch, calculate shortages once, and preserve manual
   await editor(page).locator('[name="date"]').fill(sunday.toISOString().slice(0, 10));
   await saveEditor(page);
   const task = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan.tasks[0];
+  await page.getByRole('tab', {name:'Meals',exact:true}).click();
   for (let day = 0; day < 2; day++) {
     await page.locator('.day-card').nth(day).getByRole('button', { name: `Add meal to ${day ? 'Tuesday' : 'Monday'}` }).click();
     await editor(page).locator('[name="meal"]').fill(`Roti dinner ${suffix} ${day}`);
@@ -141,7 +145,7 @@ test('mixed meals reuse one batch, calculate shortages once, and preserve manual
   expect(list.items.some((row) => row.name === `Soap ${suffix}`)).toBe(true);
   expect(list.items.filter((row) => row.source?.weekStart === week)).toHaveLength(3);
   await page.reload();
-  await expect(page.locator('.meal').filter({ hasText: `Roti dinner ${suffix} 0` })).toContainText(`Cook dal ${suffix}`);
+  await expect(page.locator('.meal').filter({ hasText: `Roti dinner ${suffix} 0` })).toContainText(dal.title);
 });
 
 test('cooking rejects overuse, records actual output, and eating consumes that stock once', async ({ page }) => {
@@ -154,6 +158,7 @@ test('cooking rejects overuse, records actual output, and eating consumes that s
     plan = await request(page, 'patch', '/api/meal-plan/items', { weekStart: week, kind: 'meal', item: { date: date.toISOString().slice(0, 10), slot: 'dinner', meal: `Dal dinner ${day}`, components: [{ name: recipe.title, quantity: 4, unit: 'servings', source: 'task', taskId: task.id }] } });
   }
   await openPlan(page);
+  await page.getByRole('tab', {name:'Tasks',exact:true}).click();
   await page.getByRole('button', { name: 'Record cooking' }).click();
   await editor(page).getByRole('button', { name: 'Add food used', exact: true }).click();
   const used = editor(page).locator('[data-stock-input]');
@@ -166,11 +171,10 @@ test('cooking rejects overuse, records actual output, and eating consumes that s
   expect((await request(page, 'get', '/api/pantry')).items.find((row) => row.id === lentils.id).quantity).toBe(500);
   await used.getByLabel('Actual amount used').fill('400');
   await saveEditor(page);
-  await page.locator('.meal').filter({ hasText: 'Dal dinner 0' }).getByRole('button', { name: 'Record eaten' }).click();
-  await expect(editor(page).locator('[data-stock-input]')).toHaveCount(1);
-  await expect(editor(page).getByLabel('Actual amount used')).toHaveValue('4');
-  await saveEditor(page);
-  await expect(page.locator('.meal').filter({ hasText: 'Dal dinner 0' })).toContainText('Eaten');
+  const output = (await request(page, 'get', '/api/pantry')).items.find(row => row.name === recipe.title);
+  await request(page, 'post', '/api/meal-plan/complete', {weekStart:week,kind:'meal',itemId:plan.entries[0].id,inputs:[{itemId:output.id,quantity:4}]});
+  await page.getByRole('tab', {name:'Meals',exact:true}).click();
+  await expect(page.getByRole('button', {name:'Record eaten',exact:true})).toHaveCount(0);
   const pantry = (await request(page, 'get', '/api/pantry')).items;
   const dal = pantry.find((row) => row.name === recipe.title);
   expect(dal.quantity).toBe(3);
@@ -210,7 +214,7 @@ test('mobile meal editor retains a failed task link and saves a corrected mixed 
   await expect(row.getByLabel('Food or dish')).toHaveValue('Snack box');
   await choose(row, '-taskId', plan.tasks[0].id);
   await saveEditor(page);
-  await expect(page.locator('.meal')).toContainText('Make a snack box');
+  await expect(page.locator('.meal')).toContainText('Snack box');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -218,6 +222,7 @@ test('rendered MCP App completes an independent task through the real MCP servic
   const plan = await request(page, 'patch', '/api/meal-plan/items', { weekStart: week, kind: 'task', item: { title: 'Pack school snacks' } });
   await mountMcpPlan(page, plan);
   const frame = page.frameLocator('iframe');
+  await frame.getByRole('button', {name:'Tasks',exact:true}).click();
   await frame.getByRole('button', { name: 'Complete task' }).click();
   await expect(frame.locator('[data-plan-task]')).toContainText('Completed');
   const saved = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan;
@@ -235,7 +240,8 @@ async function mountMcpPlan(page, plan) {
     });</script>` }));
   await page.goto('/unified-mcp-host');
   await expect.poll(() => page.evaluate(() => window.ready)).toBe(true);
-  await page.evaluate((plan) => document.querySelector('iframe').contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: { kind: 'meal_plan', plan } } }, '*'), plan);
+  const household = await request(page,'get','/api/household');
+  await page.evaluate(({plan,household}) => document.querySelector('iframe').contentWindow.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: { kind: 'meal_plan', plan,household } } }, '*'), {plan,household});
 }
 
 test('MCP App cooking retains an invalid actual amount and records corrected stock', async ({ page }) => {
@@ -244,6 +250,7 @@ test('MCP App cooking retains an invalid actual amount and records corrected sto
   const plan = await request(page, 'patch', '/api/meal-plan/items', { weekStart: week, kind: 'task', item: { title: 'Cook dal in chat', recipeId: recipe.id, servings: 4 } });
   await mountMcpPlan(page, plan);
   const frame = page.frameLocator('iframe');
+  await frame.getByRole('button', {name:'Tasks',exact:true}).click();
   await frame.getByRole('button', { name: 'Record cooking' }).click();
   const form = frame.locator('#plan-completion-form');
   await choose(form, 'item-0', stock.id);
@@ -260,4 +267,73 @@ test('MCP App cooking retains an invalid actual amount and records corrected sto
   expect(pantry.find((row) => row.id === stock.id).quantity).toBe(50);
   expect(pantry.filter((row) => row.name === recipe.title)).toHaveLength(1);
   expect(pantry.find((row) => row.name === recipe.title).quantity).toBe(5);
+});
+
+
+test('meal cards open their saved recipes, hide descriptions and actions, and Meals/Tasks only change the display', async ({page}) => {
+  const recipe = await request(page,'put','/api/recipes',{title:`Linked recipe ${week}`,ingredients:[{name:'Tofu'}],instructions:['Steam and serve.']});
+  const plan = await request(page,'put','/api/meal-plan',{weekStart:week,entries:[
+    {date:week,slot:'dinner',meal:'Simple tofu dinner',notes:'A long description that should stay in the editor.',components:[{name:recipe.title,recipeId:recipe.id,source:'cook'}]},
+    {date:week,slot:'lunch',meal:'Meal without a saved recipe'}],tasks:[{title:'Saved task',date:week}]});
+  await openPlan(page);
+  await expect(page.getByRole('tab',{name:'Meals',exact:true})).toHaveAttribute('aria-selected','true');
+  await expect(page.locator('.plan-task')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Add task',exact:true})).toHaveCount(0);
+  const card = page.locator('.meal').filter({hasText:'Simple tofu dinner'});
+  await expect(card).not.toContainText('A long description');
+  await expect(card.getByRole('button',{name:'Remove',exact:true})).toHaveCount(0);
+  await expect(card.getByRole('button',{name:'Record eaten',exact:true})).toHaveCount(0);
+  await expect(page.locator('.meal').filter({hasText:'Meal without a saved recipe'}).getByRole('link')).toHaveCount(0);
+  await card.getByRole('link',{name:'Simple tofu dinner',exact:true}).click();
+  await expect(page.getByRole('heading',{name:recipe.title,exact:true})).toBeVisible();
+  await expect(page.locator('#app-content')).toContainText('Steam and serve.');
+  await page.goBack();
+  await expect(card).toBeVisible();
+  await page.route(`**/api/recipes/${recipe.id}`, route=>route.fulfill({status:503,json:{detail:'Recipe temporarily unavailable'}}));
+  await card.getByRole('link',{name:'Simple tofu dinner',exact:true}).press('Enter');
+  await expect(page.locator('#toast')).toContainText('Recipe temporarily unavailable');
+  await expect(card).toBeVisible();
+  await page.unroute(`**/api/recipes/${recipe.id}`);
+  const preferences = await request(page,'get','/api/household');
+  const writes = [];
+  page.on('request', req => { if (req.url().includes('/api/') && !['GET','HEAD'].includes(req.method())) writes.push(req.url()); });
+  await page.getByRole('tab',{name:'Tasks',exact:true}).click();
+  await expect(page.locator('.meal')).toHaveCount(0);
+  await expect(page.locator('.plan-task')).toContainText('Saved task');
+  await page.getByRole('button',{name:'Add task',exact:true}).click();
+  await editor(page).getByLabel('Task name').fill('Requested prep');
+  await saveEditor(page);
+  await expect(page.locator('.plan-task')).toHaveCount(2);
+  await page.reload();
+  await expect(page.locator('.plan-task')).toHaveCount(2);
+  await page.getByRole('tab',{name:'Meals',exact:true}).click();
+  await expect(page.locator('.plan-task')).toHaveCount(0);
+  await expect(card).toBeVisible();
+  expect(writes).toHaveLength(1); // Only the requested Add task writes data.
+  expect(await request(page,'get','/api/household')).toEqual(preferences);
+  const context=await request(page,'get',`/api/planning-context?week_start=${week}`);
+  expect(context.mealPlan.tasks).toHaveLength(2);
+  await request(page,'patch','/api/meal-plan/items',{weekStart:week,kind:'task',item:{title:'Prep added while Meals is displayed'}});
+  await page.reload();
+  await expect(page.locator('.plan-task')).toHaveCount(0);
+  await expect(card).toBeVisible();
+  const updated=await request(page,'get',`/api/planning-context?week_start=${week}`);
+  expect(updated.mealPlan.tasks).toHaveLength(3);
+  const savedPlan=updated.mealPlan;
+  const writesBeforeMcp = writes.length;
+  await mountMcpPlan(page,savedPlan);
+  const frame=page.frameLocator('iframe');
+  await expect(frame.locator('[data-plan-task]')).toHaveCount(0);
+  await expect(frame.getByRole('button',{name:'Record eaten',exact:true})).toHaveCount(0);
+  await frame.getByRole('button',{name:'Simple tofu dinner',exact:true}).click();
+  await expect(frame.getByRole('heading',{name:recipe.title,exact:true})).toBeVisible();
+  await frame.getByRole('button',{name:'Back to weekly plan',exact:true}).click();
+  await frame.getByRole('button',{name:'Tasks',exact:true}).click();
+  await expect(frame.locator('[data-plan-meal]')).toHaveCount(0);
+  await expect(frame.locator('[data-plan-task]')).toHaveCount(3);
+  await frame.getByRole('button',{name:'Meals',exact:true}).click();
+  await expect(frame.locator('[data-plan-task]')).toHaveCount(0);
+  expect(writes).toHaveLength(writesBeforeMcp);
+  expect(await request(page,'get','/api/household')).toEqual(preferences);
+  expect((await request(page,'get',`/api/meal-plan?week_start=${week}`)).plan).toEqual(savedPlan);
 });

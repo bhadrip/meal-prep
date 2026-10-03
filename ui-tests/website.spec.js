@@ -128,7 +128,7 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
   await expect(page.locator('#dashboard-form [name="visibleCard"][value="pantry"]')).not.toBeChecked();
 });
 
-test('planned meals can be added, edited, and removed without a weekly rhythm control', async ({ page }) => {
+test('planned meals can be added and edited with compact actions', async ({ page }) => {
   await open(page, 'plan');
   const week = await page.locator('#week-picker').inputValue();
   const originalMondayMeals = await content(page).locator('.day-card').first().locator('.meal strong').allTextContents();
@@ -147,9 +147,9 @@ test('planned meals can be added, edited, and removed without a weekly rhythm co
   await saveEditor(page);
   const updated = content(page).locator('.meal').filter({ hasText: `${meal} edited` });
   await expect(updated).toBeVisible();
-  page.once('dialog', (dialog) => dialog.accept());
-  await updated.getByRole('button', { name: 'Remove' }).click();
-  await expect(updated).toHaveCount(0);
+  await expect(updated.getByRole('button', { name: 'Remove', exact:true })).toHaveCount(0);
+  await expect(updated.getByRole('button', { name: 'Record eaten', exact:true })).toHaveCount(0);
+  await expect(updated).not.toContainText('Test note');
   for (const originalMeal of originalMondayMeals) {
     await expect(content(page).locator('.day-card').first()).toContainText(originalMeal);
   }

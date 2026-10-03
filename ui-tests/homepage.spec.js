@@ -65,7 +65,11 @@ test('the actionable homepage fits desktop and mobile and opens today’s weekly
     await route.fulfill({ json: data });
   });
   await page.goto('/app');
+  await expect(home(page, 'mealPlan')).not.toContainText('Prep tomorrow’s lunch');
+  await home(page, 'mealPlan').getByRole('button', {name:'Tasks',exact:true}).click();
   await expect(home(page, 'mealPlan')).toContainText('Prep tomorrow’s lunch');
+  await expect(home(page, 'mealPlan')).not.toContainText('Lentil soup & roasted vegetables');
+  await home(page, 'mealPlan').getByRole('button', {name:'Meals',exact:true}).click();
   await expect(home(page, 'pantry')).toContainText('Avocados');
   await expect(home(page, 'shoppingList')).toContainText('Milk');
   await page.screenshot({ path: 'test-results/homepage-desktop.png', fullPage: true });
@@ -123,6 +127,7 @@ test('home actions save today’s prep and shopping progress to the backend', as
   });
   const prep = `Homepage prep ${Date.now()}`;
   await page.goto('/app');
+  await home(page, 'mealPlan').getByRole('button', {name:'Tasks',exact:true}).click();
   await home(page, 'mealPlan').getByRole('button', { name: 'Add a task for today' }).click();
   const editor = page.locator('#editor-dialog');
   await expect(editor.locator('[name="date"]')).toHaveValue('2026-10-01');

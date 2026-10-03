@@ -274,6 +274,7 @@
       let shoppingList = null;
       let currentPlan = null;
       let planHousehold = null;
+      let planMode = 'meals';
       let activePantryItemId = null;
       let pantryNotice = '';
       let pantryCategory = 'all';
@@ -301,9 +302,16 @@
       function renderPlan(plan) {
         if (!plan) return '<div class="empty">No meal plan has been saved yet.</div>';
         const slots = planHousehold?.mealSlots || [];
-        const entries = (plan.entries || []).map((entry) => `<article class="day" data-plan-meal="${escapeHtml(entry.id)}"><small>${escapeHtml(entry.date)} · ${escapeHtml(slots.find((slot) => slot.id === entry.slot)?.name || entry.slotName || entry.slot)}</small><strong>${escapeHtml(entry.meal)}</strong><span>${escapeHtml(entry.servings || '')}${entry.servings ? ' servings' : ''}</span><ul>${(entry.components || []).map((item) => `<li>${escapeHtml(item.name)}${item.quantity != null ? ` · ${escapeHtml(item.quantity)} ${escapeHtml(item.unit)}` : ''}${item.taskId ? ` · ${escapeHtml(plan.tasks?.find((task) => task.id === item.taskId)?.title || 'Prepared task')}` : ''}</li>`).join('')}</ul>${entry.notes ? `<p>${escapeHtml(entry.notes)}</p>` : ''}${MealNutrition.renderDetails(entry.nutrition)}${entry.completedAt ? '<span>Eaten</span>' : `<button type="button" data-plan-complete="${escapeHtml(entry.id)}" data-kind="meal">Record eaten</button>`}</article>`).join('');
+        const entries = (plan.entries || []).map(entry => {
+          const linked = (entry.components || []).map(item => ({...item, recipeId: item.recipeId || plan.tasks?.find(task => task.id === item.taskId)?.recipeId}));
+          const recipes = [...new Set(linked.map(item => item.recipeId).filter(Boolean))];
+          const link = (id, title) => `<button class="text-button" data-plan-recipe="${escapeHtml(id)}">${escapeHtml(title)}</button>`;
+          const parts = linked.filter(item => !(recipes.length === 1 && item.recipeId === recipes[0] && item.name === entry.meal));
+          return `<article class="day" data-plan-meal="${escapeHtml(entry.id)}"><small>${escapeHtml(entry.date)} · ${escapeHtml(slots.find(slot => slot.id === entry.slot)?.name || entry.slotName || entry.slot)}</small><strong>${recipes.length === 1 ? link(recipes[0], entry.meal) : escapeHtml(entry.meal)}</strong>${entry.servings ? `<span>${escapeHtml(entry.servings)} servings</span>` : ''}${parts.length ? `<ul>${parts.map(item => `<li>${item.recipeId ? link(item.recipeId, item.name) : escapeHtml(item.name)}${item.quantity != null ? ` · ${escapeHtml(item.quantity)} ${escapeHtml(item.unit)}` : ''}</li>`).join('')}</ul>` : ''}${MealNutrition.renderDetails(entry.nutrition)}</article>`;
+        }).join('');
         const tasks = (plan.tasks || []).map((task) => `<article class="day" data-plan-task="${escapeHtml(task.id)}"><small>${escapeHtml(task.date || 'Unscheduled')}</small><strong>${escapeHtml(task.title)}</strong>${task.notes ? `<p>${escapeHtml(task.notes)}</p>` : ''}${task.mealIds?.length ? `<p>For: ${task.mealIds.map((id) => escapeHtml(plan.entries.find((meal) => meal.id === id)?.meal || 'Meal')).join(', ')}</p>` : ''}${task.completedAt ? '<span>Completed</span>' : `<button type="button" data-plan-complete="${escapeHtml(task.id)}" data-kind="task">${task.recipeId ? 'Record cooking' : 'Complete task'}</button>`}</article>`).join('');
-        return `<header><div><h1>Weekly meal plan</h1><p>Week of ${escapeHtml(plan.weekStart)}</p></div></header>${MealNutrition.renderWeek(plan.nutritionSummary)}<h2>Meals</h2><section class="grid">${entries || '<p>No meals planned.</p>'}</section><h2>Tasks</h2><section class="grid">${tasks || '<p>No tasks planned.</p>'}</section><p class="form-error" id="plan-error" role="alert" hidden></p><section id="plan-activity"></section>`;
+        const showTasks = planMode === 'tasks';
+        return `<header><div><h1>Weekly meal plan</h1><p>Week of ${escapeHtml(plan.weekStart)}</p></div></header><div class="nutrition-toggle" role="group" aria-label="Plan view">${['meals', 'tasks'].map(mode => `<button data-plan-mode="${mode}" aria-pressed="${mode === (showTasks ? 'tasks' : 'meals')}">${mode === 'meals' ? 'Meals' : 'Tasks'}</button>`).join('')}</div>${showTasks ? `<h2>Tasks</h2><section class="grid">${tasks || '<p>No tasks planned.</p>'}</section>` : `${MealNutrition.renderWeek(plan.nutritionSummary)}<h2>Meals</h2><section class="grid">${entries || '<p>No meals planned.</p>'}</section>`}<p class="form-error" id="plan-error" role="alert" hidden></p><section id="plan-activity"></section>`;
       }
 
       function actualUseRow(pantry, index) {
@@ -727,7 +735,7 @@
           root.innerHTML = renderShopping(shoppingList);
         }
         else if (data.kind === 'meal_plan') {
-          currentPlan = data.plan; planHousehold = data.household;
+          currentPlan = data.plan; planHousehold = data.household; planMode = 'meals';
           root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
         }
         else if (data.onboardingCompletedAt) root.innerHTML = renderOnboardingSuccess(data);
@@ -773,6 +781,23 @@
             root.querySelector('#meal-library-plan input').focus();
           } catch (reason) { const error = root.querySelector('#meal-library-error'); error.textContent = reason.message; error.hidden = false; }
           finally { savedMeal.disabled = false; }
+          return;
+        }
+        if (event.target.closest('[data-return-plan]')) { root.innerHTML = libraryNavigation() + renderPlan(currentPlan); return; }
+        const planRecipe = event.target.closest('[data-plan-recipe]');
+        if (planRecipe) {
+          planRecipe.disabled = true;
+          try {
+            const recipe = await graphCall('get_recipe', {recipe_id: planRecipe.dataset.planRecipe});
+            root.innerHTML = '<button data-return-plan>Back to weekly plan</button>' + renderRecipeDetail(recipe);
+          } catch (reason) { const error = root.querySelector('#plan-error'); error.textContent = reason.message; error.hidden = false; }
+          finally { planRecipe.disabled = false; }
+          return;
+        }
+        const planView = event.target.closest('[data-plan-mode]');
+        if (planView) {
+          planMode = planView.dataset.planMode;
+          root.innerHTML = libraryNavigation() + renderPlan(currentPlan);
           return;
         }
         const complete = event.target.closest('[data-plan-complete]');
