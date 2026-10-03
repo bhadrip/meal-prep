@@ -43,7 +43,7 @@ shared with the website. Never mix data from different households.
    `recipe_id` when they name a saved recipe and `meal_title` when they identify
    a particular meal. The tool subtracts the used amount; do not pass the
    amount remaining. Ask for an amount when it is unclear.
-3. Create and reason over meals and tasks in the model. Use the household's
+3. Create and reason over meals in the model. Include prep tasks when useful for the requested plan. Use the household's
    ordered `household.mealSlots`, with each meal entry's `slot` set to an enabled
    slot ID. Never put prep in an eating slot. Save prep and other work in
    `plan.tasks`; tasks need a title and may have a date, recipeId, servings,
@@ -433,3 +433,11 @@ omitted for variation-only records. A basis is required once any nutrient
 guidance, food source or numeric amount is provided. Do not infer nutrient data
 from variation names. The editor starts with no variations; saved choices alone
 populate the toggle, and removing all variations clears it.
+
+Show nutrition only when saved facts or assessments exist. Do not insert demonstration meals, previews, or empty nutrition cards in the website or MCP App. Saved preparation-only variations remain visible as variations, without empty nutrition messages. Weekly numeric summaries contain only variations with at least one recorded number (zero is a recorded value); notes and qualitative levels alone do not create weekly totals.
+
+## Planning preferences in one place
+
+The website's Weekly plan → Preferences area groups household food restrictions, size, cooking time, leftover defaults, stores, planning areas, meal slots, recurring meal/nutrition preferences, and changes for the selected week. The separate weekly-rhythm editor is removed. For direct clients, use the same saved data through `get_planning_context`, `update_household_preferences`, `configure_meal_slots`, `save_meal_plan_rules`, and schedule notes. Keep recurring preferences in household settings or English meal-plan rules; one-time needs belong in the selected week's notes. Do not require users to classify every day as quick, busy, cook, or prep before planning. Existing schedule records remain readable; editing notes preserves saved days.
+
+The existing Planning rules area is named Preferences in the website; it uses the same rules and revision history. The weekly plan opens Meals by default. Meals and Tasks are display views only: switching them does not change preferences, saved meals, or tasks, and task creation remains available through the API and MCP regardless of the selected view. Meal cards use saved component/task recipe IDs for links and omit description paragraphs and remove/eaten actions. Do not invent recipe IDs or turn unlinked meal names into fabricated links. Actual inventory completion remains available through MCP when requested.

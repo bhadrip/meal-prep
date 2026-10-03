@@ -632,3 +632,7 @@ dialog::backdrop { background: rgba(20,42,35,.45); backdrop-filter: blur(4px); }
 }
 @media (max-width: 1180px) { .circle-layout:has(.circle-thread-panel) { grid-template-columns: 250px minmax(0,1fr); } }
 @media (max-width: 740px) { .circle-layout, .circle-layout:has(.circle-thread-panel) { grid-template-columns: minmax(0,1fr); } .circle-rail { max-height: 250px; } .circle-timeline { padding: 15px; } .circle-post { max-width: 93%; } }
+
+.preferences-grid {display: grid; gap: 20px; margin-bottom: 20px;}
+
+.planned-recipe-link {color: inherit; text-decoration: underline; text-underline-offset: 3px;}

@@ -39,7 +39,12 @@ function componentSummary(entry, clickable = true) {
 }
 
 function mealMarkup(entry) {
-  return `<div class="meal ${entry.completedAt ? 'completed' : ''}" data-meal-id="${esc(entry.id)}"><small>${esc(slotName(entry))}${entry.completedAt ? ' · Eaten' : ''}</small><strong>${esc(entry.meal)}</strong>${entry.components?.length ? `<ul class="meal-components">${componentSummary(entry)}</ul>` : ''}${entry.notes ? `<p class="tiny">${esc(entry.notes)}</p>` : ''}${entry.sourceMeal ? `<p class="tiny muted">From saved meal · ${esc(entry.sourceMeal.name)}</p>` : ''}<details class="nutrition-details"><summary>Nutrition &amp; serving variations</summary>${MealNutrition.render(entry.nutrition)}</details><div class="meal-actions">${action('Save as meal', 'save-as-meal', entry.id)}${entry.completedAt ? '' : `${action('Edit', 'edit-meal', entry.id)}${action('Remove', 'remove-meal', entry.id)}${action('Record eaten', 'eat-meal', entry.id)}`}</div></div>`;
+  const linked = arr(entry.components).map(item => ({...item, recipeId: item.recipeId || arr(state.plan?.tasks || section('mealPlan')?.tasks).find(task => task.id === item.taskId)?.recipeId}));
+  const recipes = [...new Set(linked.map(item => item.recipeId).filter(Boolean))];
+  const recipeLink = (id, title) => `<a class="planned-recipe-link" href="/app?view=recipes&recipe=${encodeURIComponent(id)}" data-action="open-recipe" data-id="${esc(id)}">${esc(title)}</a>`;
+  const title = recipes.length === 1 ? recipeLink(recipes[0], entry.meal) : esc(entry.meal);
+  const parts = linked.filter(item => !(recipes.length === 1 && item.recipeId === recipes[0] && item.name === entry.meal));
+  return `<div class="meal ${entry.completedAt ? 'completed' : ''}" data-meal-id="${esc(entry.id)}"><small>${esc(slotName(entry))}</small><strong>${title}</strong>${parts.length ? `<ul class="meal-components">${parts.map(item => `<li>${item.recipeId ? recipeLink(item.recipeId, item.name) : esc(item.name)}${item.quantity != null ? ` · ${esc(item.quantity)} ${esc(item.unit)}` : ''}</li>`).join('')}</ul>` : ''}${MealNutrition.renderDetails(entry.nutrition)}<div class="meal-actions">${action('Save as meal', 'save-as-meal', entry.id)}${entry.completedAt ? '' : action('Edit', 'edit-meal', entry.id)}</div></div>`;
 }
 
 function taskMarkup(task) {
@@ -58,8 +63,8 @@ let recipeBrowser = null;
 let circleMentionInstances = [];
 const state = { browserUi: {}, view: 'overview', snapshot: null, access: null, households: [], activeHouseholdId: null, pendingInvites: [], notifications: [], notificationError: false, plan: null, schedule: null, mealPlanRules: null, ruleHistory: null, planTab: 'plan', ruleRevisionId: null, rulePreview: null, weekStart: null, recipe: null, recipeResults: null, recipeTags: null, tagSuggestionQuery: '', recipeShares: [], recipeSharesUnavailable: false, shareUrl: null, shareId: null, recipeShareReview: null, circles: [], circleId: null, circleFeed: [], circleNextOffset: null, circleDetail: null, circleComposer: null, circleReview: null, directShares: [], publicShares: [], circleHub: 'home', directReview: null, circleFoodReview: null, circleSearch: '', circleMentions: [], circleMeals: [], search: '', recipeTag: '', mealRecipes: [], pantrySearch: '', pantryCategory: 'all', pantryStock: 'on-hand', pantryReview: false, pantryQuantityId: null, pantrySection: 'items', pantryPhotos: [], pantryPhotosHasMore: false, pantryPhotosLoading: false, pantryPhotosError: null, pantryPhotosRequest: 0, client: null, session: null, config: null, editor: null };
 const VIEW_SECTIONS = { overview: ['mealPlan', 'shoppingList', 'pantry'], plan: ['mealPlan', 'schedule'], recipes: ['recipes'], pantry: ['pantry'], shopping: ['shoppingList'], reviews: ['feedback', 'memories'], circles: [], settings: [], notifications: [] };
-const SECTION_NAMES = { mealPlan: 'meals and prep', shoppingList: 'shopping list', pantry: 'pantry', schedule: 'weekly rhythm', mealPlanRules: 'planning rules', recipes: 'recipes', meals: 'saved meals', feedback: 'reviews', memories: 'household memory' };
-Object.assign(state, { dataGeneration: 0, sectionRequests: new Map(), sectionWeeks: {}, dashboardExpanded: false, notificationsLoading: true, circleManageOpenId: null, circleLoadRequest: 0 });
+const SECTION_NAMES = { mealPlan: 'meals and prep', shoppingList: 'shopping list', pantry: 'pantry', schedule: 'weekly rhythm', mealPlanRules: 'meal preferences', recipes: 'recipes', meals: 'saved meals', feedback: 'reviews', memories: 'household memory' };
+Object.assign(state, { dataGeneration: 0, sectionRequests: new Map(), sectionWeeks: {}, dashboardExpanded: false, todayMode: 'meals', notificationsLoading: true, circleManageOpenId: null, circleLoadRequest: 0 });
 function routeFromUrl() {
   const params = new URLSearchParams(location.search);
   const requestedView = params.get('view');
@@ -69,7 +74,7 @@ function routeFromUrl() {
   return {
     view,
     weekStart: (view === 'plan' || view === 'recipes') && validWeek ? week : null,
-    planTab: view === 'plan' && params.get('tab') === 'rules' ? 'rules' : 'plan',
+    planTab: view === 'plan' && ['rules', 'tasks'].includes(params.get('tab')) ? params.get('tab') : 'plan',
     ruleRevisionId: view === 'plan' && params.get('tab') === 'rules' ? params.get('revision') : null,
     recipeId: view === 'recipes' ? params.get('recipe') : null,
     circleId: view === 'circles' ? params.get('circle') : null,
@@ -91,8 +96,8 @@ function writeRoute(mode = 'push') {
     for (const [kind, values] of Object.entries(state.browserUi.filters || {})) values.forEach(value => url.searchParams.append(kind, value));
     if (state.browserUi.maxMinutes) url.searchParams.set('max_minutes', state.browserUi.maxMinutes);
   }
-  if (state.view === 'plan' && state.planTab === 'rules') {
-    url.searchParams.set('tab', 'rules');
+  if (state.view === 'plan' && state.planTab !== 'plan') {
+    url.searchParams.set('tab', state.planTab);
     if (state.ruleRevisionId) url.searchParams.set('revision', state.ruleRevisionId);
   }
   if (state.view === 'recipes' && state.recipe?.id) url.searchParams.set('recipe', state.recipe.id);
@@ -382,15 +387,17 @@ function renderToday() {
     const date = pick(item, 'use_by_date', 'useByDate');
     return ((date && date <= soonDate) || item.freshness?.status === 'review_age') && (item.quantity === null || item.quantity === undefined || Number(item.quantity) > 0);
   }).sort((a, b) => String(pick(a, 'use_by_date', 'useByDate')).localeCompare(String(pick(b, 'use_by_date', 'useByDate'))));
-  const mealBody = `<div class="today-meals">${meals.length ? meals.map(mealMarkup).join('') : '<p class="muted">No meals planned for today.</p>'}${todayTasks.length ? `<h4>Tasks</h4>${todayTasks.map(taskMarkup).join('')}` : ''}</div>`;
+  const mealBody = `<div class="today-meals">${state.todayMode === 'tasks' ? todayTasks.map(taskMarkup).join('') || '<p class="muted">No tasks planned for today.</p>' : meals.length ? meals.map(mealMarkup).join('') : '<p class="muted">No meals planned for today.</p>'}</div>`;
   const mealReady = ['ready', 'empty'].includes(sectionStatus('mealPlan'));
+  const todayTasksVisible = state.todayMode === 'tasks';
+  const toggle = `<div class="nutrition-toggle" role="group" aria-label="Today’s view">${['meals','tasks'].map(mode => `<button type="button" data-action="today-mode" data-id="${mode}" aria-pressed="${mode === (todayTasksVisible ? 'tasks' : 'meals')}">${mode === 'meals' ? 'Meals' : 'Tasks'}</button>`).join('')}</div>`;
   const shoppingBody = groceries.length ? `<p class="muted tiny">${groceries.length} ${groceries.length === 1 ? 'item' : 'items'} left to pick up</p><div class="stack">${groceries.slice(0, 5).map((item) => `<label class="check-row"><input type="checkbox" data-purchase-id="${esc(item.id)}" aria-label="Mark ${esc(item.name)} purchased" /><span class="row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.quantity ?? '')} ${esc(item.unit || '')}${item.store ? ` · ${esc(item.store)}` : ''}</small></span></label>`).join('')}</div>` : '<p class="muted">Nothing left on your shopping list.</p>';
   const pantryBody = useSoon.length ? `<p class="muted tiny">Recorded dates coming up, and produce purchased at least 7 days ago.</p><div class="stack">${useSoon.slice(0, 5).map((item) => {
     const date = pick(item, 'use_by_date', 'useByDate');
     return row(item.name, `${!date ? `Review first · purchased ${item.freshness.ageDays} days ago` : date < today ? 'Past recorded date' : date === today ? 'Use-by today' : `Use-by ${date}`} · ${item.quantity ?? 'Amount unknown'} ${item.unit || ''}`, action('Review', 'edit-pantry', item.id));
   }).join('')}</div>` : '<p class="muted">No recorded dates or produce ages need review today. Open Pantry to check missing dates.</p>';
   return `<section class="today-heading"><div><p class="eyebrow">${esc(household().householdName || 'Your kitchen')} · ${esc(new Date(`${today}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }))}</p><h2>What’s on today?</h2></div>${action('Open weekly plan', 'plan', '', 'primary')}</section>
-    <article class="card today-plan" data-home-section="mealPlan"><div class="card-head"><h3>Today’s meals & tasks</h3>${mealReady ? `<div>${action('Add a meal for today', 'add-meal', today)}${action('Add a task for today', 'add-task', today)}</div>` : ''}</div>${sectionContent('mealPlan', mealBody)}</article>
+    <article class="card today-plan" data-home-section="mealPlan"><div class="card-head"><h3>${todayTasksVisible ? 'Today’s tasks' : 'Today’s meals'}</h3>${mealReady ? `<div>${toggle}${state.todayMode === 'tasks' ? action('Add a task for today', 'add-task', today) : action('Add a meal for today', 'add-meal', today)}</div>` : ''}</div>${sectionContent('mealPlan', mealBody)}</article>
     <div class="home-attention-grid"><article class="card" data-home-section="shoppingList"><div class="card-head"><h3>Still to shop</h3>${action('Open list', 'shopping')}</div>${sectionContent('shoppingList', shoppingBody)}</article><article class="card" data-home-section="pantry"><div class="card-head"><h3>Use soon</h3>${action('View pantry', 'pantry')}</div>${sectionContent('pantry', pantryBody)}</article></div>
     <div class="home-shortcuts">${action('Browse recipes', 'recipes')}${action('View reviews', 'reviews')}${action('Customize dashboard', 'settings')}</div>`;
 }
@@ -584,42 +591,41 @@ function renderPlanningRules() {
   if (state.ruleRevisionId) {
     const revision = state.rulePreview;
     const usedForPlan = revision?.id === state.plan?.ruleRevisionId;
-    return `<div class="planning-rules-page"><div class="section-head"><div><h2>Saved rule version</h2><p>${usedForPlan ? `Used for the week of ${esc(state.weekStart)}.` : 'Saved recurring instructions.'}</p></div>${action('View current rules', 'plan-tab', 'rules')}</div>
-      ${state.rulePreviewError ? empty('Could not load this version', state.rulePreviewError) : revision ? `<article class="card" id="planning-rule-preview"><div class="card-head"><h3>Planning rules · version ${esc(revision.revision)}</h3><span class="muted tiny">Read only</span></div><p class="planning-text">${esc(revision.text || 'No recurring rules in this version.')}</p></article>` : empty('Loading this version', 'Opening the saved rules…')}</div>`;
+    return `<div class="planning-rules-page"><div class="section-head"><div><h2>Saved preference version</h2><p>${usedForPlan ? `Used for the week of ${esc(state.weekStart)}.` : 'Saved recurring instructions.'}</p></div>${action('View current preferences', 'plan-tab', 'rules')}</div>
+      ${state.rulePreviewError ? empty('Could not load this version', state.rulePreviewError) : revision ? `<article class="card" id="planning-rule-preview"><div class="card-head"><h3>Meal preferences · version ${esc(revision.revision)}</h3><span class="muted tiny">Read only</span></div><p class="planning-text">${esc(revision.text || 'No recurring preferences in this version.')}</p></article>` : empty('Loading this version', 'Opening the saved preferences…')}</div>`;
   }
   if (!sectionStatus('mealPlanRules') || ['loading', 'unavailable'].includes(sectionStatus('mealPlanRules'))) return sectionContent('mealPlanRules', '');
   const rules = state.mealPlanRules;
   const ruleBody = rules
-    ? `<p class="muted tiny rule-version">Current · Version ${esc(rules.revision)}</p><p class="planning-text">${esc(rules.text || 'No recurring rules in this version.')}</p>`
+    ? `<p class="muted tiny rule-version">Current · Version ${esc(rules.revision)}</p><p class="planning-text">${esc(rules.text || 'No recurring preferences in this version.')}</p>`
     : '<p class="muted planning-text">Describe your usual week in English: favourite meals, weekend prep, and how you use leftovers.</p>';
-  const history = state.ruleHistory === null ? '' : `<section id="planning-rule-history" aria-label="Rule history"><h3>Saved versions</h3>${state.ruleHistory.length ? state.ruleHistory.map((revision) => row(`Version ${revision.revision}${revision.id === rules?.id ? ' · Current' : ''}`, new Date(revision.createdAt).toLocaleString(), action(`View version ${revision.revision}`, 'view-rule-revision', revision.id))).join('') : '<p class="muted tiny">No versions saved yet.</p>'}</section>`;
-  return `<div class="planning-rules-page"><div class="section-head"><div><h2>Your usual week</h2><p>Recurring instructions for any week. Add one-time changes in the Plan tab’s weekly notes.</p></div></div>
-    ${card('Planning rules', '▦', ruleBody, `<div class="rule-actions">${action('Edit planning rules', 'edit-planning-rules', '', 'primary')}${action('View rule history', 'view-rule-history')}</div>`)}${history}</div>`;
+  const history = state.ruleHistory === null ? '' : `<section id="planning-rule-history" aria-label="Preference history"><h3>Saved versions</h3>${state.ruleHistory.length ? state.ruleHistory.map((revision) => row(`Version ${revision.revision}${revision.id === rules?.id ? ' · Current' : ''}`, new Date(revision.createdAt).toLocaleString(), action(`View version ${revision.revision}`, 'view-rule-revision', revision.id))).join('') : '<p class="muted tiny">No versions saved yet.</p>'}</section>`;
+  return `<div class="planning-rules-page"><div class="section-head"><div><h2>Your usual week</h2><p>Recurring instructions for any week. Add one-time changes in the Meals tab’s weekly notes.</p></div></div>
+    ${card('Meal preferences', '▦', ruleBody, `<div class="rule-actions">${action('Edit meal preferences', 'edit-planning-rules', '', 'primary')}${action('View preference history', 'view-rule-history')}</div>`)}${history}</div>`;
 }
 
 function renderPlan() {
-  const tabs = `<div class="planning-tabs" role="tablist" aria-label="Weekly plan sections">${[['plan', 'Plan'], ['rules', 'Planning rules']].map(([id, name]) => `<button type="button" role="tab" id="planning-tab-${id}" aria-selected="${state.planTab === id}" aria-controls="planning-panel" tabindex="${state.planTab === id ? '0' : '-1'}" data-action="plan-tab" data-id="${id}">${name}</button>`).join('')}</div>`;
-  if (state.planTab === 'rules') return `${tabs}<section id="planning-panel" role="tabpanel" aria-labelledby="planning-tab-rules">${renderPlanningRules()}</section>`;
+  const tabs = `<div class="planning-tabs" role="tablist" aria-label="Weekly plan sections">${[['plan', 'Meals'], ['tasks', 'Tasks'], ['rules', 'Preferences']].map(([id, name]) => `<button type="button" role="tab" id="planning-tab-${id}" aria-selected="${state.planTab === id}" aria-controls="planning-panel" tabindex="${state.planTab === id ? '0' : '-1'}" data-action="plan-tab" data-id="${id}">${name}</button>`).join('')}</div>`;
+  if (state.planTab === 'rules') return `${tabs}<section id="planning-panel" role="tabpanel" aria-labelledby="planning-tab-rules">${renderPlanPreferences()}</section>`;
   const plan = state.plan;
   const schedule = state.schedule;
+  const showTasks = state.planTab === 'tasks';
   const count = arr(plan?.entries).length;
-  let html = `<div class="toolbar plan-toolbar"><label class="field">Week of<input id="week-picker" type="date" value="${esc(state.weekStart)}" /></label><div class="plan-actions">${action('Edit weekly rhythm', 'edit-schedule')}${action('Shopping needs', 'shopping-preview')}${action('Use saved meal', 'use-saved-meal')}${action('Add task', 'add-task')}${action('Add meal', 'add-meal', '', 'primary')}</div></div>
-    <div class="plan-summary"><p>${esc(label(plan?.status || 'Draft'))} · ${count} meals · ${arr(plan?.tasks).length} tasks</p>${plan?.ruleRevision ? `<button type="button" class="text-button" id="plan-rule-source" data-action="view-rule-revision" data-id="${esc(plan.ruleRevision.id)}">Rules used: version ${esc(plan.ruleRevision.revision)}</button>` : ''}</div>
+  let html = `<div class="toolbar plan-toolbar"><label class="field">Week of<input id="week-picker" type="date" value="${esc(state.weekStart)}" /></label><div class="plan-actions">${action('Shopping needs', 'shopping-preview')}${showTasks ? action('Add task', 'add-task', '', 'primary') : `${action('Use saved meal', 'use-saved-meal')}${action('Add meal', 'add-meal', '', 'primary')}`}</div></div>
+    <div class="plan-summary"><p>${esc(label(plan?.status || 'Draft'))} · ${showTasks ? `${arr(plan?.tasks).length} tasks` : `${count} meals`}</p>${plan?.ruleRevision ? `<button type="button" class="text-button" id="plan-rule-source" data-action="view-rule-revision" data-id="${esc(plan.ruleRevision.id)}">Preferences used: version ${esc(plan.ruleRevision.revision)}</button>` : ''}</div>
     <div class="week-notes-row"><details id="week-notes"><summary>Notes for this week${schedule?.notes ? '<span class="notes-indicator">Added</span>' : ''}</summary><p class="planning-text">${esc(schedule?.notes || 'Add guests, ingredients to use, or other changes for this week.')}</p></details>${action('Edit notes', 'edit-week-notes')}</div>`;
-  if (!plan && !schedule) html += '<p class="muted tiny open-week">This week is open. Add a meal or set your weekly rhythm to begin.</p>';
-  html += MealNutrition.renderWeek(plan?.nutritionSummary);
-  html += `<section class="nutrition-card"><h3>One meal, different plates</h3><p>Start with the same meal. Choose a standard plate or add more protein; anyone can use either variation.</p><details class="nutrition-example"><summary>See noodle example · preview only</summary><h4>Teriyaki noodles · standard or protein-heavy</h4>${MealNutrition.render(MealNutrition.example)}</details></section>`;
+  if (!plan && !schedule) html += '<p class="muted tiny open-week">This week is open. Add a meal or update your planning preferences to begin.</p>';
+  if (!showTasks) html += MealNutrition.renderWeek(plan?.nutritionSummary);
   html += `<div class="week-grid">${DAYS.map((day, index) => {
     const date = dateForDay(state.weekStart, index);
-    const rhythm = arr(schedule?.days).find((entry) => entry.day === day);
     const entries = arr(plan?.entries).filter((entry) => entry.date === date).sort((a, b) => slotOrder(a) - slotOrder(b));
     const tasks = arr(plan?.tasks).filter((task) => task.date === date);
     const displayDate = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(displayDate)} · ${esc(rhythm?.mode || 'Flexible')}</span>${entries.length ? entries.map(mealMarkup).join('') : '<p class="muted tiny">No meals planned</p>'}<button class="button ghost small day-add" data-action="add-meal" data-id="${esc(date)}" aria-label="Add meal to ${day}">+ Add meal</button><div class="day-tasks"><h4>Tasks</h4>${tasks.map(taskMarkup).join('')}<button class="button ghost small" data-action="add-task" data-id="${esc(date)}" aria-label="Add task to ${day}">+ Add task</button></div></div>`;
+    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(displayDate)}</span>${showTasks ? `<div class="day-tasks">${tasks.map(taskMarkup).join('') || '<p class="muted tiny">No tasks planned</p>'}<button class="button ghost small" data-action="add-task" data-id="${esc(date)}" aria-label="Add task to ${day}">+ Add task</button></div>` : `${entries.length ? entries.map(mealMarkup).join('') : '<p class="muted tiny">No meals planned</p>'}<button class="button ghost small day-add" data-action="add-meal" data-id="${esc(date)}" aria-label="Add meal to ${day}">+ Add meal</button>`}</div>`;
   }).join('')}</div>`;
   const otherTasks = arr(plan?.tasks).filter((task) => !task.date || task.date < state.weekStart || task.date > dateForDay(state.weekStart, 6));
-  if (otherTasks.length) html += `<article class="card other-tasks"><h3>Other dates & unscheduled tasks</h3>${otherTasks.map((task) => `<p class="tiny">${esc(task.date || 'No date set')}</p>${taskMarkup(task)}`).join('')}</article>`;
-  return `${tabs}<section id="planning-panel" role="tabpanel" aria-labelledby="planning-tab-plan">${html}</section>`;
+  if (showTasks && otherTasks.length) html += `<article class="card other-tasks"><h3>Other dates & unscheduled tasks</h3>${otherTasks.map((task) => `<p class="tiny">${esc(task.date || 'No date set')}</p>${taskMarkup(task)}`).join('')}</article>`;
+  return `${tabs}<section id="planning-panel" role="tabpanel" aria-labelledby="planning-tab-${showTasks ? 'tasks' : 'plan'}">${html}</section>`;
 }
 
 function recipeCategories(recipe) {
@@ -650,7 +656,7 @@ function renderRecipes() {
         ? `<div class="stack">${arr(recipe.feedback).slice(0, 5).map((item) => row(item.note, item.next_time || '')).join('')}</div>`
         : '<p class="muted tiny">No feedback yet.</p>';
     const feedbackAction = recipe.feedbackUnavailable ? '' : `<div style="margin-top:20px">${action('Add feedback', 'add-feedback', recipe.id)}</div>`;
-    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div class="recipe-detail-actions">${action('Explore this recipe', 'explore-recipe', recipe.id)}${action('Save as meal', 'recipe-as-meal', recipe.id)}${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">${recipe.kind === 'ready_food' ? 'Ready food' : 'Saved recipe'}</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p>${recipeCategories(recipe)}${recipeTags(recipe.tags)}</div><div class="hero-stat"><strong>${esc(recipe.total_minutes ?? recipe.totalMinutes ?? '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section><section class="nutrition-card recipe-nutrition"><h3>Recipe variations &amp; nutrition</h3>${MealNutrition.render(recipe.nutrition)}</section><div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody + recipePublicReviewMarkup(), state.recipeSharesUnavailable || state.recipeShareReview ? '' : `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
+    return `<div class="toolbar">${action('← All recipes', 'close-recipe')}<div class="recipe-detail-actions">${action('Explore this recipe', 'explore-recipe', recipe.id)}${action('Save as meal', 'recipe-as-meal', recipe.id)}${action('Edit recipe', 'edit-recipe', recipe.id)}${action('Archive', 'archive-recipe', recipe.id, 'danger')}</div></div><section class="hero" style="min-height:220px"><div class="hero-copy"><p class="eyebrow">${recipe.kind === 'ready_food' ? 'Ready food' : 'Saved recipe'}</p><h2>${esc(recipe.title)}</h2><p>${esc(recipe.description || 'Your household recipe.')}</p>${recipeCategories(recipe)}${recipeTags(recipe.tags)}</div><div class="hero-stat"><strong>${esc(recipe.total_minutes ?? recipe.totalMinutes ?? '—')}</strong><span>minutes total · ${esc(recipe.servings || '—')} servings</span></div></section>${MealNutrition.renderCard(recipe.nutrition)}<div class="section-head"><h2>Recipe details</h2></div><div class="card-grid">${card('Ingredients', '□', ingredients.length ? `<div class="stack">${ingredients.map((item) => row(typeof item === 'string' ? item : item.name, typeof item === 'string' ? '' : `${item.quantity ?? ''} ${item.unit || ''}`)).join('')}</div>` : '<p class="muted tiny">No ingredients saved.</p>')}${card('Method', '▦', instructions.length ? `<ol style="padding-left:18px;font-size:.75rem;line-height:1.6">${instructions.map((step) => `<li>${esc(typeof step === 'string' ? step : step.text || step.instruction)}</li>`).join('')}</ol>` : '<p class="muted tiny">No steps saved.</p>')}${card('What you learned', '♡', feedbackBody, feedbackAction)}</div><div class="section-head"><h2>Share</h2></div>${card('Share this recipe', '↗', shareBody + recipePublicReviewMarkup(), state.recipeSharesUnavailable || state.recipeShareReview ? '' : `<div style="margin-top:20px">${action('Create share link', 'create-share', recipe.id, 'primary')}</div>`)}`;
   }
   return `<div class="toolbar"><span></span><div class="recipe-detail-actions">${action('Create meal', 'create-library-meal')}${action('Add recipe', 'add-recipe', '', 'primary')}</div></div><div id="recipe-browser"></div>`;
 }
@@ -834,15 +840,40 @@ function renderReviews() {
   return html;
 }
 
-function renderSettings() {
+function renderHouseholdPreferences() {
   const h = household();
   const prefs = h.planningPreferences || {};
   const focus = arr(prefs.focusAreas);
-  const { order, hidden } = dashboardLayout();
   const restrictions = h.dietaryRestrictions === null || h.dietaryRestrictions === undefined
     ? '' : arr(h.dietaryRestrictions).length ? h.dietaryRestrictions.join(', ') : 'none';
   const stores = arr(h.storePriority).sort((a, b) => a.priority - b.priority).map((item) => item.store).join(', ');
   const focusChoices = FOCUS.map((area) => `<label class="planning-choice"><input type="checkbox" name="focusAreas" value="${area}" ${focus.includes(area) ? 'checked' : ''} /><span>${esc(label(area))}</span></label>`).join('');
+  return `    <article class="card"><div class="card-head"><h3>Household preferences</h3><span class="card-icon">⚙</span></div>
+      <form id="settings-form" class="form-grid">
+        ${field('householdSize', 'People in household', h.householdSize ?? '', { type: 'number', min: 1, max: 30, required: true })}
+        ${field('weeknightMaxMinutes', 'Maximum weeknight cooking minutes', prefs.weeknightMaxMinutes ?? '', { type: 'number', min: 1, max: 240, required: true })}
+        ${field('dietaryRestrictions', 'Dietary restrictions — enter none if there are none', restrictions, { required: true, wide: true })}
+        ${field('stores', 'Preferred stores, in order', stores, { required: true, wide: true, placeholder: 'Costco, Safeway' })}
+        <fieldset class="field wide planning-field"><legend>Planning areas</legend><div class="planning-areas">${focusChoices}</div></fieldset>
+        <label class="field wide toggle-field"><span>Plan dinner leftovers for lunch</span><input name="leftoversForLunch" type="checkbox" ${prefs.leftoversForLunch ? 'checked' : ''} /></label>
+        <div class="field wide"><button class="button primary" type="submit">Save preferences</button></div>
+      </form>
+    </article>
+    <article class="card"><div class="card-head"><h3>Meal slots</h3>${action('Edit meal slots', 'edit-meal-slots')}</div><p class="muted tiny">${mealSlots().map((slot) => `${esc(slot.name)}${slot.enabled ? '' : ' (disabled)'}`).join(' → ')}</p></article>
+`;
+}
+
+function renderPlanPreferences() {
+  if (state.ruleRevisionId) return renderPlanningRules();
+  const notes = state.schedule?.notes;
+  return `<div class="section-head"><div><h2>Preferences</h2><p>Household preferences apply every week. Use this week’s notes for guests, ingredients to use, or a change in cooking plans.</p></div></div>
+    <div class="preferences-grid">${renderHouseholdPreferences()}</div>
+    ${card(`This week · ${state.weekStart}`, '▦', `<p class="planning-text">${esc(notes || 'No changes for this week.')}</p>`, action('Edit notes', 'edit-week-notes'))}
+    ${renderPlanningRules()}`;
+}
+
+function renderSettings() {
+  const { order, hidden } = dashboardLayout();
   const cardRows = order.map((id, index) => `<div class="card-order-row" data-card-id="${id}"><label class="toggle-field"><span>${esc(CARD_NAMES[id])}</span><input type="checkbox" name="visibleCard" value="${id}" ${hidden.includes(id) ? '' : 'checked'} /></label><div class="card-order-buttons"><button class="icon-button" type="button" data-action="card-up" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} up" ${index === 0 ? 'disabled' : ''}>↑</button><button class="icon-button" type="button" data-action="card-down" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} down" ${index === order.length - 1 ? 'disabled' : ''}>↓</button></div></div>`).join('');
   const members = arr(state.access?.members);
   const invitations = arr(state.access?.invitations);
@@ -862,18 +893,7 @@ function renderSettings() {
     ${state.access?.role && state.access.role !== 'owner' ? `<div style="margin-top:16px">${action('Leave this household', 'leave-household', '', 'danger')}</div>` : ''}
   </article>` : '';
   return `<div class="settings-grid"><div class="stack">
-    <article class="card"><div class="card-head"><h3>Household preferences</h3><span class="card-icon">⚙</span></div>
-      <form id="settings-form" class="form-grid">
-        ${field('householdSize', 'People in household', h.householdSize ?? '', { type: 'number', min: 1, max: 30, required: true })}
-        ${field('weeknightMaxMinutes', 'Maximum weeknight cooking minutes', prefs.weeknightMaxMinutes ?? '', { type: 'number', min: 1, max: 240, required: true })}
-        ${field('dietaryRestrictions', 'Dietary restrictions — enter none if there are none', restrictions, { required: true, wide: true })}
-        ${field('stores', 'Preferred stores, in order', stores, { required: true, wide: true, placeholder: 'Costco, Safeway' })}
-        <fieldset class="field wide planning-field"><legend>Planning areas</legend><div class="planning-areas">${focusChoices}</div></fieldset>
-        <label class="field wide toggle-field"><span>Plan dinner leftovers for lunch</span><input name="leftoversForLunch" type="checkbox" ${prefs.leftoversForLunch ? 'checked' : ''} /></label>
-        <div class="field wide"><button class="button primary" type="submit">Save household setup</button></div>
-      </form>
-    </article>
-    <article class="card"><div class="card-head"><h3>Meal slots</h3>${action('Edit meal slots', 'edit-meal-slots')}</div><p class="muted tiny">${mealSlots().map((slot) => `${esc(slot.name)}${slot.enabled ? '' : ' (disabled)'}`).join(' → ')}</p></article>
+    ${renderHouseholdPreferences()}
     <article class="card"><div class="card-head"><h3>Dashboard cards</h3><span class="card-icon">▦</span></div>
       <p class="muted tiny" style="margin-bottom:14px">Choose the cards and order under “More from your household” and in the chat dashboard.</p>
       <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save dashboard</button></form>
@@ -1123,15 +1143,12 @@ function openEditor(kind, item = null, selectedDate = null) {
   } else if (kind === 'shopping') {
     title = item ? 'Edit grocery item' : 'Add grocery item';
     markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0.001, step: 'any' }) + field('unit', 'Unit', item?.unit) + field('store', 'Where do you generally buy this? (optional)', item?.store || '', { placeholder: 'Costco, Trader Joe’s…', wide: true }) + (item ? field('listName', 'List name', section('shoppingList')?.name || 'Weekly groceries', { wide: true }) : '');
-  } else if (kind === 'schedule') {
-    title = 'Weekly rhythm';
-    markup = `<p class="muted tiny wide">Week of ${esc(state.weekStart)} · Set the pace for each day.</p>` + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('');
   } else if (kind === 'week-notes') {
     title = 'Notes for this week';
     markup = `<p class="muted tiny wide">Week of ${esc(state.weekStart)} · Changes that apply only to this week.</p>` + field('notes', 'Guests, ingredients to use, or other changes', item?.notes || '', { type: 'textarea', wide: true, placeholder: 'Guests on Saturday; use the spinach left from last week.' });
   } else if (kind === 'planning-rules') {
-    title = 'Planning rules';
-    markup = '<p class="muted tiny wide">Describe recurring meals, weekend prep, and leftovers in your own words. Each change saves a new version. Leave blank to clear the rules.</p>' + field('text', 'Your usual week', item?.text || '', { type: 'textarea', wide: true, placeholder: 'Saturday dinner is pasta. Bulk cook ambta baaji for Tuesday and Thursday. Rotate newly cooked recipes; leftovers are welcome.' });
+    title = 'Meal preferences';
+    markup = '<p class="muted tiny wide">Describe meal preferences, nutrition goals, favourite meals, prep, and leftovers in your own words. Each change saves a new version. Leave blank to clear the rules.</p>' + field('text', 'Your usual week', item?.text || '', { type: 'textarea', wide: true, placeholder: 'Prefer protein-heavy variations when available. Keep Tuesday dinner quick. Cook pasta Saturday and use leftovers for lunch.' });
   } else if (kind === 'weekly-review') {
     title = 'Review this week';
     markup = field('weekStart', 'Week of', state.weekStart || monday(), { type: 'date', required: true }) + field('feedbackType', 'How did it go?', 'worked_well', { choices: [{ value: 'worked_well', label: 'Worked well' }, { value: 'problem', label: 'Did not work' }, { value: 'change_next_time', label: 'Change next time' }] }) + field('note', 'What happened?', '', { type: 'textarea', required: true, wide: true, placeholder: 'For example, prepping vegetables on Sunday saved time.' }) + field('nextTime', 'Lesson learned or change for next time (optional)', '', { type: 'textarea', wide: true });
@@ -1198,8 +1215,6 @@ async function submitEditor(data) {
     } else {
       await save('/api/shopping-list/items', 'POST', { item: updated, listId: list?.id || null });
     }
-  } else if (kind === 'schedule') {
-    await save('/api/schedule', 'PUT', { weekStart: state.weekStart, days: DAYS.map((day) => ({ day, mode: value(day) })), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
   } else if (kind === 'week-notes') {
     await save('/api/schedule', 'PUT', { weekStart: state.weekStart, days: item?.days || DAYS.map((day) => ({ day, mode: 'flexible' })), notes: value('notes'), isNormalWeek: item?.is_normal_week ?? true, rememberRhythm: item?.remember_rhythm ?? true });
   } else if (kind === 'planning-rules') {
@@ -1219,6 +1234,9 @@ async function submitEditor(data) {
 }
 
 async function handleAction(actionName, id) {
+  if (actionName === 'today-mode') {
+    state.todayMode = id; render(); return;
+  }
   if (actionName === 'circle-retry') return loadCircleData();
   if (actionName === 'circle-cancel-food') { state.circleFoodReview = null; render(); return; }
   if (actionName === 'circle-confirm-food') {
@@ -1476,8 +1494,9 @@ async function handleAction(actionName, id) {
   if (actionName === 'edit-recipe') return openEditor('recipe', state.recipe || recipes.find((item) => item.id === id));
   if (actionName === 'open-recipe') {
     await loadRecipe(id);
+    state.view = 'recipes';
     writeRoute();
-    return render();
+    return loadViewData();
   }
   if (actionName === 'close-recipe') { state.recipe = null; state.shareUrl = null; state.shareId = null; state.recipeShareReview = null; writeRoute(); return render(); }
   if (actionName === 'create-share') {
@@ -1594,7 +1613,6 @@ async function handleAction(actionName, id) {
     await save('/api/shopping-list', 'PUT', { id: list.id, name: list.name, status: list.status, mealPlanId: list.mealPlanId, items: shopping.filter((entry) => entry.id !== id) });
     return refresh('Grocery item removed.');
   }
-  if (actionName === 'edit-schedule') return openEditor('schedule');
   if (actionName === 'edit-week-notes') return openEditor('week-notes', state.schedule);
   if (actionName === 'plan-tab') return openPlanTab(id);
   if (actionName === 'view-rule-revision') return openPlanTab('rules', id);
@@ -1669,7 +1687,9 @@ content.addEventListener('keydown', (event) => {
   const tab = event.target.closest('[role="tab"]');
   if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
   event.preventDefault();
-  const next = event.key === 'Home' ? 'plan' : event.key === 'End' ? 'rules' : tab.dataset.id === 'plan' ? 'rules' : 'plan';
+  const tabs = ['plan', 'tasks', 'rules'];
+  const index = tabs.indexOf(tab.dataset.id);
+  const next = event.key === 'Home' ? 'plan' : event.key === 'End' ? 'rules' : tabs[(index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
   openPlanTab(next);
 });
 
@@ -1846,7 +1866,7 @@ content.addEventListener('submit', async (event) => {
       showToast('Dashboard saved.');
       return;
     }
-    await refresh('Settings saved.');
+    await refresh(event.target.id === 'settings-form' ? 'Preferences saved.' : 'Settings saved.');
   } catch (error) { showToast(error.message); }
   finally { submit.disabled = false; }
 });

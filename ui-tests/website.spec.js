@@ -99,7 +99,7 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
   await form.locator('[name="stores"]').fill('Safeway, Costco');
   await form.locator('[name="leftoversForLunch"]').uncheck();
   await form.locator('[name="focusAreas"][value="dinners"]').check();
-  await form.getByRole('button', { name: 'Save household setup' }).click();
+  await form.getByRole('button', { name: 'Save preferences' }).click();
   await expect(form.locator('[name="householdSize"]')).toHaveValue('3');
   await expect(form.locator('[name="stores"]')).toHaveValue('Safeway, Costco');
   await page.locator('.sidebar [data-view="overview"]').click();
@@ -128,14 +128,11 @@ test('household setup, dashboard visibility, and card order persist', async ({ p
   await expect(page.locator('#dashboard-form [name="visibleCard"][value="pantry"]')).not.toBeChecked();
 });
 
-test('weekly rhythm and planned meal can be added, edited, and removed', async ({ page }) => {
+test('planned meals can be added and edited with compact actions', async ({ page }) => {
   await open(page, 'plan');
   const week = await page.locator('#week-picker').inputValue();
   const originalMondayMeals = await content(page).locator('.day-card').first().locator('.meal strong').allTextContents();
-  await content(page).getByRole('button', { name: 'Edit weekly rhythm' }).click();
-  await choose(page, 'Monday', 'busy');
-  await saveEditor(page);
-  await expect(content(page).locator('.day-card').first()).toContainText('busy');
+  await expect(content(page).getByRole('button', { name: 'Edit weekly rhythm' })).toHaveCount(0);
   const meal = unique('Playwright dinner');
   await content(page).getByRole('button', { name: 'Add meal', exact: true }).click();
   await editor(page).locator('[name="date"]').fill(week);
@@ -150,9 +147,9 @@ test('weekly rhythm and planned meal can be added, edited, and removed', async (
   await saveEditor(page);
   const updated = content(page).locator('.meal').filter({ hasText: `${meal} edited` });
   await expect(updated).toBeVisible();
-  page.once('dialog', (dialog) => dialog.accept());
-  await updated.getByRole('button', { name: 'Remove' }).click();
-  await expect(updated).toHaveCount(0);
+  await expect(updated.getByRole('button', { name: 'Remove', exact:true })).toHaveCount(0);
+  await expect(updated.getByRole('button', { name: 'Record eaten', exact:true })).toHaveCount(0);
+  await expect(updated).not.toContainText('Test note');
   for (const originalMeal of originalMondayMeals) {
     await expect(content(page).locator('.day-card').first()).toContainText(originalMeal);
   }

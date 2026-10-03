@@ -159,3 +159,36 @@ def test_week_note_edit_preserves_rhythm_rules_and_rejects_an_oversized_draft():
         assert all(day["mode"] == "quick" for day in changed["days"])
     finally:
         demo_repository.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_planning_context_combines_all_saved_preferences_and_rejects_invalid_updates():
+    from app.application.services import HouseholdService
+    repo = DemoRepository()
+    household, planning = HouseholdService(repo), PlanningService(repo)
+    original = await household.get_context()
+    prefs = await household.update_preferences(household_size=5,
+        dietary_restrictions=['vegetarian', 'no peanuts'],
+        store_priority=[{'store': 'Costco', 'priority': 1}],
+        planning_preferences={'weeknightMaxMinutes': 25, 'leftoversForLunch': True, 'focusAreas': ['dinners']})
+    assert (await household.get_context())['mealSlots'] == original['mealSlots']
+    rules = await planning.save_rules('Prefer protein-heavy variations. Keep Tuesday quick.', 0)
+    await planning.save_schedule({'weekStart': '2032-04-05', 'days': [
+        {'day': day, 'mode': 'flexible'} for day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']],
+        'notes': 'Guests Saturday; use spinach.'})
+    context = await planning.get_context('2032-04-05')
+    assert context['household']['householdSize'] == 5
+    assert context['household']['dietaryRestrictions'] == ['vegetarian', 'no peanuts']
+    assert context['household']['planningPreferences']['weeknightMaxMinutes'] == 25
+    assert context['household']['planningPreferences']['leftoversForLunch'] is True
+    assert context['household']['storePriority'] == [{'store': 'Costco', 'priority': 1}]
+    assert context['mealPlanRules'] == rules
+    assert context['schedule']['notes'] == 'Guests Saturday; use spinach.'
+    other = await planning.get_context('2032-04-12')
+    assert other['household'] == context['household'] and other['mealPlanRules'] == rules
+    assert other['schedule'] is None
+    with pytest.raises(ApplicationError):
+        await household.update_preferences(planning_preferences={'mealSlots': [
+            {'id': 'dinner', 'name': 'Dinner', 'enabled': True, 'order': 0},
+            {'id': 'dinner', 'name': 'Duplicate', 'enabled': True, 'order': 1}]})
+    assert (await planning.get_context('2032-04-05'))['household'] == context['household']

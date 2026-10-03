@@ -142,3 +142,22 @@ async def test_uncertain_stock_missing_units_and_takeout_are_explicit():
     assert any("Check pantry quantity" in warning for warning in preview["warnings"])
     assert any("Popcorn" in warning for warning in preview["warnings"])
     assert not any(row["name"] == "Takeout pizza" for row in preview["items"])
+
+
+@pytest.mark.asyncio
+async def test_tasks_remain_available_without_display_preferences_and_meal_edits_preserve_them():
+    repo = DemoRepository()
+    household, planning = HouseholdService(repo), PlanningService(repo)
+    preferences = (await household.get_context())['planningPreferences']
+    saved = await planning.save_meal_plan({'weekStart': WEEK, 'entries': [{'date': WEEK, 'slot': 'dinner', 'meal': 'Dinner'}]})
+    saved = await planning.update_plan_item(WEEK, 'task', {'title': 'Prep dinner'})
+    edited = await planning.update_plan_item(WEEK, 'meal', {'id': saved['entries'][0]['id'], 'notes': 'Preserve tasks'})
+    assert edited['tasks'] == saved['tasks']
+    assert (await household.get_context())['planningPreferences'] == preferences
+    with pytest.raises(ApplicationError, match='Recipe was not found'):
+        await planning.update_plan_item(WEEK, 'task', {'title': 'Invalid prep', 'recipeId': 'missing'})
+    assert await planning.get_meal_plan(WEEK) == edited
+    with pytest.raises(ApplicationError, match='Recipe was not found'):
+        await planning.update_plan_item(WEEK, 'meal', {'date': WEEK, 'slot': 'lunch', 'meal': 'Invalid link',
+            'components': [{'name': 'Wrong recipe', 'source': 'cook', 'recipeId': 'missing'}]})
+    assert await planning.get_meal_plan(WEEK) == edited

@@ -728,8 +728,10 @@ def test_mcp_and_http_share_custom_slots_components_tasks_and_failures(client):
         slots = client.get('/api/household').json()["mealSlots"]
         slots.insert(0, {"id": "parents-am", "name": "Parents snack AM", "enabled": True})
         assert call("configure_meal_slots", {"slots": slots})["structuredContent"]["mealSlots"][0]["id"] == "parents-am"
+        preferences = client.get("/api/household").json()["planningPreferences"]
         created = call("save_meal_plan", {"plan": {"weekStart": WEEK, "entries": [{"date": WEEK, "slot": "parents-am", "meal": "Popcorn", "components": [{"name": "Popcorn", "quantity": 2, "unit": "portions"}]}], "tasks": [{"title": "Pack snacks"}]}})["structuredContent"]
         assert client.get(f'/api/meal-plan?week_start={WEEK}').json()["plan"] == created
+        assert client.get("/api/household").json()["planningPreferences"] == preferences
         assert call("get_planning_context", {"week_start": WEEK})["structuredContent"]["household"]["mealSlots"][0]["id"] == "parents-am"
         assert call("preview_plan_shopping", {"week_start": WEEK})["structuredContent"]["items"][0]["quantity"] == 2
         failed = call("update_plan_item", {"week_start": WEEK, "kind": "meal", "item": {"id": created["entries"][0]["id"], "slot": "prep"}})

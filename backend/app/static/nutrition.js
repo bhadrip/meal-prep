@@ -4,13 +4,6 @@
   const levels = {unknown: 0, low: 1, moderate: 2, high: 3};
   const labels = {unknown: 'Unknown', low: 'Lower', moderate: 'Moderate', high: 'Higher'};
   const macros = {protein: 'Protein', carbs: 'Carbs', fat: 'Fat', fiber: 'Fiber'};
-  const example = {
-    basis: 'Illustrative serving ideas, based on ingredients only. Costco product and portions are unverified.',
-    profiles: [
-      {name: 'Standard', serving: 'Steam or heat the teriyaki noodles as usual. Keep gochujang separate; offer tofu and vegetables alongside.', macros: {protein: 'low', carbs: 'high', fat: 'unknown', fiber: 'unknown'}, micronutrients: []},
-      {name: 'Protein-heavy', serving: 'Use the same noodles in a smaller portion. Add a generous serving of tofu and edamame, plus broccoli. Toss your plate with gochujang.', macros: {protein: 'high', carbs: 'moderate', fat: 'unknown', fiber: 'high'}, micronutrients: [{nutrient: 'Iron', source: 'Tofu and edamame'}, {nutrient: 'Vitamin C', source: 'Broccoli'}]}
-    ]
-  };
   function numeric(profile) {
     if (!profile.portion) return '';
     const approximate = profile.valueType !== 'label';
@@ -24,7 +17,7 @@
     const id = `nutrition-variation-${++switcherId}`;
     const standard = profiles.findIndex(profile => profile.name.toLocaleLowerCase() === 'standard');
     const selected = standard < 0 ? 0 : standard;
-    const controls = profiles.length > 1 ? `<div class="nutrition-toggle" role="group" aria-label="Nutrition variation">${profiles.map((profile, index) => `<button type="button" data-nutrition-variation="${index}" aria-pressed="${index === selected}" aria-controls="${id}-${index}">${esc(profile.name)}</button>`).join('')}</div>` : '';
+    const controls = profiles.length > 1 ? `<div class="nutrition-toggle" role="group" aria-label="Variation">${profiles.map((profile, index) => `<button type="button" data-nutrition-variation="${index}" aria-pressed="${index === selected}" aria-controls="${id}-${index}">${esc(profile.name)}</button>`).join('')}</div>` : '';
     return `<div class="nutrition-switcher">${controls}<div class="nutrition-profiles">${profiles.map((profile, index) => renderProfile(profile).replace('<article ', `<article id="${id}-${index}" data-nutrition-panel="${index}" ${index === selected ? '' : 'hidden'} `)).join('')}</div></div>`;
   }
   document.addEventListener('click', event => {
@@ -40,13 +33,25 @@
       || (profile.micronutrients || []).length > 0;
   }
   function render(value) {
-    if (!value?.profiles?.length) return '<p class="nutrition-unknown">Nutrition not added yet. Unknown does not mean zero.</p>';
-    return `<div class="nutrition-guide"><p class="nutrition-caption">${value.profiles.some(hasNutrition) ? 'Per plate · estimates or label values, not daily targets' : 'Choose a variation to see what changes'}</p>${switcher(value.profiles, profile => `<article class="nutrition-profile"><h4>${esc(profile.name)}</h4><p class="nutrition-serving">${esc(profile.serving)}</p>${hasNutrition(profile) ? `${numeric(profile)}<div class="nutrition-macros">${Object.entries(macros).map(([key, name]) => {const level = Object.hasOwn(levels, profile.macros?.[key]) ? profile.macros[key] : 'unknown'; return `<div class="nutrition-macro" data-nutrient="${key}" data-level="${level}"><span>${name}</span><span class="nutrition-segments" aria-hidden="true">${[1,2,3].map(n => `<i class="${n <= levels[level] ? 'filled' : ''}"></i>`).join('')}</span><b>${labels[level]}</b></div>`;}).join('')}</div><h5>Micronutrient food sources</h5>${profile.micronutrients?.length ? `<ul>${profile.micronutrients.map(micro => `<li><b>${esc(micro.nutrient)}</b>${microAmount(profile, micro)} · ${esc(micro.source)}</li>`).join('')}</ul>` : '<p class="nutrition-unknown">Sources not assessed</p>'}` : '<p class="nutrition-unknown">Nutrition not added for this variation.</p>'}</article>`)}${value.basis ? `<p class="nutrition-basis">Basis: ${esc(value.basis)}</p>` : ''}</div>`;
+    if (!value?.profiles?.length) return '';
+    return `<div class="nutrition-guide"><p class="nutrition-caption">${value.profiles.some(hasNutrition) ? 'Per plate · estimates or label values, not daily targets' : 'Choose a variation to see what changes'}</p>${switcher(value.profiles, profile => `<article class="nutrition-profile"><h4>${esc(profile.name)}</h4><p class="nutrition-serving">${esc(profile.serving)}</p>${hasNutrition(profile) ? `${numeric(profile)}<div class="nutrition-macros">${Object.entries(macros).map(([key, name]) => {const level = Object.hasOwn(levels, profile.macros?.[key]) ? profile.macros[key] : 'unknown'; return `<div class="nutrition-macro" data-nutrient="${key}" data-level="${level}"><span>${name}</span><span class="nutrition-segments" aria-hidden="true">${[1,2,3].map(n => `<i class="${n <= levels[level] ? 'filled' : ''}"></i>`).join('')}</span><b>${labels[level]}</b></div>`;}).join('')}</div>${profile.micronutrients?.length ? `<h5>Micronutrient food sources</h5><ul>${profile.micronutrients.map(micro => `<li><b>${esc(micro.nutrient)}</b>${microAmount(profile, micro)} · ${esc(micro.source)}</li>`).join('')}</ul>` : ''}` : ''}</article>`)}${value.basis && value.profiles.some(hasNutrition) ? `<p class="nutrition-basis">Basis: ${esc(value.basis)}</p>` : ''}</div>`;
   }
   function renderWeek(summary) {
-    if (!summary?.profiles?.length) return '<section class="nutrition-card weekly-nutrition"><h3>Weekly nutrition</h3><p class="nutrition-unknown">No nutrition recorded for this week. Add serving values to planned meals to compare plates across the week.</p></section>';
+    const profiles = (summary?.profiles || []).filter(profile => Object.values(profile.amounts || {}).some(amount => amount.total != null) || profile.micronutrients?.length);
+    if (!profiles.length) return '';
     const coverage = count => `${count} of ${summary.mealCount} meals`;
-    return `<section class="nutrition-card weekly-nutrition"><h3>Weekly nutrition · known totals</h3><p class="nutrition-caption">${esc(summary.basis)}</p>${switcher(summary.profiles, profile => `<article class="nutrition-profile" data-weekly-profile="${esc(profile.name)}"><h4>${esc(profile.name)}</h4><p class="nutrition-caption">${esc(profile.plannedPlates)} planned plates · ${esc(summary.mealCount)} meals in plan</p><dl class="weekly-nutrition-numbers">${Object.entries({calories: 'Calories', ...macros}).map(([key, title]) => {const value = profile.amounts[key]; return `<div><dt>${title}</dt><dd data-weekly-amount="${key}">${value.total == null ? 'Unknown' : `${esc(value.total)} ${key === 'calories' ? 'kcal' : 'g'}`}</dd><small>${coverage(value.coveredMeals)} recorded</small></div>`;}).join('')}</dl><h5>Micronutrients · known totals</h5>${profile.micronutrients.length ? `<ul>${profile.micronutrients.map(m => `<li>${esc(m.nutrient)} · ${esc(m.total)} ${esc(m.unit)} <small>(${coverage(m.coveredMeals)})</small></li>`).join('')}</ul>` : '<p class="nutrition-unknown">Numeric amounts not recorded</p>'}</article>`)}</section>`;
+    return `<section class="nutrition-card weekly-nutrition"><h3>Weekly nutrition · known totals</h3><p class="nutrition-caption">${esc(summary.basis)}</p>${switcher(profiles, profile => `<article class="nutrition-profile" data-weekly-profile="${esc(profile.name)}"><h4>${esc(profile.name)}</h4><p class="nutrition-caption">${esc(profile.plannedPlates)} planned plates · ${esc(summary.mealCount)} meals in plan</p><dl class="weekly-nutrition-numbers">${Object.entries({calories: 'Calories', ...macros}).map(([key, title]) => {const value = profile.amounts[key]; return `<div><dt>${title}</dt><dd data-weekly-amount="${key}">${value.total == null ? 'Unknown' : `${esc(value.total)} ${key === 'calories' ? 'kcal' : 'g'}`}</dd><small>${coverage(value.coveredMeals)} recorded</small></div>`;}).join('')}</dl>${profile.micronutrients.length ? `<h5>Micronutrients · known totals</h5><ul>${profile.micronutrients.map(m => `<li>${esc(m.nutrient)} · ${esc(m.total)} ${esc(m.unit)} <small>(${coverage(m.coveredMeals)})</small></li>`).join('')}</ul>` : ''}</article>`)}</section>`;
   }
-  window.MealNutrition = {render, renderWeek, example, macros, labels, hasNutrition};
+  function title(value) {
+    return value.profiles.some(hasNutrition) ? 'Nutrition &amp; variations' : 'Variations';
+  }
+  function renderCard(value) {
+    const content = render(value);
+    return content ? `<section class="nutrition-card recipe-nutrition"><h3>${title(value)}</h3>${content}</section>` : '';
+  }
+  function renderDetails(value) {
+    const content = render(value);
+    return content ? `<details class="nutrition-details"><summary>${title(value)}</summary>${content}</details>` : '';
+  }
+  window.MealNutrition = {render, renderCard, renderDetails, renderWeek, macros, labels, hasNutrition};
 })();
