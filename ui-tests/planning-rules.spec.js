@@ -292,3 +292,56 @@ test('weekly plan preferences save household defaults, meal rules, and weekly ne
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+
+test('initial setup uses the weekly preference editor, retains failed answers, and leaves Settings without duplicate forms', async ({page}) => {
+  let incomplete = true;
+  let fail = true;
+  await page.route('**/api/app/bootstrap?*', async route => {
+    const data = await (await route.fetch()).json();
+    if (incomplete) Object.assign(data.snapshot.household, {
+      onboardingComplete:false, householdSize:null, dietaryRestrictions:null, storePriority:[],
+      planningPreferences:{...data.snapshot.household.planningPreferences,weeknightMaxMinutes:null,leftoversForLunch:undefined}
+    });
+    await route.fulfill({json:data});
+  });
+  await page.route('**/api/household', async route => {
+    if (route.request().method() !== 'PATCH') return route.continue();
+    if (fail) return route.fulfill({status:503,json:{detail:'Could not save setup'}});
+    const response = await route.fetch();
+    if (response.ok()) incomplete = false;
+    await route.fulfill({response});
+  });
+  await page.goto('/app?view=settings');
+  await expect(page).toHaveURL(/view=plan.*tab=rules/);
+  await expect(page.getByRole('tab',{name:'Preferences',exact:true})).toHaveAttribute('aria-selected','true');
+  const form=page.locator('#settings-form');
+  await expect(form).toHaveCount(1);
+  await form.getByLabel('People in household').fill('2');
+  await form.getByLabel('Maximum weeknight cooking minutes').fill('20');
+  await form.getByLabel('Dietary restrictions').fill('none');
+  await form.getByLabel('Preferred stores, in order').fill('Local market');
+  const before=await (await page.request.get('/api/household')).json();
+  await form.getByRole('button',{name:'Save preferences',exact:true}).click();
+  await expect(page.locator('#toast')).toHaveText('Could not save setup');
+  await expect(form.getByLabel('People in household')).toHaveValue('2');
+  expect(await (await page.request.get('/api/household')).json()).toEqual(before);
+  fail=false;
+  await form.getByRole('button',{name:'Save preferences',exact:true}).click();
+  await expect(page.locator('#toast')).toHaveText('Preferences saved.');
+  const saved=await (await page.request.get('/api/planning-context?week_start=2030-02-04')).json();
+  expect(saved.household).toMatchObject({householdSize:2,dietaryRestrictions:[],storePriority:[{store:'Local market',priority:1}]});
+  expect(saved.household.planningPreferences.weeknightMaxMinutes).toBe(20);
+  await page.locator('.sidebar [data-view="settings"]').click();
+  await expect(page.locator('#view-title')).toHaveText('Settings');
+  await expect(form).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Edit meal slots',exact:true})).toHaveCount(0);
+  await expect(page.locator('#dashboard-form')).toBeVisible();
+  await page.reload();
+  await expect(form).toHaveCount(0);
+  await page.locator('.sidebar [data-view="plan"]').click();
+  await page.getByRole('tab',{name:'Preferences',exact:true}).click();
+  await expect(form.getByLabel('People in household')).toHaveValue('2');
+  await expect(form.getByLabel('Preferred stores, in order')).toHaveValue('Local market');
+  await expect(page.getByRole('button',{name:'Edit meal slots',exact:true})).toBeVisible();
+});

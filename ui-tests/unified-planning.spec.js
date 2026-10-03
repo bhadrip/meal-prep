@@ -52,7 +52,7 @@ async function addComponent(page, row, data) {
 }
 
 test('households add, reorder, rename, and disable slots without losing planned meals', async ({ page }) => {
-  await page.goto('/app?view=settings');
+  await page.goto(`/app?view=plan&tab=rules&week=${week}`);
   await page.getByRole('button', { name: 'Edit meal slots' }).click();
   await editor(page).getByRole('button', { name: 'Add slot', exact: true }).click();
   const slot = editor(page).locator('[data-slot-id]').last();
@@ -71,7 +71,7 @@ test('households add, reorder, rename, and disable slots without losing planned 
   const meal = page.locator('.meal').filter({ hasText: 'School popcorn' });
   await expect(meal).toContainText('Kids snack AM');
   const before = (await request(page, 'get', `/api/meal-plan?week_start=${week}`)).plan;
-  await page.goto('/app?view=settings');
+  await page.goto(`/app?view=plan&tab=rules&week=${week}`);
   await page.getByRole('button', { name: 'Edit meal slots' }).click();
   const row = editor(page).locator(`[data-slot-id="${id}"]`);
   await row.getByLabel('Slot name').fill(`School snack ${id.slice(0, 6)}`);
