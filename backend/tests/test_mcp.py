@@ -761,7 +761,17 @@ def test_mcp_searchable_meal_category_and_http_plan_roundtrip_preserve_copies(cl
         'meal_id': meal['id'], 'planned_date': '2038-01-04', 'slot': 'dinner', 'servings': 4}})['structuredContent']
     entry = next(row for row in planned['entries'] if row['sourceMeal'] and row['sourceMeal']['id'] == meal['id'])
     assert entry['components'][0]['quantity'] == 8
-    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == planned
+    recipe = client.put('/api/recipes', json={'title': f'Teriyaki {suffix}', 'servings': 4,
+        'ingredients': [{'name': 'Udon', 'quantity': 400, 'unit': 'g'}]}).json()
+    quick = rpc(client, 'tools/call', {'name': 'plan_recipe', 'arguments': {'week_start': '2038-01-04',
+        'recipe_id': recipe['id'], 'planned_date': '2038-01-04', 'slot': 'dinner', 'servings': 2,
+        'notes': 'More tofu'}})['structuredContent']
+    assert quick['entries'][-1]['components'][0]['recipeId'] == recipe['id']
+    assert quick['entries'][-1]['notes'] == 'More tofu'
+    missing = rpc(client, 'tools/call', {'name': 'plan_recipe', 'arguments': {'week_start': '2038-01-04',
+        'recipe_id': str(uuid4()), 'planned_date': '2038-01-04', 'slot': 'dinner'}})
+    assert missing['isError']
+    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == quick
     invalid = rpc(client, 'tools/call', {'name': 'save_meal', 'arguments': {'meal': {**meal, 'components': []}}})
     assert invalid['isError'] and 'component' in str(invalid['content'])
     assert client.get(f"/api/meals/{meal['id']}").json() == meal
@@ -771,7 +781,7 @@ def test_mcp_searchable_meal_category_and_http_plan_roundtrip_preserve_copies(cl
     assert archive['archivedAt']
     rejected = client.post(f"/api/meals/{meal['id']}/plan", json={'weekStart': '2038-01-04', 'date': '2038-01-04', 'slot': 'dinner'})
     assert rejected.status_code == 422
-    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == planned
+    assert client.get('/api/meal-plan', params={'week_start': '2038-01-04'}).json()['plan'] == quick
     resource = rpc(client, 'resources/read', {'uri': 'ui://meal-prep/recipe-library-v1.html'})['contents'][0]['text']
     assert '/static/choices.js' not in resource
     metadata = next(tool for tool in rpc(client, 'tools/list', {})['tools'] if tool['name'] == 'render_meal_library')

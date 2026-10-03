@@ -94,6 +94,12 @@
         <div class="dialog-actions"><button class="button ghost" type="submit" value="cancel" formnovalidate>Cancel</button><button class="button primary" id="dialog-save" type="submit">Save</button></div>
       </form>
     </dialog>
+    <dialog id="planned-meal-dialog" aria-labelledby="planned-meal-title">
+      <div class="dialog-card planned-meal-card">
+        <div class="dialog-head"><div><p class="eyebrow">Weekly plan</p><h2 id="planned-meal-title"></h2></div><button class="icon-button" type="button" data-action="close-planned-meal" aria-label="Close meal details">×</button></div>
+        <div id="planned-meal-body"></div>
+      </div>
+    </dialog>
     <div class="toast" id="toast" role="status"></div>
   </body>
 </html>

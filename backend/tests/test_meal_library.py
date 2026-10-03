@@ -50,6 +50,38 @@ async def test_saved_meal_scales_copies_and_recipe_demand_without_consuming_stoc
 
 
 @pytest.mark.asyncio
+async def test_quick_plan_uses_selected_food_with_servings_and_occurrence_notes_only():
+    repo, service, food, dal, meal = await example()
+    planned = await service.plan_recipe(WEEK, dal['id'], WEEK, 'dinner', 2, 'Extra chili')
+    entry = planned['entries'][0]
+    assert entry['meal'] == 'Dal' and entry['servings'] == 2 and entry['notes'] == 'Extra chili'
+    assert entry['components'][0]['recipeId'] == dal['id']
+    assert entry['components'][0]['recipeSnapshot']['ingredients'][0]['quantity'] == 200
+    assert (await food.get_recipe(dal['id']))['title'] == 'Dal'
+    planned = await service.plan_saved_meal(WEEK, meal['id'], '2030-02-05', 'dinner', 2, '')
+    saved_entry = planned['entries'][1]
+    assert saved_entry['notes'] == '' and saved_entry['servings'] == 2
+    assert saved_entry['components'][0]['quantity'] == 4
+    assert (await service.meals.get(meal['id']))['notes'] == 'Easy family dinner'
+    ready_food = await food.save_recipe({'title': 'Ready rotis', 'kind': 'ready_food'})
+    planned = await service.plan_recipe(WEEK, ready_food['id'], '2030-02-06', 'dinner', 3)
+    assert planned['entries'][2]['components'][0]['source'] == 'ready'
+    assert planned['entries'][2]['components'][0]['action'] == 'serve'
+    before = await service.get_meal_plan(WEEK)
+    for recipe_id, servings in ((str(uuid4()), 2), (dal['id'], -1)):
+        with pytest.raises(ApplicationError):
+            await service.plan_recipe(WEEK, recipe_id, WEEK, 'dinner', servings)
+        assert await service.get_meal_plan(WEEK) == before
+    with pytest.raises(ApplicationError):
+        await service.plan_saved_meal(WEEK, meal['id'], WEEK, 'dinner', 2, 'x' * 3001)
+    assert await service.get_meal_plan(WEEK) == before
+    await food.archive_recipe(dal['id'])
+    with pytest.raises(ApplicationError, match='Recipe was not found'):
+        await service.plan_recipe(WEEK, dal['id'], WEEK, 'dinner')
+    assert await service.get_meal_plan(WEEK) == before
+
+
+@pytest.mark.asyncio
 async def test_library_edits_archives_and_recipe_edits_preserve_planned_snapshots():
     repo, service, food, dal, meal = await example()
     plan = await service.plan_saved_meal(WEEK, meal['id'], WEEK, 'dinner')

@@ -476,9 +476,17 @@ async def archive_meal(meal_id: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=APPEND, structured_output=True)
-async def plan_saved_meal(week_start: str, meal_id: str, planned_date: str, slot: str, servings: float | None = None) -> dict[str, Any]:
-    """Add a dated copy of a reusable meal to a week without replacing other choices. Scale component quantities from default servings; snapshot current recipe ingredients and saved-meal revision. Stock stays unchanged. Use an enabled household slot."""
-    return await services_for_request().planning.plan_saved_meal(week_start, meal_id, planned_date, slot, servings)
+async def plan_saved_meal(week_start: str, meal_id: str, planned_date: str, slot: str, servings: float | None = None,
+                          notes: str | None = None) -> dict[str, Any]:
+    """Add a dated copy of a reusable meal to a week. Optionally override servings and notes for this occurrence. Scale component quantities; snapshot recipe ingredients and meal revision. Stock stays unchanged."""
+    return await services_for_request().planning.plan_saved_meal(week_start, meal_id, planned_date, slot, servings, notes)
+
+
+@mcp.tool(annotations=APPEND, structured_output=True)
+async def plan_recipe(week_start: str, recipe_id: str, planned_date: str, slot: str, servings: float | None = None,
+                      notes: str | None = None) -> dict[str, Any]:
+    """Add a household recipe or ready food to a weekly meal slot with optional servings and notes. Save a dated component and recipe snapshot; do not alter the library recipe or pantry stock."""
+    return await services_for_request().planning.plan_recipe(week_start, recipe_id, planned_date, slot, servings, notes)
 
 
 @mcp.tool(annotations=APPEND, structured_output=True)
