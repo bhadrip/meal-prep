@@ -598,23 +598,22 @@ function renderPlanningRules() {
 }
 
 function renderPlan() {
-  const tabs = `<div class="planning-tabs" role="tablist" aria-label="Weekly plan sections">${[['plan', 'Plan'], ['rules', 'Planning rules']].map(([id, name]) => `<button type="button" role="tab" id="planning-tab-${id}" aria-selected="${state.planTab === id}" aria-controls="planning-panel" tabindex="${state.planTab === id ? '0' : '-1'}" data-action="plan-tab" data-id="${id}">${name}</button>`).join('')}</div>`;
-  if (state.planTab === 'rules') return `${tabs}<section id="planning-panel" role="tabpanel" aria-labelledby="planning-tab-rules">${renderPlanningRules()}</section>`;
+  const tabs = `<div class="planning-tabs" role="tablist" aria-label="Weekly plan sections">${[['plan', 'Plan'], ['rules', 'Preferences']].map(([id, name]) => `<button type="button" role="tab" id="planning-tab-${id}" aria-selected="${state.planTab === id}" aria-controls="planning-panel" tabindex="${state.planTab === id ? '0' : '-1'}" data-action="plan-tab" data-id="${id}">${name}</button>`).join('')}</div>`;
+  if (state.planTab === 'rules') return `${tabs}<section id="planning-panel" role="tabpanel" aria-labelledby="planning-tab-rules">${renderPlanPreferences()}</section>`;
   const plan = state.plan;
   const schedule = state.schedule;
   const count = arr(plan?.entries).length;
-  let html = `<div class="toolbar plan-toolbar"><label class="field">Week of<input id="week-picker" type="date" value="${esc(state.weekStart)}" /></label><div class="plan-actions">${action('Edit weekly rhythm', 'edit-schedule')}${action('Shopping needs', 'shopping-preview')}${action('Use saved meal', 'use-saved-meal')}${action('Add task', 'add-task')}${action('Add meal', 'add-meal', '', 'primary')}</div></div>
+  let html = `<div class="toolbar plan-toolbar"><label class="field">Week of<input id="week-picker" type="date" value="${esc(state.weekStart)}" /></label><div class="plan-actions">${action('Shopping needs', 'shopping-preview')}${action('Use saved meal', 'use-saved-meal')}${action('Add task', 'add-task')}${action('Add meal', 'add-meal', '', 'primary')}</div></div>
     <div class="plan-summary"><p>${esc(label(plan?.status || 'Draft'))} · ${count} meals · ${arr(plan?.tasks).length} tasks</p>${plan?.ruleRevision ? `<button type="button" class="text-button" id="plan-rule-source" data-action="view-rule-revision" data-id="${esc(plan.ruleRevision.id)}">Rules used: version ${esc(plan.ruleRevision.revision)}</button>` : ''}</div>
     <div class="week-notes-row"><details id="week-notes"><summary>Notes for this week${schedule?.notes ? '<span class="notes-indicator">Added</span>' : ''}</summary><p class="planning-text">${esc(schedule?.notes || 'Add guests, ingredients to use, or other changes for this week.')}</p></details>${action('Edit notes', 'edit-week-notes')}</div>`;
-  if (!plan && !schedule) html += '<p class="muted tiny open-week">This week is open. Add a meal or set your weekly rhythm to begin.</p>';
+  if (!plan && !schedule) html += '<p class="muted tiny open-week">This week is open. Add a meal or update your planning preferences to begin.</p>';
   html += MealNutrition.renderWeek(plan?.nutritionSummary);
   html += `<div class="week-grid">${DAYS.map((day, index) => {
     const date = dateForDay(state.weekStart, index);
-    const rhythm = arr(schedule?.days).find((entry) => entry.day === day);
     const entries = arr(plan?.entries).filter((entry) => entry.date === date).sort((a, b) => slotOrder(a) - slotOrder(b));
     const tasks = arr(plan?.tasks).filter((task) => task.date === date);
     const displayDate = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(displayDate)} · ${esc(rhythm?.mode || 'Flexible')}</span>${entries.length ? entries.map(mealMarkup).join('') : '<p class="muted tiny">No meals planned</p>'}<button class="button ghost small day-add" data-action="add-meal" data-id="${esc(date)}" aria-label="Add meal to ${day}">+ Add meal</button><div class="day-tasks"><h4>Tasks</h4>${tasks.map(taskMarkup).join('')}<button class="button ghost small" data-action="add-task" data-id="${esc(date)}" aria-label="Add task to ${day}">+ Add task</button></div></div>`;
+    return `<div class="day-card"><b>${day}</b><span class="mode">${esc(displayDate)}</span>${entries.length ? entries.map(mealMarkup).join('') : '<p class="muted tiny">No meals planned</p>'}<button class="button ghost small day-add" data-action="add-meal" data-id="${esc(date)}" aria-label="Add meal to ${day}">+ Add meal</button><div class="day-tasks"><h4>Tasks</h4>${tasks.map(taskMarkup).join('')}<button class="button ghost small" data-action="add-task" data-id="${esc(date)}" aria-label="Add task to ${day}">+ Add task</button></div></div>`;
   }).join('')}</div>`;
   const otherTasks = arr(plan?.tasks).filter((task) => !task.date || task.date < state.weekStart || task.date > dateForDay(state.weekStart, 6));
   if (otherTasks.length) html += `<article class="card other-tasks"><h3>Other dates & unscheduled tasks</h3>${otherTasks.map((task) => `<p class="tiny">${esc(task.date || 'No date set')}</p>${taskMarkup(task)}`).join('')}</article>`;
@@ -833,15 +832,40 @@ function renderReviews() {
   return html;
 }
 
-function renderSettings() {
+function renderHouseholdPreferences() {
   const h = household();
   const prefs = h.planningPreferences || {};
   const focus = arr(prefs.focusAreas);
-  const { order, hidden } = dashboardLayout();
   const restrictions = h.dietaryRestrictions === null || h.dietaryRestrictions === undefined
     ? '' : arr(h.dietaryRestrictions).length ? h.dietaryRestrictions.join(', ') : 'none';
   const stores = arr(h.storePriority).sort((a, b) => a.priority - b.priority).map((item) => item.store).join(', ');
   const focusChoices = FOCUS.map((area) => `<label class="planning-choice"><input type="checkbox" name="focusAreas" value="${area}" ${focus.includes(area) ? 'checked' : ''} /><span>${esc(label(area))}</span></label>`).join('');
+  return `    <article class="card"><div class="card-head"><h3>Household preferences</h3><span class="card-icon">⚙</span></div>
+      <form id="settings-form" class="form-grid">
+        ${field('householdSize', 'People in household', h.householdSize ?? '', { type: 'number', min: 1, max: 30, required: true })}
+        ${field('weeknightMaxMinutes', 'Maximum weeknight cooking minutes', prefs.weeknightMaxMinutes ?? '', { type: 'number', min: 1, max: 240, required: true })}
+        ${field('dietaryRestrictions', 'Dietary restrictions — enter none if there are none', restrictions, { required: true, wide: true })}
+        ${field('stores', 'Preferred stores, in order', stores, { required: true, wide: true, placeholder: 'Costco, Safeway' })}
+        <fieldset class="field wide planning-field"><legend>Planning areas</legend><div class="planning-areas">${focusChoices}</div></fieldset>
+        <label class="field wide toggle-field"><span>Plan dinner leftovers for lunch</span><input name="leftoversForLunch" type="checkbox" ${prefs.leftoversForLunch ? 'checked' : ''} /></label>
+        <div class="field wide"><button class="button primary" type="submit">Save preferences</button></div>
+      </form>
+    </article>
+    <article class="card"><div class="card-head"><h3>Meal slots</h3>${action('Edit meal slots', 'edit-meal-slots')}</div><p class="muted tiny">${mealSlots().map((slot) => `${esc(slot.name)}${slot.enabled ? '' : ' (disabled)'}`).join(' → ')}</p></article>
+`;
+}
+
+function renderPlanPreferences() {
+  if (state.ruleRevisionId) return renderPlanningRules();
+  const notes = state.schedule?.notes;
+  return `<div class="section-head"><div><h2>Planning preferences</h2><p>Household preferences apply every week. Use this week’s notes for guests, ingredients to use, or a change in cooking plans.</p></div></div>
+    <div class="preferences-grid">${renderHouseholdPreferences()}</div>
+    ${card(`This week · ${state.weekStart}`, '▦', `<p class="planning-text">${esc(notes || 'No changes for this week.')}</p>`, action('Edit notes', 'edit-week-notes'))}
+    ${renderPlanningRules()}`;
+}
+
+function renderSettings() {
+  const { order, hidden } = dashboardLayout();
   const cardRows = order.map((id, index) => `<div class="card-order-row" data-card-id="${id}"><label class="toggle-field"><span>${esc(CARD_NAMES[id])}</span><input type="checkbox" name="visibleCard" value="${id}" ${hidden.includes(id) ? '' : 'checked'} /></label><div class="card-order-buttons"><button class="icon-button" type="button" data-action="card-up" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} up" ${index === 0 ? 'disabled' : ''}>↑</button><button class="icon-button" type="button" data-action="card-down" data-id="${id}" aria-label="Move ${esc(CARD_NAMES[id])} down" ${index === order.length - 1 ? 'disabled' : ''}>↓</button></div></div>`).join('');
   const members = arr(state.access?.members);
   const invitations = arr(state.access?.invitations);
@@ -861,18 +885,7 @@ function renderSettings() {
     ${state.access?.role && state.access.role !== 'owner' ? `<div style="margin-top:16px">${action('Leave this household', 'leave-household', '', 'danger')}</div>` : ''}
   </article>` : '';
   return `<div class="settings-grid"><div class="stack">
-    <article class="card"><div class="card-head"><h3>Household preferences</h3><span class="card-icon">⚙</span></div>
-      <form id="settings-form" class="form-grid">
-        ${field('householdSize', 'People in household', h.householdSize ?? '', { type: 'number', min: 1, max: 30, required: true })}
-        ${field('weeknightMaxMinutes', 'Maximum weeknight cooking minutes', prefs.weeknightMaxMinutes ?? '', { type: 'number', min: 1, max: 240, required: true })}
-        ${field('dietaryRestrictions', 'Dietary restrictions — enter none if there are none', restrictions, { required: true, wide: true })}
-        ${field('stores', 'Preferred stores, in order', stores, { required: true, wide: true, placeholder: 'Costco, Safeway' })}
-        <fieldset class="field wide planning-field"><legend>Planning areas</legend><div class="planning-areas">${focusChoices}</div></fieldset>
-        <label class="field wide toggle-field"><span>Plan dinner leftovers for lunch</span><input name="leftoversForLunch" type="checkbox" ${prefs.leftoversForLunch ? 'checked' : ''} /></label>
-        <div class="field wide"><button class="button primary" type="submit">Save household setup</button></div>
-      </form>
-    </article>
-    <article class="card"><div class="card-head"><h3>Meal slots</h3>${action('Edit meal slots', 'edit-meal-slots')}</div><p class="muted tiny">${mealSlots().map((slot) => `${esc(slot.name)}${slot.enabled ? '' : ' (disabled)'}`).join(' → ')}</p></article>
+    ${renderHouseholdPreferences()}
     <article class="card"><div class="card-head"><h3>Dashboard cards</h3><span class="card-icon">▦</span></div>
       <p class="muted tiny" style="margin-bottom:14px">Choose the cards and order under “More from your household” and in the chat dashboard.</p>
       <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save dashboard</button></form>
@@ -1122,15 +1135,12 @@ function openEditor(kind, item = null, selectedDate = null) {
   } else if (kind === 'shopping') {
     title = item ? 'Edit grocery item' : 'Add grocery item';
     markup = field('name', 'Item name', item?.name, { required: true, wide: true }) + field('quantity', 'Quantity', item?.quantity, { type: 'number', min: 0.001, step: 'any' }) + field('unit', 'Unit', item?.unit) + field('store', 'Where do you generally buy this? (optional)', item?.store || '', { placeholder: 'Costco, Trader Joe’s…', wide: true }) + (item ? field('listName', 'List name', section('shoppingList')?.name || 'Weekly groceries', { wide: true }) : '');
-  } else if (kind === 'schedule') {
-    title = 'Weekly rhythm';
-    markup = `<p class="muted tiny wide">Week of ${esc(state.weekStart)} · Set the pace for each day.</p>` + DAYS.map((day) => field(day, day, arr(state.schedule?.days).find((item) => item.day === day)?.mode || 'flexible', { choices: ['flexible', 'quick', 'cook', 'leftovers', 'takeout', 'busy', 'prep'] })).join('');
   } else if (kind === 'week-notes') {
     title = 'Notes for this week';
     markup = `<p class="muted tiny wide">Week of ${esc(state.weekStart)} · Changes that apply only to this week.</p>` + field('notes', 'Guests, ingredients to use, or other changes', item?.notes || '', { type: 'textarea', wide: true, placeholder: 'Guests on Saturday; use the spinach left from last week.' });
   } else if (kind === 'planning-rules') {
     title = 'Planning rules';
-    markup = '<p class="muted tiny wide">Describe recurring meals, weekend prep, and leftovers in your own words. Each change saves a new version. Leave blank to clear the rules.</p>' + field('text', 'Your usual week', item?.text || '', { type: 'textarea', wide: true, placeholder: 'Saturday dinner is pasta. Bulk cook ambta baaji for Tuesday and Thursday. Rotate newly cooked recipes; leftovers are welcome.' });
+    markup = '<p class="muted tiny wide">Describe meal preferences, nutrition goals, favourite meals, prep, and leftovers in your own words. Each change saves a new version. Leave blank to clear the rules.</p>' + field('text', 'Your usual week', item?.text || '', { type: 'textarea', wide: true, placeholder: 'Prefer protein-heavy variations when available. Keep Tuesday dinner quick. Cook pasta Saturday and use leftovers for lunch.' });
   } else if (kind === 'weekly-review') {
     title = 'Review this week';
     markup = field('weekStart', 'Week of', state.weekStart || monday(), { type: 'date', required: true }) + field('feedbackType', 'How did it go?', 'worked_well', { choices: [{ value: 'worked_well', label: 'Worked well' }, { value: 'problem', label: 'Did not work' }, { value: 'change_next_time', label: 'Change next time' }] }) + field('note', 'What happened?', '', { type: 'textarea', required: true, wide: true, placeholder: 'For example, prepping vegetables on Sunday saved time.' }) + field('nextTime', 'Lesson learned or change for next time (optional)', '', { type: 'textarea', wide: true });
@@ -1197,8 +1207,6 @@ async function submitEditor(data) {
     } else {
       await save('/api/shopping-list/items', 'POST', { item: updated, listId: list?.id || null });
     }
-  } else if (kind === 'schedule') {
-    await save('/api/schedule', 'PUT', { weekStart: state.weekStart, days: DAYS.map((day) => ({ day, mode: value(day) })), isNormalWeek: state.schedule?.is_normal_week ?? true, rememberRhythm: state.schedule?.remember_rhythm ?? true });
   } else if (kind === 'week-notes') {
     await save('/api/schedule', 'PUT', { weekStart: state.weekStart, days: item?.days || DAYS.map((day) => ({ day, mode: 'flexible' })), notes: value('notes'), isNormalWeek: item?.is_normal_week ?? true, rememberRhythm: item?.remember_rhythm ?? true });
   } else if (kind === 'planning-rules') {
@@ -1593,7 +1601,6 @@ async function handleAction(actionName, id) {
     await save('/api/shopping-list', 'PUT', { id: list.id, name: list.name, status: list.status, mealPlanId: list.mealPlanId, items: shopping.filter((entry) => entry.id !== id) });
     return refresh('Grocery item removed.');
   }
-  if (actionName === 'edit-schedule') return openEditor('schedule');
   if (actionName === 'edit-week-notes') return openEditor('week-notes', state.schedule);
   if (actionName === 'plan-tab') return openPlanTab(id);
   if (actionName === 'view-rule-revision') return openPlanTab('rules', id);
@@ -1845,7 +1852,7 @@ content.addEventListener('submit', async (event) => {
       showToast('Dashboard saved.');
       return;
     }
-    await refresh('Settings saved.');
+    await refresh(event.target.id === 'settings-form' ? 'Preferences saved.' : 'Settings saved.');
   } catch (error) { showToast(error.message); }
   finally { submit.disabled = false; }
 });

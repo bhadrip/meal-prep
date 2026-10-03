@@ -435,3 +435,7 @@ from variation names. The editor starts with no variations; saved choices alone
 populate the toggle, and removing all variations clears it.
 
 Show nutrition only when saved facts or assessments exist. Do not insert demonstration meals, previews, or empty nutrition cards in the website or MCP App. Saved preparation-only variations remain visible as variations, without empty nutrition messages. Weekly numeric summaries contain only variations with at least one recorded number (zero is a recorded value); notes and qualitative levels alone do not create weekly totals.
+
+## Planning preferences in one place
+
+The website's Weekly plan → Preferences area groups household food restrictions, size, cooking time, leftover defaults, stores, planning areas, meal slots, recurring meal/nutrition preferences, and changes for the selected week. The separate weekly-rhythm editor is removed. For direct clients, use the same saved data through `get_planning_context`, `update_household_preferences`, `configure_meal_slots`, `save_meal_plan_rules`, and schedule notes. Keep recurring preferences in household settings or English meal-plan rules; one-time needs belong in the selected week's notes. Do not require users to classify every day as quick, busy, cook, or prep before planning. Existing schedule records remain readable; editing notes preserves saved days.
