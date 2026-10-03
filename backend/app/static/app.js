@@ -217,7 +217,7 @@ async function refresh(message) {
   state.ruleHistory = null;
   if (!state.weekStart) state.weekStart = monday();
   if (household().onboardingComplete === false && !state.pendingInvites.length) {
-    view('settings', 'replace');
+    view('plan', 'replace', 'rules');
     return;
   }
   render();
@@ -412,7 +412,7 @@ function renderOverview() {
   const pending = arr(shopping?.items).filter((item) => !item.purchased).length;
   const memories = arr(section('memories'));
   const incomplete = h.onboardingComplete === false;
-  let html = incomplete ? `<div class="callout"><b>Set up your kitchen.</b><p>Add your household’s food rules and weekly preferences to get started.</p>${action('Set up household', 'settings')}</div>` : renderToday();
+  let html = incomplete ? `<div class="callout"><b>Set up your kitchen.</b><p>Add your household’s food rules and weekly preferences to get started.</p>${action('Set up household', 'planning-preferences')}</div>` : renderToday();
   if (state.pendingInvites.length) html = `<div class="callout"><b>Household invitation waiting</b><p>You have an invitation to join ${esc(state.pendingInvites[0].householdName)}.</p>${action('Review invitation', 'review-invite')}</div>` + html;
   html += `<details id="household-dashboard" class="household-dashboard" ${state.dashboardExpanded ? 'open' : ''}><summary>More from your household <span>Saved preferences, recipes & notes</span></summary>`;
   if (!state.dashboardExpanded) return html + '</details>';
@@ -893,7 +893,6 @@ function renderSettings() {
     ${state.access?.role && state.access.role !== 'owner' ? `<div style="margin-top:16px">${action('Leave this household', 'leave-household', '', 'danger')}</div>` : ''}
   </article>` : '';
   return `<div class="settings-grid"><div class="stack">
-    ${renderHouseholdPreferences()}
     <article class="card"><div class="card-head"><h3>Dashboard cards</h3><span class="card-icon">▦</span></div>
       <p class="muted tiny" style="margin-bottom:14px">Choose the cards and order under “More from your household” and in the chat dashboard.</p>
       <form id="dashboard-form" class="stack">${cardRows}<button class="button ghost" type="submit">Save dashboard</button></form>
@@ -946,11 +945,11 @@ function recipeSearchParams(ui) {
   return params;
 }
 
-function view(name, historyMode = 'push') {
+function view(name, historyMode = 'push', planTab = 'plan') {
   if (name === 'pantry' && state.view !== 'pantry') state.pantrySection = 'items';
   if (name === 'overview') state.weekStart = monday();
   state.view = name;
-  state.planTab = 'plan';
+  state.planTab = planTab;
   state.ruleRevisionId = null;
   state.rulePreview = null;
   state.rulePreviewError = null;
@@ -1234,6 +1233,7 @@ async function submitEditor(data) {
 }
 
 async function handleAction(actionName, id) {
+  if (actionName === 'planning-preferences') return view('plan', 'push', 'rules');
   if (actionName === 'today-mode') {
     state.todayMode = id; render(); return;
   }
@@ -1946,10 +1946,7 @@ async function start() {
     document.querySelector('#account-label').textContent = 'Local demo';
   }
   await refresh();
-  if (household().onboardingComplete === false && !state.pendingInvites.length) {
-    view('settings', 'replace');
-    return;
-  }
+  if (household().onboardingComplete === false && !state.pendingInvites.length) return;
   if (route.recipeId) { await loadRecipe(route.recipeId); render(); }
 }
 

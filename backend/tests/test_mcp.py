@@ -607,6 +607,7 @@ def test_household_dashboard_exposes_chat_configured_individual_cards(client: Te
 
 
 def test_household_onboarding_can_be_completed_only_with_full_answers(client: TestClient):
+    before = client.get("/api/household").json()
     incomplete = rpc(
         client,
         "tools/call",
@@ -618,6 +619,8 @@ def test_household_onboarding_can_be_completed_only_with_full_answers(client: Te
     )
     assert incomplete["isError"] is True
     assert "dietary_restrictions" in incomplete["content"][0]["text"]
+    assert client.get("/api/household").json() == before
+    assert client.get("/api/planning-context?week_start=2030-02-04").json()["household"] == before
 
     completed = rpc(
         client,
@@ -639,6 +642,12 @@ def test_household_onboarding_can_be_completed_only_with_full_answers(client: Te
     )["structuredContent"]
     assert completed["householdSize"] == 2
     assert completed["onboardingCompletedAt"] != "2026-01-01T00:00:00+00:00"
+    context = client.get("/api/planning-context?week_start=2030-02-04").json()["household"]
+    assert context == client.get("/api/household").json()
+    assert context["householdSize"] == 2
+    assert context["planningPreferences"]["weeknightMaxMinutes"] == 25
+    assert context["dietaryRestrictions"] == []
+    assert context["storePriority"] == [{"store": "Local market", "priority": 1}]
 
 
 def test_direct_client_receives_workflow_and_records_pantry_use(client: TestClient):

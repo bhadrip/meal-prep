@@ -90,9 +90,14 @@ test('overview shortcuts and editor validation and cancel', async ({ page }) => 
   await expect(editor(page)).toBeHidden();
 });
 
-test('household setup, dashboard visibility, and card order persist', async ({ page }) => {
+test('weekly preferences save in one place while Settings keeps dashboard configuration', async ({ page }) => {
   await open(page, 'settings');
+  await expect(page.locator('#settings-form')).toHaveCount(0);
+  await expect(page.getByRole('button', {name:'Edit meal slots', exact:true})).toHaveCount(0);
+  await page.locator('.sidebar [data-view="plan"]').click();
+  await page.getByRole('tab', {name:'Preferences', exact:true}).click();
   const form = page.locator('#settings-form');
+  await expect(form).toHaveCount(1);
   await form.locator('[name="householdSize"]').fill('3');
   await form.locator('[name="weeknightMaxMinutes"]').fill('25');
   await form.locator('[name="dietaryRestrictions"]').fill('none');
