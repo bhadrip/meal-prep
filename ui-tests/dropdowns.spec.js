@@ -96,7 +96,8 @@ test('household dropdown fits mobile, restores a failed switch, and persists sel
   await expect(page.locator('#household-select')).toHaveValue(second);
   await picker.locator('.choice-trigger').click();
   await expect(picker.getByRole('option', { name: /Weekend kitchen/ })).toHaveAttribute('aria-selected', 'true');
-  await page.screenshot({ path: 'test-results/dropdown-mobile.png', fullPage: true });
+  // Capture the real mobile viewport; full-page capture resizes it and can close the popover.
+  await page.screenshot({ path: 'test-results/dropdown-mobile.png' });
   await page.keyboard.press('Escape');
   await expect(picker.locator('.choice-trigger')).toBeFocused();
   expect(attempts).toBe(2);
