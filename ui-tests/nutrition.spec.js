@@ -7,75 +7,46 @@ async function choose(row, nutrient, value) {
   await parent.locator('.choice-trigger').click();
   await parent.locator(`[data-choice-value="${value}"]`).click();
 }
-test('serving variations save macro amounts and food sources, reject invalid amounts, and clear', async ({page}) => {
-  await page.request.put('/api/meal-plan', {data: {weekStart: week, entries: [], tasks: []}});
+test('planned meal editor keeps variations on the linked recipe and preserves older plan facts', async ({page}) => {
+  await page.request.put('/api/meal-plan', {data:{weekStart:week, entries:[], tasks:[]}});
+  const guide = {basis:'Ingredient estimate', profiles:[
+    {name:'Standard', serving:'Original noodles', portion:'1 bowl', amounts:{protein:15}},
+    {name:'Protein-heavy', serving:'Add tofu', portion:'1 bowl', amounts:{protein:35}}]};
+  const recipe = await (await page.request.put('/api/recipes', {data:{title:`Teriyaki noodles ${Date.now()}`, servings:4, nutrition:guide}})).json();
+  const planned = await page.request.post(`/api/recipes/${recipe.id}/plan`, {data:{weekStart:week, date:week, slot:'dinner', servings:2}});
+  expect(planned.ok()).toBeTruthy();
   await page.goto(`/app?view=plan&week=${week}`);
-  await expect(page.locator('.nutrition-card')).toHaveCount(0);
-  await expect(page.getByText('One meal, different plates', {exact:true})).toHaveCount(0);
-  await page.getByRole('button', {name: 'Add meal', exact: true}).click();
-  await page.locator('#editor-dialog').getByRole('button', {name: 'Advanced meal details'}).click();
+  const meal = page.locator('.meal').filter({hasText:recipe.title});
+  await meal.getByRole('button', {name:'Edit', exact:true}).click();
   const editor = page.locator('#editor-dialog');
-  await editor.locator('[name="meal"]').fill('Teriyaki noodles');
-  await editor.getByLabel('Food or dish', {exact: true}).fill('Noodles, tofu, edamame and broccoli');
-  await editor.getByLabel('Nutrition basis / assumptions').fill('Ingredient estimate, portions unverified');
-  for (const [name, serving, protein, carbs] of [['Standard', 'Mild steamed noodles', 'low', 'high'], ['Protein-heavy', 'Smaller noodle portion, add tofu and gochujang', 'high', 'moderate']]) {
-    await editor.getByRole('button', {name: 'Add variation'}).click();
-    const row = editor.locator('[data-nutrition-profile]').last();
-    await row.getByLabel('Variation name').fill(name);
-    await row.getByLabel('What changes in this variation?').fill(serving);
-    await choose(row, 'protein', protein); await choose(row, 'carbs', carbs);
-  }
-  const proteinPlate = editor.locator('[data-nutrition-profile]').last();
-  await proteinPlate.getByLabel('Portion for numeric values').fill('1 protein-heavy bowl');
-  await proteinPlate.getByLabel('Calories (kcal)', {exact:true}).fill('520');
-  await proteinPlate.getByLabel('Protein (g)', {exact:true}).fill('35.5');
-  await proteinPlate.getByLabel('Fat (g)', {exact:true}).fill('0');
-  await proteinPlate.getByLabel('Micronutrients').fill('Iron | Tofu | -3 | mg');
-  await editor.locator('#dialog-save').click();
-  await expect(editor.locator('#dialog-error')).toContainText('nonnegative');
-  expect((await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan.entries).toHaveLength(0);
-  await proteinPlate.getByLabel('Micronutrients').fill('Iron | Tofu | 3.2 | mg\nVitamin C | Broccoli');
+  await expect(editor.getByRole('heading', {name:'Recipe variations (optional)'})).toHaveCount(0);
+  await expect(editor.getByRole('button', {name:'Add variation'})).toHaveCount(0);
+  await editor.locator('[name="notes"]').fill('More tofu for dinner');
   await editor.locator('#dialog-save').click();
   await expect(editor).toBeHidden();
-  await page.reload();
-  const meal = page.locator('.meal').filter({hasText: 'Teriyaki noodles'});
-  await meal.locator('.nutrition-details summary').click();
-  const guide = meal.locator('.nutrition-guide');
-  await expect(guide.locator('.nutrition-profile:visible')).toHaveCount(1);
-  await expect(guide.locator('.nutrition-profile').filter({hasText:'Protein-heavy'})).toBeHidden();
-  await guide.getByRole('button', {name:'Protein-heavy', exact:true}).click();
-  await expect(guide.locator('.nutrition-profile').filter({hasText:'Standard'})).toBeHidden();
+  const entry = (await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan.entries[0];
+  expect(entry.notes).toBe('More tofu for dinner');
+  expect(entry.nutrition).toBeUndefined();
+  await meal.getByRole('link', {name:recipe.title}).click();
+  await expect(page.locator('.recipe-nutrition')).toContainText('Protein-heavy');
+  await page.getByRole('button', {name:'Edit recipe', exact:true}).click();
+  await expect(editor.getByRole('heading', {name:'Recipe variations (optional)'})).toBeVisible();
+  await expect(editor.getByRole('button', {name:'Add variation'})).toBeVisible();
+  await editor.getByRole('button', {name:'Cancel'}).click();
 
-  await expect(meal.locator('.nutrition-profile').filter({hasText: 'Protein-heavy'}).locator('[data-nutrient="protein"]')).toHaveAttribute('data-level', 'high');
-  await expect(meal.locator('.nutrition-profile').filter({hasText: 'Standard'}).locator('[data-nutrient="carbs"]')).toHaveAttribute('data-level', 'high');
-  await expect(meal).toContainText('Broccoli');
-  await expect(meal.locator('[data-amount="calories"]')).toHaveText('≈ 520 kcal');
-  await expect(meal.locator('[data-amount="protein"]')).toHaveText('≈ 35.5 g');
-  await expect(meal.locator('[data-amount="fat"]')).toHaveText('≈ 0 g');
-  await expect(meal.locator('[data-amount="fiber"]')).toHaveText('Unknown');
-  await expect(meal).toContainText('Iron · ≈ 3.2 mg · Tofu');
-  await meal.locator('.nutrition-guide').screenshot({path: '/tmp/meal-nutrition-numbers-preview.png'});
-  await page.setViewportSize({width:390, height:844});
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const legacy = await page.request.put('/api/meal-plan', {data:{weekStart:week, entries:[
+    {...entry, nutrition:guide}], tasks:[]}});
+  expect(legacy.ok()).toBeTruthy();
+  await page.goto(`/app?view=plan&week=${week}`);
   await meal.getByRole('button', {name:'Edit', exact:true}).click();
-  await expect(editor.locator('[data-nutrition-profile]')).toHaveCount(2);
-  await expect(editor.getByLabel('Protein (g)', {exact:true}).last()).toHaveValue('35.5');
-  await editor.getByLabel('Variation name').first().fill('Quick');
+  await expect(editor.getByRole('button', {name:'Add variation'})).toHaveCount(0);
+  await editor.locator('[name="notes"]').fill('Keep historical facts');
   await editor.locator('#dialog-save').click();
   await expect(editor).toBeHidden();
-  await expect(page.locator('[data-weekly-profile="Quick"]')).toHaveCount(0);
-  await expect(meal.locator('.nutrition-details')).toContainText('Quick');
-
-  await expect(page.locator('[data-weekly-profile="Protein-heavy"] [data-weekly-amount="protein"]')).toHaveText('35.5 g');
-  await meal.getByRole('button', {name:'Edit', exact:true}).click();
-
-  await editor.getByRole('button', {name:'Remove variation'}).first().click();
-  await editor.getByRole('button', {name:'Remove variation'}).click();
-  await editor.locator('#dialog-save').click();
-  await expect(editor).toBeHidden();
-  await expect(meal.locator('.nutrition-details')).toHaveCount(0);
-  await expect(page.locator('.weekly-nutrition')).toHaveCount(0);
-  expect((await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan.entries[0].nutrition).toBeNull();
+  const edited = (await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan.entries[0];
+  expect(edited.notes).toBe('Keep historical facts');
+  expect(edited.nutrition.profiles.map(profile=>profile.name)).toEqual(['Standard','Protein-heavy']);
+  await expect(page.locator('.weekly-nutrition')).toContainText('35 g');
 });
 
 test('self-contained MCP App shows saved plates without meal completion actions', async ({page}) => {
@@ -150,9 +121,17 @@ test('weekly totals update after clearing saved nutrition and show incomplete co
   await expect(summary).toContainText('2 of 3 meals recorded');
   await expect(summary.locator('[data-weekly-amount="calories"]')).toHaveText('Unknown');
   await page.locator('.meal').filter({hasText:'Tuesday bowl'}).getByRole('button',{name:'Edit',exact:true}).click();
-  await page.locator('#editor-dialog').getByRole('button',{name:'Remove variation',exact:true}).click();
+  await expect(page.locator('#editor-dialog').getByRole('button',{name:'Remove variation',exact:true})).toHaveCount(0);
+  await page.locator('#editor-dialog').getByLabel('Notes',{exact:true}).fill('Serve cold');
   await page.locator('#dialog-save').click();
   await expect(page.locator('#editor-dialog')).toBeHidden();
+  await expect(summary.locator('[data-weekly-amount="protein"]')).toHaveText('55 g');
+  const saved = (await (await page.request.get(`/api/meal-plan?week_start=${week}`)).json()).plan;
+  const tuesday = saved.entries.find(entry=>entry.meal==='Tuesday bowl');
+  expect(tuesday.notes).toBe('Serve cold');
+  const cleared = await page.request.patch('/api/meal-plan/items', {data:{weekStart:week, kind:'meal', item:{id:tuesday.id, nutrition:null}}});
+  expect(cleared.ok()).toBeTruthy();
+  await page.reload();
   await expect(summary.locator('[data-weekly-amount="protein"]')).toHaveText('30 g');
   await expect(summary).toContainText('1 of 3 meals recorded');
   await page.reload();
