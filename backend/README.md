@@ -51,6 +51,12 @@ The website requests `/api/app/bootstrap?include_sections=false` for lightweight
 
 ## Deployed resources
 
+Vercel's FastAPI framework forwards requests to `app.main:app` and preserves
+their route paths without a catch-all rewrite. Keep `backend/vercel.json` free
+of the old `/api/index` rewrite: current Vercel builds pass that destination to
+FastAPI, causing both `/mcp` and `/api/health` to return 404. Verify a deployment's
+health and MCP response before promoting it.
+
 - Source repository: `https://github.com/bhadrip/meal-prep`
 - Production app and MCP server: `https://meal-prep.madhavan-padmaja.dev`
 - Supabase project: `svdcbpcndqmocecyymav` in `bhadrip's Org`
