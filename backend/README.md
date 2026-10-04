@@ -30,6 +30,17 @@ app/
 - Pantry use records that subtract from remaining quantity, optionally name a meal or saved recipe, and drive a simple remaining-quantity bar
 - Vercel serverless entrypoint and deployment configuration
 
+MCP POST responses emit one JSON `mcp_response` entry in Vercel Runtime Logs.
+Filter by that event and `rpc_method: "tools/list"` to see the exact outgoing
+`tool_names`, `tool_count`, `save_recipe_present`, request/next cursor presence,
+response bytes, SHA-256, HTTP status, and completion flag. The
+`X-MCP-Request-ID` response header matches the log's `request_id`; an available
+Vercel request ID is also included. Initialization identifies a client family;
+`save_recipe` calls record success or tool error, without recipe contents.
+Tokens, headers, RPC IDs, cursor values, tool arguments, and household responses
+are never dumped. Capture is bounded; large responses are still sent in full
+and logged with their byte count/hash and `response_capture_truncated: true`.
+
 The website has no model integration. Users edit their data directly there. The service never calls a model to make domain writes. ChatGPT can create a plan through MCP, while Instacart or another commerce integration remains responsible for inventory, cart, and ordering actions.
 
 Inbox entries are written by database triggers in the same transaction as household changes and are visible only to their recipient. Household entries become inaccessible when membership ends. The website loads the latest 100 entries when it opens or refreshes, and opening one marks it read and follows its destination. The database keeps at most 200 entries per person. There is no email, push, scheduler, or real-time subscription for this first version.

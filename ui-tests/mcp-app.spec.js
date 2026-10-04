@@ -21,6 +21,7 @@ async function host(page, standalone = false, live = false) {
     body: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>@media(pointer:coarse){iframe{height:calc(100dvh - 16px)!important}}</style></head><body><iframe src="${frameUrl}" style="width:100%;max-width:100%;box-sizing:border-box;height:900px;border:0"></iframe>
       <script>
         window.calls = [];
+        window.mcpRequestIds = [];
         window.ready = false;
         window.revoked = false;
         window.addEventListener('message', async (event) => {
@@ -40,6 +41,7 @@ async function host(page, standalone = false, live = false) {
               body: JSON.stringify({ jsonrpc: '2.0', id: message.id, method: 'tools/call', params: message.params }),
             });
             const payload = await response.json();
+            window.mcpRequestIds.push(response.headers.get('x-mcp-request-id'));
             event.source.postMessage({ ...payload, id: message.id }, '*');
             return;
           }
@@ -263,7 +265,7 @@ test('MCP views explain empty and unavailable data', async ({ page }) => {
 });
 
 
-test('direct MCP client receives shared workflow and persists pantry use without a plugin', async ({ page, request }) => {
+test('direct MCP discovery and response diagnostics preserve rendered pantry success and failure', async ({ page, request }) => {
   let requestId = 950;
   async function call(method, params) {
     const response = await request.post('/mcp', {
@@ -271,6 +273,7 @@ test('direct MCP client receives shared workflow and persists pantry use without
       data: { jsonrpc: '2.0', id: requestId++, method, params },
     });
     expect(response.ok()).toBeTruthy();
+    expect(response.headers()['x-mcp-request-id']).toMatch(/^[0-9a-f-]{36}$/);
     return (await response.json()).result;
   }
   const initialized = await call('initialize', {
@@ -279,6 +282,10 @@ test('direct MCP client receives shared workflow and persists pantry use without
   });
   expect(initialized.instructions).toContain('## Required sequence');
   expect(initialized.instructions).toContain('## Client compatibility');
+  const discovered = await call('tools/list', {});
+  expect(discovered.tools.length).toBeGreaterThan(43);
+  expect(discovered.tools.some(tool => tool.name === 'save_recipe')).toBe(true);
+  expect(discovered.nextCursor).toBeUndefined();
   const created = await call('tools/call', { name: 'update_pantry_item', arguments: {
     item: { name: 'Direct connection chickpeas', quantity: 2, unit: 'cups' },
   } });
@@ -292,9 +299,22 @@ test('direct MCP client receives shared workflow and persists pantry use without
   await frame.locator('#pantry-use-form input[name="mealTitle"]').fill('Tuesday dinner');
   await frame.getByRole('button', { name: 'Record use' }).click();
   await expect(row).toContainText('1.5 cups left');
+  expect(await page.evaluate(() => window.mcpRequestIds.at(-1))).toMatch(/^[0-9a-f-]{36}$/);
   const saved = await call('tools/call', { name: 'get_pantry', arguments: {} });
   expect(saved.structuredContent.items.find((value) => value.id === item.id).quantity).toBe(1.5);
   const refreshed = await call('tools/call', { name: 'render_household_snapshot', arguments: {} });
   await show(page, refreshed.structuredContent);
   await expect(row).toContainText('1.5 cups left');
+  // Another client uses stock after the view loads: the visible draft must survive rejection.
+  await call('tools/call', { name: 'record_pantry_use', arguments: { item_id: item.id, quantity: 1.25 } });
+  await row.getByRole('button', { name: 'Use', exact: true }).click();
+  await frame.locator('#pantry-use-form input[name="quantity"]').fill('0.5');
+  await frame.getByRole('button', { name: 'Record use' }).click();
+  await expect(frame.locator('#pantry-use-form [role="alert"]')).toContainText('Amount used exceeds the remaining quantity');
+  await expect(frame.locator('#pantry-use-form input[name="quantity"]')).toHaveValue('0.5');
+  const afterFailure = await call('tools/call', { name: 'get_pantry', arguments: {} });
+  expect(afterFailure.structuredContent.items.find(value => value.id === item.id).quantity).toBe(0.25);
+  expect(await page.evaluate(() => window.mcpRequestIds.at(-1))).toMatch(/^[0-9a-f-]{36}$/);
+  await show(page, (await call('tools/call', { name: 'render_household_snapshot', arguments: {} })).structuredContent);
+  await expect(row).toContainText('0.25 cups left');
 });
