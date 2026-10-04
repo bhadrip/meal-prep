@@ -865,14 +865,30 @@ def test_discovery_logs_the_complete_wire_inventory_and_recipe_save_failure(clie
     import hashlib
     import json
     import logging
+    import re
+    from pathlib import Path
     from app.transports import mcp_logging
+
+    # Vercel forwards internal rewrite destinations to the FastAPI router.
+    # Exercise the configured path so a catch-all to /api/index cannot pass CI.
+    deployment = json.loads((Path(__file__).parents[1] / 'vercel.json').read_text())
+
+    def deployed_path(path):
+        for rewrite in deployment.get('rewrites', []):
+            if re.fullmatch(rewrite['source'], path):
+                return rewrite['destination']
+        return path
+
+    health = client.get(deployed_path('/api/health'))
+    assert health.status_code == 200
+    assert health.json()['status'] == 'ok'
 
     def logged(caplog):
         return [json.loads(record.message) for record in caplog.records
                 if record.name == mcp_logging.logger.name]
 
     def send(method, params):
-        return client.post('/mcp', headers={
+        return client.post(deployed_path('/mcp'), headers={
             'Accept': 'application/json, text/event-stream',
             'Authorization': 'Bearer private-test-token',
             'User-Agent': 'Claude/private-client-detail',

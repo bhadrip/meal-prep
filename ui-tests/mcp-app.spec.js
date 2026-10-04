@@ -1,4 +1,13 @@
 const { test, expect } = require('@playwright/test');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+
+// Vercel sends the configured rewrite destination to the backend router.
+const deployment = JSON.parse(readFileSync(join(__dirname, '../backend/vercel.json'), 'utf8'));
+function deployedPath(path) {
+  const rewrite = (deployment.rewrites || []).find(value => new RegExp(`^${value.source}$`).test(path));
+  return rewrite ? rewrite.destination : path;
+}
 
 const recipe = {
   id: 'recipe-ui-test', title: 'Lentil bowls', description: 'Simple family dinner',
@@ -9,7 +18,7 @@ const recipe = {
 async function host(page, standalone = false, live = false) {
   const frameUrl = standalone ? new URL('/static/mcp-app.html', test.info().project.use.baseURL).href.replace('127.0.0.1', 'localhost') : '/static/mcp-app.html';
   if (standalone) {
-    const response = await page.request.post('/mcp', { headers: { Accept: 'application/json, text/event-stream' }, data: {
+    const response = await page.request.post(deployedPath('/mcp'), { headers: { Accept: 'application/json, text/event-stream' }, data: {
       jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'ui://meal-prep/onboarding-v2.html' },
     } });
     const html = (await response.json()).result.contents[0].text;
@@ -35,7 +44,7 @@ async function host(page, standalone = false, live = false) {
           if (message.method !== 'tools/call') return;
           window.calls.push(message.params);
           if (${JSON.stringify(live)}) {
-            const response = await fetch('/mcp', {
+            const response = await fetch(${JSON.stringify(deployedPath('/mcp'))}, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
               body: JSON.stringify({ jsonrpc: '2.0', id: message.id, method: 'tools/call', params: message.params }),
@@ -265,10 +274,11 @@ test('MCP views explain empty and unavailable data', async ({ page }) => {
 });
 
 
-test('direct MCP discovery and response diagnostics preserve rendered pantry success and failure', async ({ page, request }) => {
+test('configured Vercel routing and MCP diagnostics preserve rendered pantry success and failure', async ({ page, request }) => {
+  expect((await request.get(deployedPath('/api/health'))).ok()).toBeTruthy();
   let requestId = 950;
   async function call(method, params) {
-    const response = await request.post('/mcp', {
+    const response = await request.post(deployedPath('/mcp'), {
       headers: { Accept: 'application/json, text/event-stream' },
       data: { jsonrpc: '2.0', id: requestId++, method, params },
     });
