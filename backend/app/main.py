@@ -10,6 +10,7 @@ from .application.errors import ApplicationError, RepositoryError, RevisionConfl
 from .invitations import router as invitations_router
 from .transports.http import router as http_router
 from .transports.mcp import mcp, mcp_app
+from .transports.mcp_logging import MCPResponseLoggingMiddleware
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -29,6 +30,7 @@ app = FastAPI(
     version="0.6.0",
     lifespan=lifespan,
 )
+app.add_middleware(MCPResponseLoggingMiddleware)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(http_router)
 app.include_router(invitations_router)

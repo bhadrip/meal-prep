@@ -855,3 +855,58 @@ def test_direct_mcp_recipe_nutrition_and_weekly_summary(client):
     selected_week = rpc(client, 'tools/call', {'name':'get_weekly_nutrition', 'arguments':{'week_start':'2046-02-05', 'variation':'standard'}}, 978)['structuredContent']
     assert len(selected_week['profiles']) == 1
     assert selected_week['profiles'][0]['amounts']['protein']['total'] == 14
+
+
+def test_discovery_logs_the_complete_wire_inventory_and_recipe_save_failure(client, caplog):
+    import hashlib
+    import json
+    import logging
+    from app.transports import mcp_logging
+
+    def logged(caplog):
+        return [json.loads(record.message) for record in caplog.records
+                if record.name == mcp_logging.logger.name]
+
+    def send(method, params):
+        return client.post('/mcp', headers={
+            'Accept': 'application/json, text/event-stream',
+            'Authorization': 'Bearer private-test-token',
+            'User-Agent': 'Claude/private-client-detail',
+            'X-Vercel-Id': 'sfo1::test-request',
+        }, json={'jsonrpc': '2.0', 'id': 'private-rpc-id', 'method': method, 'params': params})
+    caplog.set_level(logging.INFO, logger=mcp_logging.logger.name)
+    response = send('tools/list', {'cursor': None})
+    assert response.status_code == 200
+    inventory = response.json()['result']
+    names = [tool['name'] for tool in inventory['tools']]
+    assert 'save_recipe' in names and len(names) > 43
+    entry = logged(caplog)[-1]
+    assert entry['request_id'] == response.headers['x-mcp-request-id']
+    assert entry['tool_names'] == names
+    assert entry['tool_count'] == len(names)
+    assert entry['save_recipe_present'] is True
+    assert entry['next_cursor_present'] is False
+    assert entry['request_cursor_present'] is False
+    assert entry['response_bytes'] == len(response.content)
+    assert entry['response_sha256'] == hashlib.sha256(response.content).hexdigest()
+    assert entry['completed'] is True
+    assert entry['client_family'] == 'claude'
+    assert entry['vercel_id'] == 'sfo1::test-request'
+
+    saved = send('tools/call', {'name': 'save_recipe', 'arguments': {'recipe': {
+        'title': 'Private household recipe', 'ingredients': [{'name': 'private ingredient'}],
+    }}}).json()['result']['structuredContent']
+    assert logged(caplog)[-1]['tool_name'] == 'save_recipe'
+    assert logged(caplog)[-1]['tool_is_error'] is False
+    rejected = send('tools/call', {'name': 'save_recipe', 'arguments': {
+        'recipe': {'id': saved['id'], 'title': ''}}})
+    assert rejected.json()['result']['isError'] is True
+    failed = logged(caplog)[-1]
+    assert failed['request_id'] == rejected.headers['x-mcp-request-id']
+    assert failed['tool_is_error'] is True and failed['http_status'] == 200
+    fetched = send('tools/call', {'name': 'get_recipe', 'arguments': {'recipe_id': saved['id']}})
+    assert fetched.json()['result']['structuredContent']['title'] == 'Private household recipe'
+    log_text = json.dumps(logged(caplog))
+    for private in ('private-test-token', 'private-client-detail', 'private-rpc-id',
+                    'Private household recipe', 'private ingredient', saved['id']):
+        assert private not in log_text
