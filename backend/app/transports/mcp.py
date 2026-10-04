@@ -327,9 +327,9 @@ async def get_recipe(recipe_id: str, variation: str | None = None) -> dict[str, 
     return await services_for_request().food.get_recipe(recipe_id, variation)
 
 
-@mcp.tool(annotations=WRITE, structured_output=True)
+@mcp.tool(annotations=WRITE, meta={"anthropic/alwaysLoad": True}, structured_output=True)
 async def save_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
-    """Create or update a household recipe. Category lists: cuisines, eating_goals, meal_types, diets, tags.
+    """Save, add, create, or update a household recipe or ready food. Category lists: cuisines, eating_goals, meal_types, diets, tags.
     Use kind recipe or ready_food. Ready food has heating/serving instructions and no ingredient demand.
     Optional recipe variations use nutrition.profiles: [{name: custom label, serving: ingredient/preparation/serving changes}]. Nutrition is optional; basis is required only when nutrient guidance or numbers are included. Optional recipe nutrition uses {basis, profiles} with per-serving numeric amounts, portion and valueType. Omitted nutrition retains saved values; null clears it.
     Omitted typed categories retain saved values. Use totalMinutes for total cooking time.

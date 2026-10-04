@@ -107,6 +107,32 @@ ChatGPT connects to the deployed MCP service; installing or updating the reposit
 
 Open **Customize → Connectors**, add a custom connector, and enter the MCP URL above. Sign in with an approved account. This connection has not yet been tested with Claude.
 
+### Claude Code
+
+Connect directly to production:
+
+```bash
+claude mcp add --transport http meal-prep https://meal-prep.madhavan-padmaja.dev/mcp
+```
+
+Open `/mcp` in Claude Code to authenticate and inspect the server's discovered
+tools, then start a fresh session after a server update. Recipe creation and
+editing use `save_recipe`; client-added prefixes vary. With tool search enabled,
+ask Claude to search for that exact name before treating a partial visible tool
+list as the server's complete inventory. The server marks recipe saving with
+`_meta["anthropic/alwaysLoad"]: true`, which supported Claude Code versions use
+to keep it available without a search step. Other tools remain discoverable on
+demand. The discovery guidance is also at the beginning of the MCP server's
+instructions so it survives Claude Code's default 2,048-character truncation.
+See [Claude Code's tool search documentation](https://code.claude.com/docs/en/mcp#scale-with-mcp-tool-search).
+
+The production endpoint returns the complete tool inventory in one `tools/list`
+response, without `nextCursor`. If a tool is still missing, record the version
+(`claude --version`), the configured URL, the `/mcp` tool count, and the server's debug
+output. Compare the actual discovery response with the client inventory. For a
+diagnostic session, `ENABLE_TOOL_SEARCH=false claude` loads definitions upfront;
+it cannot repair a client that received an incomplete discovery response.
+
 ## Repository
 
 - [`backend/`](backend/) — website, application services, MCP and HTTP transports, Supabase integration and migrations, tests, and Vercel configuration

@@ -1,5 +1,22 @@
 # Meal prep planning
 
+## Tool discovery and recipe saving
+
+Meal Prep supports recipes, ready food, reusable meals, household preferences,
+weekly plans, pantry, shopping, feedback, and sharing through MCP.
+Some clients defer tool definitions until they are searched for. Before saying
+a Meal Prep capability is unavailable, use the client's tool search when
+available to find the exact tool name. Client-added prefixes can differ;
+search for `save_recipe` rather than guessing a fully prefixed name. A partial
+model-visible tool list is not proof that the server lacks a tool.
+
+When the user asks to add, save, or edit a recipe, use `save_recipe` with a
+`recipe` object: `title` is required; `ingredients` and `instructions` contain
+the supplied ingredients and preparation steps. Include the saved `id` for an
+edit. Use `kind: "ready_food"` for ready food, without ingredients. Use
+`get_recipe` to read a saved recipe and `search_recipes` to find one. Report a
+save only after the tool succeeds; a failed call has not saved the changes.
+
 Use this workflow when the user asks to plan any part of the household food
 week, choose recipes, prepare food ahead, use pantry food, update household
 food preferences, or create a shopping list.

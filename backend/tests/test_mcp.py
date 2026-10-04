@@ -68,6 +68,48 @@ def rpc(client: TestClient, method: str, params: dict, request_id: int = 1) -> d
     return response.json()["result"]
 
 
+@pytest.mark.parametrize("protocol_version", ["2024-11-05", "2025-03-26", "2025-06-18"])
+def test_recipe_saving_survives_deferred_tool_discovery(client: TestClient, protocol_version):
+    initialized = rpc(client, "initialize", {
+        "protocolVersion": protocol_version, "capabilities": {},
+        "clientInfo": {"name": "claude-code-contract-test", "version": "1.0"},
+    })
+    visible_instructions = initialized["instructions"][:2048]
+    assert "save_recipe" in visible_instructions
+    assert "client's tool search" in visible_instructions
+    assert "failed call has not saved" in visible_instructions
+
+    # A client that fetches only the first discovery response still gets every
+    # definition. It may defer definitions before exposing them to the model.
+    inventory = rpc(client, "tools/list", {})
+    assert inventory.get("nextCursor") is None
+    assert len(inventory["tools"]) > 43
+    upfront = [tool for tool in inventory["tools"]
+               if tool.get("_meta", {}).get("anthropic/alwaysLoad") is True]
+    assert [tool["name"] for tool in upfront] == ["save_recipe"]
+    save = upfront[0]
+    assert save["annotations"]["readOnlyHint"] is False
+    assert save["inputSchema"]["required"] == ["recipe"]
+
+    title = f"Deferred discovery soup {protocol_version}"
+    created = rpc(client, "tools/call", {"name": save["name"], "arguments": {"recipe": {
+        "title": title, "ingredients": [{"name": "Lentils"}],
+        "instructions": ["Simmer until tender"],
+    }}})
+    assert created.get("isError") is not True
+    saved = created["structuredContent"]
+    assert saved["id"] and saved["title"] == title
+
+    rejected = rpc(client, "tools/call", {"name": save["name"], "arguments": {"recipe": {
+        "id": saved["id"], "title": "", "instructions": ["This must not replace the saved steps"],
+    }}})
+    assert rejected["isError"] is True
+    assert "recipe.title is required" in str(rejected["content"])
+    fetched = rpc(client, "tools/call", {"name": "get_recipe", "arguments": {"recipe_id": saved["id"]}})
+    assert fetched["structuredContent"]["title"] == title
+    assert fetched["structuredContent"]["instructions"] == ["Simmer until tender"]
+
+
 def test_http_surface_serves_website_and_mcp(client: TestClient):
     root = client.get("/app")
     assert root.status_code == 200
