@@ -224,7 +224,7 @@ test('rendered MCP App completes an independent task through the real MCP servic
 });
 
 async function mountMcpPlan(page, plan) {
-  await page.route('**/unified-mcp-host', (route) => route.fulfill({ contentType: 'text/html', body: `<!doctype html><iframe src="/static/mcp-app.html" style="width:100%;height:900px"></iframe><script>
+  await page.route('**/unified-mcp-host', (route) => route.fulfill({ contentType: 'text/html', body: `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>@media(pointer:coarse){iframe{height:calc(100dvh - 16px)!important}}</style><iframe src="/static/mcp-app.html" style="width:100%;max-width:100%;box-sizing:border-box;height:900px"></iframe><script>
     window.ready=false; window.calls=[];
     addEventListener('message',async(event)=>{const message=event.data;if(message?.jsonrpc!=='2.0'||!message.method)return;
       if(message.method==='ui/notifications/initialized'){window.ready=true;return;}

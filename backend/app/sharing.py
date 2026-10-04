@@ -64,7 +64,7 @@ def render_shared_meal_page(share: dict[str, Any]) -> str:
                       + "</article>" for recipe in meal.get("recipes") or [])
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive"><title>{name} · Meal Prep</title>
-<style>:root{{font-family:ui-sans-serif,system-ui,sans-serif;color:#17211e;background:#f5f7f2}}body{{margin:0;padding:24px}}main{{max-width:760px;margin:32px auto;background:white;border:1px solid #dfe5de;border-radius:24px;padding:clamp(24px,5vw,48px)}}h1,h2{{font-family:Georgia,serif}}h1{{font-size:clamp(2rem,5vw,3rem)}}p,li{{line-height:1.6}}</style>
+<style>:root{{font-family:ui-sans-serif,system-ui,sans-serif;color:#17211e;background:#f5f7f2}}body{{margin:0;padding:24px}}main{{max-width:760px;margin:32px auto;background:white;border:1px solid #dfe5de;border-radius:24px;padding:clamp(24px,5vw,48px)}}h1,h2{{font-family:Georgia,serif}}h1{{font-size:clamp(2rem,5vw,3rem)}}p,li{{line-height:1.6}}</style><link rel="stylesheet" href="/static/mobile.css?v=1">
 </head><body><main><p>Shared meal · Read only</p><h1>{name}</h1><p>{notes}</p><p>{escape(str(meal.get('servings') or ''))} servings</p><h2>Components</h2><ul>{parts}</ul>{recipes}</main></body></html>"""
 
 
@@ -104,7 +104,7 @@ def render_shared_recipe_page(share: dict[str, Any]) -> str:
 :root{{font-family:ui-sans-serif,system-ui,sans-serif;color:#17211e;background:#f5f7f2}}
 *{{box-sizing:border-box}}body{{margin:0;padding:24px}}main{{max-width:780px;margin:32px auto;background:white;border:1px solid #dfe5de;border-radius:24px;padding:clamp(24px,5vw,48px);box-shadow:0 18px 45px rgba(29,56,47,.1)}}
 h1,h2{{font-family:Georgia,serif}}h1{{font-size:clamp(2rem,5vw,3.3rem);margin:.4em 0}}h2{{font-size:1.3rem;margin-top:2rem}}p,li{{line-height:1.6}}.eyebrow{{color:#467263;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:.75rem}}.description,.facts{{color:#64716c}}.columns{{display:grid;grid-template-columns:1fr 1.3fr;gap:32px}}a{{color:#173f35}}button{{background:#173f35;color:white;border:0;border-radius:12px;padding:13px 18px;font:inherit;font-weight:700;cursor:pointer}}#message{{min-height:24px;color:#467263}}@media(max-width:650px){{.columns{{grid-template-columns:1fr}}}}
-</style></head><body><main>
+</style><link rel="stylesheet" href="/static/mobile.css?v=1"></head><body><main>
 <span class="eyebrow">Shared from Meal Prep</span><h1>{title}</h1><p class="description">{description}</p><p class="facts">{facts}</p>
 <div class="columns"><section><h2>Ingredients</h2><ul>{ingredients}</ul></section><section><h2>Instructions</h2><ol>{instructions}</ol></section></div>
 {source_link}

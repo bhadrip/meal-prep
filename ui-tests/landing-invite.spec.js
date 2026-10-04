@@ -1,12 +1,13 @@
 const { test, expect } = require('@playwright/test');
 
-test('landing links open the app and copy the configured MCP URL', async ({ page, context }) => {
+test('landing links open the app and copy the configured MCP URL', async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Clipboard permission grants are Chromium-only; denied/manual copying is tested in all engines.');
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Your food week, all together.' })).toBeVisible();
   await page.getByRole('button', { name: 'Copy MCP server URL' }).click();
   await expect(page.locator('#copy-mcp')).toHaveText('Copied');
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('http://127.0.0.1:18765/mcp');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(new URL('/mcp', test.info().project.use.baseURL).href);
   await page.getByRole('link', { name: 'Open the app' }).first().click();
   await expect(page).toHaveURL(/\/app$/);
   await expect(page.locator('#view-title')).toHaveText('Overview');
@@ -21,7 +22,7 @@ test('clipboard failure leaves the configured MCP URL available to copy manually
   await page.goto('/');
   await page.getByRole('button', { name: 'Copy MCP server URL' }).click();
   await expect(page.locator('#copy-mcp')).toHaveText('Select the URL to copy');
-  await expect(page.locator('#mcp-url')).toHaveText('http://127.0.0.1:18765/mcp');
+  await expect(page.locator('#mcp-url')).toHaveText(new URL('/mcp', test.info().project.use.baseURL).href);
   const selectedUrl = await page.locator('#mcp-url').evaluate((element) => {
     const range = document.createRange();
     range.selectNodeContents(element);
@@ -30,7 +31,7 @@ test('clipboard failure leaves the configured MCP URL available to copy manually
     selection.addRange(range);
     return selection.toString();
   });
-  expect(selectedUrl).toBe('http://127.0.0.1:18765/mcp');
+  expect(selectedUrl).toBe(new URL('/mcp', test.info().project.use.baseURL).href);
 });
 
 async function mockInviteSession(page, session) {

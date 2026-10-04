@@ -167,7 +167,7 @@
       const edges=this.connected(),neighbors=[...new Set(edges.map(e => this.other(e)))];
       const counts=new Map(neighbors.map(id => [id,edges.filter(e => this.other(e)===id).length]));
       const rowHeights=neighbors.map(id => 94+(counts.get(id)-1)*70),total=rowHeights.reduce((a,b) => a+b,0);
-      const coarse=matchMedia('(pointer:coarse)').matches,labelGap=coarse?48:35,rowStep=coarse?200:160;
+      const coarse=matchMedia('(pointer:coarse), (max-width:780px)').matches,labelGap=coarse?48:35,rowStep=coarse?200:160;
       const narrow=width<440,rows=Math.ceil(neighbors.length/2),height=narrow?Math.max(410,rows*rowStep+150+(coarse?40:0)):Math.max(410,total+40);
       canvas.style.height=height+'px';const center=narrow?[width/2,60]:[82,height/2];
       const positions=new Map([[this.selected,center]]);

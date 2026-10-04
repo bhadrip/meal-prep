@@ -1,4 +1,10 @@
+const { navigateToView } = require('./navigation');
 const {test, expect} = require('@playwright/test');
+
+async function shareInCircle(page, name) {
+  await page.getByRole('button', {name: '+ Share', exact: true}).click();
+  await page.getByRole('button', {name, exact: true}).click();
+}
 
 async function countSharesInCircle(page, circleId) {
   const feed = await (await page.request.get('/api/circle-shares?limit=100')).json();
@@ -28,11 +34,19 @@ test('friends open a circle conversation and reply below the exact shared recipe
   await page.getByRole('button', {name: 'Send reply'}).click();
   await expect(page.locator('.circle-thread-panel')).toContainText('Could I make this ahead on Sunday?');
   await expect(page.locator('.circle-post')).toContainText('1 reply');
+  if (await page.locator('.circle-rail').isHidden()) {
+    await page.getByRole('button', {name: 'Close thread', exact: true}).click();
+    await page.getByRole('button', {name: '‹ Chats', exact: true}).click();
+  }
   await page.locator(`.circle-room[data-id="${second.id}"]`).click();
   await expect(page).toHaveURL(new RegExp(`circle=${second.id}`));
   await expect(page.locator('.circle-thread-panel')).toHaveCount(0);
   await expect(page.locator('.circle-feed .circle-post')).toHaveCount(1);
   await expect(page.locator('.circle-post')).not.toContainText('1 reply');
+  if (await page.locator('.circle-rail').isHidden()) {
+    if (await page.getByRole('button', {name: 'Close thread', exact: true}).isVisible()) await page.getByRole('button', {name: 'Close thread', exact: true}).click();
+    await page.getByRole('button', {name: '‹ Chats', exact: true}).click();
+  }
   await page.locator(`.circle-room[data-id="${first.id}"]`).click();
   await expect(page.locator('.circle-post')).toContainText('1 reply');
   await page.getByLabel('Message Dinner friends').fill('What are you cooking tonight?');
@@ -43,6 +57,7 @@ test('friends open a circle conversation and reply below the exact shared recipe
   await page.getByLabel('Reply', {exact: true}).fill('Something with lentils.');
   await page.getByRole('button', {name: 'Send reply'}).click();
   await expect(page.locator('.circle-thread-panel')).toContainText('Something with lentils.');
+  await page.getByRole('button', {name: 'Close thread'}).click();
   await page.getByLabel('Message Dinner friends').fill('   ');
   await page.getByRole('button', {name: 'Send message'}).click();
   await expect(page.locator('#toast')).toContainText('Enter a message');
@@ -79,7 +94,8 @@ test('Circle feed shares a whole week and recipe, supports discussion and saving
   await expect(page.locator('#toast')).toContainText('Friend is already invited or a member');
   await page.getByRole('button', {name: 'Cancel invite'}).click();
   await expect(page.locator('.circle-members')).toHaveCount(0);
-  await page.locator('.circle-card').filter({hasText: 'Friday friends'}).getByRole('button', {name: 'Share this week'}).click();
+  await page.getByRole('button', {name: 'Back to conversation'}).click();
+  await shareInCircle(page, 'Share this week');
   await expect(page.locator('.circle-review')).toContainText('Review before sharing');
   await page.getByRole('button', {name: 'Publish week'}).click();
   await expect(page.locator('.circle-post').first()).toContainText('weekly plan');
@@ -94,7 +110,7 @@ test('Circle feed shares a whole week and recipe, supports discussion and saving
   await expect(page.locator('.circle-comment')).toHaveCount(0);
   await page.getByRole('button', {name: 'Close thread'}).click();
   await expect(page.locator('.circle-feed')).toBeVisible();
-  await page.locator('.circle-card').filter({hasText: 'Friday friends'}).getByRole('button', {name: 'Share a recipe'}).click();
+  await shareInCircle(page, 'Share a recipe');
   await page.getByLabel('Message Friday friends').fill('');
   await page.getByLabel('Message Friday friends').pressSequentially('@recipe');
   await page.locator('.mention-item').filter({hasText: 'Paneer rice bowls'}).click();
@@ -106,10 +122,24 @@ test('Circle feed shares a whole week and recipe, supports discussion and saving
   await expect(page.locator('.circle-detail')).toContainText('Open saved recipe');
   await page.reload();
   await expect(page.locator('.circle-detail')).toContainText('Open saved recipe');
+  const threadUrl = page.url();
+  const savedRecipeId = await page.getByRole('button', {name: 'Open saved recipe'}).getAttribute('data-id');
+  await page.route(`**/api/recipes/${savedRecipeId}`, route => route.fulfill({status: 503, json: {detail: 'Recipe temporarily unavailable'}}));
+  await page.getByRole('button', {name: 'Open saved recipe'}).click();
+  await expect(page.locator('#toast')).toContainText('Recipe temporarily unavailable');
+  await expect(page).toHaveURL(threadUrl);
+  await expect(page.locator('.circle-detail')).toBeVisible();
+  await page.unroute(`**/api/recipes/${savedRecipeId}`);
+  // A slower detail request lets the library finish first, exposing history races.
+  await page.route(`**/api/recipes/${savedRecipeId}`, async route => {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    await route.continue();
+  });
   await page.getByRole('button', {name: 'Open saved recipe'}).click();
   await expect(page).toHaveURL(/view=recipes/);
   await expect(page.locator('.hero')).toContainText('Paneer rice bowls');
   await page.goBack();
+  await expect(page).toHaveURL(threadUrl);
   await expect(page.locator('.circle-detail')).toBeVisible();
   await page.getByRole('button', {name: 'Close thread'}).click();
   await expect(page.locator('.circle-post')).toHaveCount(2);
@@ -125,11 +155,11 @@ test('a shared week exposes its linked recipe snapshot for an independent save',
       quantity: 2, unit: 'servings', source: 'cook', recipeId: recipe.id}]}]}});
   expect(planResponse.ok()).toBe(true);
   await page.goto(`/app?view=plan&week=${week}`);
-  await page.locator('.sidebar [data-view="circles"]').click();
+  await navigateToView(page, 'circles');
   await page.getByRole('button', {name: 'Create circle'}).click();
   await page.getByLabel('Circle name').fill('Breakfast circle');
   await page.getByRole('button', {name: 'Create', exact: true}).click();
-  await page.locator('.circle-card').filter({hasText: 'Breakfast circle'}).getByRole('button', {name: 'Share this week'}).click();
+  await shareInCircle(page, 'Share this week');
   await expect(page.locator('.circle-review')).toContainText('Oat bowls');
   await page.getByRole('button', {name: 'Publish week'}).click();
   await page.locator('.circle-post').first().getByRole('button', {name: /Reply in thread/}).click();
@@ -149,9 +179,9 @@ test('a shared week exposes its linked recipe snapshot for an independent save',
   expect(replacementId).not.toBe(savedId);
   await page.getByRole('button', {name: 'Close thread'}).click();
   await page.goto(`/app?view=plan&week=${week}`);
-  await page.locator('.sidebar [data-view="circles"]').click();
+  await navigateToView(page, 'circles');
   await page.locator('.circle-room').filter({hasText: 'Breakfast circle'}).click();
-  await page.locator('.circle-card').filter({hasText: 'Breakfast circle'}).getByRole('button', {name: 'Share this week'}).click();
+  await shareInCircle(page, 'Share this week');
   await page.getByRole('button', {name: 'Publish week'}).click();
   await page.locator('.circle-post').first().getByRole('button', {name: /Reply in thread/}).click();
   await expect(page.getByRole('button', {name: 'Open saved recipe'})).toHaveAttribute('data-id', replacementId);
@@ -202,20 +232,20 @@ test('reviewing a whole week can be cancelled without publishing and shows meal 
   ]}});
   expect(response.ok()).toBe(true);
   await page.goto(`/app?view=plan&week=${week}`);
-  await page.locator('.sidebar [data-view="circles"]').click();
+  await navigateToView(page, 'circles');
   await page.getByRole('button', {name: 'Create circle'}).click();
   await page.getByLabel('Circle name').fill('Review circle');
   await page.getByRole('button', {name: 'Create', exact: true}).click();
-  const card = page.locator('.circle-card').filter({hasText: 'Review circle'});
-  const circleId = await card.getByRole('button', {name: 'Share this week'}).getAttribute('data-id');
+  const card = page.locator('.circle-feed').filter({hasText: 'Review circle'});
+  const circleId = await card.locator('#circle-message-form').getAttribute('data-circle-id');
   const before = await countSharesInCircle(page, circleId);
-  await card.getByRole('button', {name: 'Share this week'}).click();
+  await shareInCircle(page, 'Share this week');
   await expect(page.locator('.circle-review')).toContainText(note);
   await expect(page.locator('.circle-review')).toContainText('Fruit plate');
   await expect(page.locator('.circle-review')).toContainText('Pantry stock, prep tasks, and shopping stay private');
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   expect(await countSharesInCircle(page, circleId)).toBe(before);
-  await card.getByRole('button', {name: 'Share this week'}).click();
+  await shareInCircle(page, 'Share this week');
   await page.getByRole('button', {name: 'Publish week'}).click();
   await expect.poll(() => countSharesInCircle(page, circleId)).toBe(before + 1);
 });
@@ -241,10 +271,10 @@ test('a changed week must be reviewed again before publication', async ({page}) 
     {date: week, slot: 'dinner', meal: 'First version'}]}})).ok()).toBe(true);
   const circle = await (await page.request.post('/api/circles', {data: {name: 'Changing plan'}})).json();
   await page.goto(`/app?view=plan&week=${week}`);
-  await page.locator('.sidebar [data-view="circles"]').click();
+  await navigateToView(page, 'circles');
   await page.locator('.circle-room').filter({hasText: 'Changing plan'}).click();
   const before = await countSharesInCircle(page, circle.id);
-  await page.locator('.circle-card').filter({hasText: 'Changing plan'}).getByRole('button', {name: 'Share this week'}).click();
+  await shareInCircle(page, 'Share this week');
   await expect(page.locator('.circle-review')).toContainText('First version');
   expect((await page.request.put('/api/meal-plan', {data: {weekStart: week, entries: [
     {date: week, slot: 'dinner', meal: 'Second version'}]}})).ok()).toBe(true);

@@ -18,7 +18,7 @@ async function host(page, standalone = false, live = false) {
   }
   await page.route('**/mcp-test-host', (route) => route.fulfill({
     contentType: 'text/html',
-    body: `<!doctype html><html><body><iframe src="${frameUrl}" style="width:100%;height:900px;border:0"></iframe>
+    body: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>@media(pointer:coarse){iframe{height:calc(100dvh - 16px)!important}}</style></head><body><iframe src="${frameUrl}" style="width:100%;max-width:100%;box-sizing:border-box;height:900px;border:0"></iframe>
       <script>
         window.calls = [];
         window.mcpRequestIds = [];
