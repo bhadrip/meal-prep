@@ -383,3 +383,12 @@ Edit the server document when changing workflow guidance. MCP Apps enhance
 presentation; clients without app rendering can use structured results and
 complete onboarding conversationally. Photo archival still requires a supported
 ChatGPT attachment; moving instructions does not add other clients' upload formats.
+
+
+## Chat website revamp
+
+Apply `supabase/migrations/202610050001_chat_revamp.sql` **before** deploying the chat revamp. The migration preserves existing circles, posts and frozen recipients while adding private profiles, read/mute state, reactions, idempotent sends and caller-scoped live versions. New operations are exposed through shared application services and both HTTP and direct MCP tools; no plugin installation is required.
+
+The website consumes bounded authenticated SSE invalidations and rechecks history through the same authorization RPCs. Direct shares with the same accepted friend reuse one conversation; legacy direct-room posts keep their original membership epochs. Read [chat layout, delivery and verification](../docs/circles-performance.md) for the transport, paging and privacy details.
+
+Local verification runs the complete backend suite and Chromium/Android/iPhone Playwright matrix. The Supabase integration suite additionally exercises concurrent retries/direct shares, removed and re-invited members, legacy-room consolidation, muted notifications and account cleanup against a disposable local stack. It does not require or modify production data.

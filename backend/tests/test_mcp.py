@@ -972,3 +972,32 @@ def test_discovery_logs_the_complete_wire_inventory_and_recipe_save_failure(clie
     for private in ('private-test-token', 'private-client-detail', 'private-rpc-id',
                     'Private household recipe', 'private ingredient', saved['id']):
         assert private not in log_text
+
+
+def test_http_and_mcp_share_chat_operations_and_reject_invalid_inputs(client):
+    from uuid import uuid4
+    def tool(name, arguments):
+        response = client.post('/mcp', headers={'Accept':'application/json, text/event-stream'}, json={
+            'jsonrpc':'2.0','id':1,'method':'tools/call','params':{'name':name,'arguments':arguments}})
+        return response.json()['result']
+    room = client.post('/api/circles', json={'name':'MCP parity'}).json()
+    token = str(uuid4())
+    message = tool('send_circle_message', {'circle_id':room['id'],'body':'MCP dinner','client_id':token})['structuredContent']
+    retry = client.post(f"/api/circles/{room['id']}/messages", json={'body':'MCP dinner','clientId':token})
+    assert retry.json()['id'] == message['id']
+    edited = tool('edit_chat_message', {'message_id':message['id'],'body':'MCP lunch'})['structuredContent']
+    assert edited['snapshot']['text'] == 'MCP lunch'
+    assert client.get(f"/api/chats/{room['id']}/history", params={'query':'lunch'}).json()['items'][0]['id'] == message['id']
+    assert tool('react_to_chat_message', {'message_id':message['id'],'emoji':'👍'})['structuredContent']['reactions'][0]['count'] == 1
+    assert tool('search_chat_history', {'circle_id':room['id'],'cursor':'bad'})['isError'] is True
+    assert client.get(f"/api/chats/{room['id']}/history?cursor=bad").status_code == 422
+    assert tool('edit_chat_message', {'message_id':message['id'],'body':''})['isError'] is True
+    assert client.get('/api/chat-sync').json()['version'] == tool('get_chat_sync', {})['structuredContent']['version']
+
+    assert client.patch(f"/api/chats/{room['id']}/state", json={'muted':'false'}).status_code == 422
+    assert client.patch(f"/api/chat-messages/{message['id']}", json={'body':None}).status_code == 422
+    assert client.put('/api/chat-profile', json={'name':{}}).status_code == 422
+    assert tool('update_chat_state', {'circle_id':room['id'],'muted':True})['structuredContent']['muted'] is True
+    assert tool('list_chat_conversations', {})['structuredContent']['items'][0]['latest']['id'] == message['id']
+    assert tool('update_chat_profile', {'name':'MCP Alex'})['structuredContent']['name'] == 'MCP Alex'
+    assert client.get('/api/chat-profile').json()['name'] == 'MCP Alex'

@@ -15,6 +15,7 @@ from ..application.errors import RepositoryError, RevisionConflictError, Storage
 from ..application.pantry_categories import infer_pantry_category
 from ..application.recipe_graph import CATEGORY_FIELDS, category_id, relationships_from_data
 from ..config import Settings, get_settings
+from .chat import SupabaseChat, DemoChat
 
 
 PLANNING_TABLES = {
@@ -62,7 +63,7 @@ def _repository_error(path: str, exc: httpx.HTTPError | ValueError) -> Repositor
     return RepositoryError(detail or str(exc))
 
 
-class SupabaseRepository:
+class SupabaseRepository(SupabaseChat):
     async def direct_shares(self, limit=51, offset=0):
         return await self.rpc("list_direct_shares", {"result_limit": limit, "result_offset": offset})
 
@@ -694,7 +695,7 @@ class SupabaseRepository:
         return rows[0]
 
 
-class DemoRepository:
+class DemoRepository(DemoChat):
     """Deterministic local state used when Supabase is not configured."""
 
     user_id = "demo"
@@ -710,7 +711,7 @@ class DemoRepository:
         return deepcopy([{"id": row["id"], "name": row["name"], "ownerId": row["ownerId"],
                           "members": [{"userId": user, "email": user, "status": status} for user, status in row["members"].items()] if row["ownerId"] == self.user_id else [],
                           "audience": [{"userId": user, "membershipId": row["memberEpochs"][user],
-                                        "name": user.split('@')[0]} for user, status in row["members"].items()
+                                        "name": self._chat_name(user)} for user, status in row["members"].items()
                                        if status == "accepted"] if row["members"].get(self.user_id) == "accepted" else [],
                           "memberNames": [user.split('@')[0] for user, status in row["members"].items() if status == "accepted"] if row["members"].get(self.user_id) == "accepted" else [],
                           "memberCount": sum(status == "accepted" for status in row["members"].values()) if row["members"].get(self.user_id) == "accepted" else 0,
@@ -776,7 +777,7 @@ class DemoRepository:
                       if status == "accepted")
 
     async def circle_feed(self, limit=51, offset=0, kind=None, circle_id=None):
-        rows = [self._circle_summary(row) for row in reversed(list(self._circle_posts.values()))
+        rows = [self._chat_enrich(self._circle_summary(row)) for row in reversed(list(self._circle_posts.values()))
                 if row["revokedAt"] is None and self._circles[row["circleId"]]["members"].get(self.user_id) == "accepted"
                 and row["recipientIds"].get(self.user_id) == self._circles[row["circleId"]]["memberEpochs"].get(self.user_id)
                 and (kind is None or row["kind"] == kind)
@@ -791,7 +792,7 @@ class DemoRepository:
 
     async def circle_mention_candidates(self, circle_id):
         circle = self._circle_access(circle_id)
-        return [{"id": user, "name": user.split('@')[0]} for user, status in circle["members"].items() if status == "accepted"]
+        return [{"id": user, "name": self._chat_name(user)} for user, status in circle["members"].items() if status == "accepted"]
 
     async def direct_shares(self, limit=51, offset=0):
         rows = await self.circle_feed(100000, 0)
@@ -806,8 +807,11 @@ class DemoRepository:
                   and datetime.fromisoformat(row["createdAt"]) > now - timedelta(days=1)]
         if len(recent) >= 20:
             raise RepositoryError("Daily share limit reached")
-        room_id = str(uuid4())
-        self._circles[room_id] = {"id": room_id, "name": "Direct share", "ownerId": self.user_id,
+        existing = next((r for r in self._circles.values() if r.get("roomType") == "direct"
+                         and set(r["members"]) == {self.user_id, email}
+                         and all(v == "accepted" for v in r["members"].values())), None)
+        room_id = existing["id"] if existing else str(uuid4())
+        if not existing: self._circles[room_id] = {"id": room_id, "name": "Direct share", "ownerId": self.user_id,
                                   "roomType": "direct", "members": {self.user_id: "accepted", email: "accepted"},
                                   "memberEpochs": {self.user_id: str(uuid4()), email: str(uuid4())}}
         try:
@@ -825,7 +829,7 @@ class DemoRepository:
             return await self._circle_post(room_id, "meal", {"meal": {"id": meal["id"], "name": meal["name"],
                 "servings": meal["servings"], "notes": meal.get("notes", ""), "components": components}, "recipes": recipes})
         except Exception:
-            del self._circles[room_id]
+            if not existing: del self._circles[room_id]
             raise
 
     async def circle_get_post(self, share_id):
@@ -833,7 +837,7 @@ class DemoRepository:
         if not row or row["revokedAt"] or self._circles[row["circleId"]]["members"].get(self.user_id) != "accepted" or row["recipientIds"].get(self.user_id) != self._circles[row["circleId"]]["memberEpochs"].get(self.user_id):
             raise RepositoryError("Shared item was not found")
         recipes = row["snapshot"].get("recipes") or [row["snapshot"].get("recipe")]
-        return {**self._circle_summary(row), "comments": deepcopy([comment for comment in self._circle_comments.get(share_id, [])
+        return {**self._chat_enrich(self._circle_summary(row)), "comments": deepcopy([comment for comment in self._circle_comments.get(share_id, [])
                                                                    if not comment.get("deletedAt")]),
                 "recipientUserIds": [user for user, epoch in row["recipientIds"].items()
                                      if self._circles[row["circleId"]]["members"].get(user) == "accepted"
@@ -895,8 +899,7 @@ class DemoRepository:
     async def circle_send_message(self, circle_id, body, attachment_kind=None, attachment_id=None,
                                   mention_ids=None, expected_audience=None):
         circle = self._circle_access(circle_id)
-        if circle.get("roomType") == "direct":
-            raise RepositoryError("Circle is not available")
+
         if expected_audience is not None and expected_audience != self._circle_audience_keys(circle):
             raise RepositoryError("Circle audience changed")
         if not set(mention_ids or []).issubset({user for user, status in circle["members"].items() if status == "accepted"}):
@@ -1004,6 +1007,7 @@ class DemoRepository:
         self._circle_posts = {}
         self._circle_comments = {}
         self._circle_saves = {}
+        self._chat = {"profiles": {}, "states": {}, "reactions": {}, "sends": {}}
         self._context = deepcopy(self._context)
         self._pantry = deepcopy(self._pantry)
         self._shopping_list = deepcopy(self._shopping_list)

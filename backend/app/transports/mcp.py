@@ -182,10 +182,11 @@ async def get_shared_item(share_id: str) -> dict[str, Any]:
 @mcp.tool(annotations=SHARE, structured_output=True)
 async def send_circle_message(circle_id: str, body: str, attachment_kind: str | None = None,
                               attachment_id: str | None = None, mention_ids: list[str] | None = None,
-                              expected_audience: list[str] | None = None) -> dict[str, Any]:
-    """Post to an accepted private circle. Optionally attach one recipe or saved meal snapshot and mention accepted circle member IDs. The attachment is shared with the circle and opens a thread."""
+                              expected_audience: list[str] | None = None, client_id: str | None = None,
+                              reply_to: str | None = None) -> dict[str, Any]:
+    """Post to an accepted private group or direct conversation. Supply a fresh UUID client_id; retry unchanged content with the same ID. Optional reply_to quotes a readable post in this conversation. Optionally attach one reviewed recipe or meal snapshot with expected_audience, and mention resolved accepted member IDs."""
     return await services_for_request().circles.send_message(circle_id, body, attachment_kind,
-        attachment_id, mention_ids, expected_audience)
+        attachment_id, mention_ids, expected_audience, client_id, reply_to)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
@@ -897,3 +898,46 @@ def pantry_evidence_resource() -> str:
 
 
 mcp_app = mcp.streamable_http_app()
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def list_chat_conversations() -> dict[str, Any]:
+    """List accepted group and direct conversations with latest message, unread count, display names and mute state."""
+    return await services_for_request().circles.conversations()
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def search_chat_history(circle_id: str, limit: int = 50, cursor: str | None = None,
+                              query: str = '', sender: str | None = None, date_from: str | None = None,
+                              kind: str | None = None) -> dict[str, Any]:
+    """Read or search authorized conversation history and replies. Follow nextCursor for stable older pages. Filters: sender UUID, ISO date_from, message/recipe/meal/week kind."""
+    return await services_for_request().circles.history(circle_id, limit, cursor, query, sender, date_from, kind)
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def update_chat_state(circle_id: str, last_read_id: str | None = None, muted: bool | None = None) -> dict[str, Any]:
+    """Mark an accessible message read, or mute/unmute a conversation. Read positions only advance. Muting leaves membership unchanged."""
+    return await services_for_request().circles.update_conversation(circle_id, last_read_id, muted)
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def edit_chat_message(message_id: str, body: str) -> dict[str, Any]:
+    """Edit your own text message. Food snapshots remain immutable."""
+    return await services_for_request().circles.edit_message(message_id, body)
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def react_to_chat_message(message_id: str, emoji: str, active: bool = True) -> dict[str, Any]:
+    """Set or remove your reaction to an accessible message: 👍 ❤️ 😋 🎉. Repeated setting is idempotent."""
+    return await services_for_request().circles.react(message_id, emoji, active)
+
+@mcp.tool(annotations=WRITE, structured_output=True)
+async def update_chat_profile(name: str) -> dict[str, Any]:
+    """Set your display name for private chats (1–60 characters)."""
+    return await services_for_request().circles.profile(name)
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_chat_profile() -> dict[str, Any]:
+    """Read your private-chat display name."""
+    return await services_for_request().circles.profile()
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_chat_sync() -> dict[str, Any]:
+    """Read your durable chat change version. When it changes, refresh authorized conversations/history; versions contain no message content."""
+    return await services_for_request().circles.sync()

@@ -8,7 +8,7 @@ from uuid import UUID
 from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..application import MealPrepServices
@@ -196,7 +196,7 @@ async def share_recipe_to_circle(circle_id: UUID, payload: dict[str, Any], servi
 async def send_circle_message(circle_id: UUID, payload: dict[str, Any], services: WebServices) -> dict:
     return await services.circles.send_message(str(circle_id), payload.get("body"),
         payload.get("attachmentKind"), payload.get("attachmentId"), payload.get("mentionIds"),
-        payload.get("expectedAudience"))
+        payload.get("expectedAudience"), payload.get("clientId"), payload.get("replyTo"))
 
 
 @router.get("/api/circles/{circle_id}/mention-candidates")
@@ -654,3 +654,54 @@ async def save_shared_recipe(token: str, services: WebServices) -> dict:
     if not share:
         raise HTTPException(status_code=404, detail="Share not found or no longer available")
     return await services.food.copy_shared_recipe(token)
+
+
+@router.get('/api/chats')
+async def chat_rooms(services: WebServices):
+    return await services.circles.conversations()
+
+@router.get('/api/chats/{circle_id}/history')
+async def chat_history(circle_id: str, services: WebServices, limit: int = 50, cursor: str | None = None,
+                       query: str = '', sender: str | None = None, date_from: str | None = None, kind: str | None = None):
+    return await services.circles.history(circle_id, limit, cursor, query, sender, date_from, kind)
+
+@router.patch('/api/chats/{circle_id}/state')
+async def chat_state(circle_id: str, services: WebServices, payload: dict = Body(...)):
+    return await services.circles.update_conversation(circle_id, payload.get('lastReadId'), payload.get('muted'))
+
+@router.patch('/api/chat-messages/{message_id}')
+async def chat_edit(message_id: str, services: WebServices, payload: dict = Body(...)):
+    return await services.circles.edit_message(message_id, payload.get('body', ''))
+
+@router.put('/api/chat-messages/{message_id}/reaction')
+async def chat_reaction(message_id: str, services: WebServices, payload: dict = Body(...)):
+    return await services.circles.react(message_id, payload.get('emoji'), payload.get('active', True))
+
+@router.get('/api/chat-profile')
+async def chat_profile(services: WebServices):
+    return await services.circles.profile()
+
+@router.put('/api/chat-profile')
+async def chat_save_profile(services: WebServices, payload: dict = Body(...)):
+    return await services.circles.profile(payload.get('name', ''))
+
+@router.get('/api/chat-sync')
+async def chat_sync(services: WebServices):
+    return await services.circles.sync()
+
+@router.get('/api/chat-events')
+async def chat_events(services: WebServices, version: str = ''):
+    # Bounded authenticated streams work on the existing serverless host. Each
+    # reconnect rechecks the token; durable counters catch up missed changes.
+    import json
+    async def events():
+        previous = version
+        for _ in range(20):
+            current = await services.circles.sync()
+            if current['version'] != previous:
+                previous = current['version']
+                yield 'data: ' + json.dumps(current) + '\n\n'
+            else:
+                yield ': heartbeat\n\n'
+            await asyncio.sleep(1)
+    return StreamingResponse(events(), media_type='text/event-stream', headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})

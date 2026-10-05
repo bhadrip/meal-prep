@@ -689,3 +689,95 @@ async def test_local_sharing_hub_direct_mentions_and_public_broadcasts():
         finally:
             for user_id in users:
                 await client.delete(f'/auth/v1/admin/users/{user_id}', headers=admin)
+
+@pytest.mark.asyncio
+async def test_local_chat_revamp_persistence_privacy_and_concurrent_retry():
+    url, anon, secret = (os.environ.get(key) for key in ('MEAL_PREP_TEST_SUPABASE_URL', 'MEAL_PREP_TEST_ANON_KEY', 'MEAL_PREP_TEST_SERVICE_ROLE_KEY'))
+    if not all((url, anon, secret)):
+        pytest.skip('local Supabase test credentials are not configured')
+    admin = {'apikey': secret, 'Authorization': f'Bearer {secret}'}
+    users, homes, services, emails = [], [], [], []
+    async with httpx.AsyncClient(base_url=url, timeout=20) as client:
+        try:
+            for role in ('sender', 'peer', 'stranger'):
+                email, password = f'chat-{role}-{uuid4()}@example.test', str(uuid4())
+                created = await client.post('/auth/v1/admin/users', headers=admin, json={'email': email, 'password': password, 'email_confirm': True})
+                assert created.status_code in (200, 201), created.text
+                users.append(created.json()['id']); emails.append(email)
+                login = await client.post('/auth/v1/token', params={'grant_type': 'password'}, headers={'apikey': anon}, json={'email': email, 'password': password})
+                assert login.status_code == 200, login.text
+                repo = SupabaseRepository(Settings(supabase_url=url, supabase_anon_key=anon, auth_required=True), login.json()['access_token'])
+                homes.append((await repo.get_household_context())['householdId'])
+                services.append(CircleService(repo))
+            own, peer, stranger = services
+            room = await own.create_circle('Live kitchen')
+            await own.invite_friend(room['id'], emails[1]); await peer.respond_invitation(room['id'], True)
+            await own.profile('Alex')
+            token = str(uuid4())
+            messages = await asyncio.gather(*(own.send_message(room['id'], 'Dinner tonight?', client_id=token) for _ in range(3)))
+            first = messages[0]
+            assert len({message['id'] for message in messages}) == 1
+            assert first['createdByName'] == 'Alex'
+            with pytest.raises(RepositoryError, match='Retry content changed'):
+                await own.send_message(room['id'], 'Different content', client_id=token)
+            assert (await peer.conversations())['items'][0]['unreadCount'] == 1
+            before = await peer.sync()
+            await peer.update_conversation(room['id'], first['id'], True)
+            assert (await peer.conversations())['items'][0]['unreadCount'] == 0
+            assert before != await peer.sync()
+            quoted = await peer.send_message(room['id'], 'Yes!', reply_to=first['id'])
+            assert quoted['snapshot']['replyTo']['text'] == 'Dinner tonight?'
+            await peer.react(first['id'], '👍'); await peer.react(first['id'], '👍')
+            assert (await own.history(room['id']))['items'][1]['reactions'][0]['count'] == 1
+            assert (await own.history(room['id']))['items'][1]['seenBy'] == 1
+            edited = await own.edit_message(first['id'], 'Lunch tomorrow?')
+            assert edited['editedAt'] and edited['snapshot']['text'] == 'Lunch tomorrow?'
+            with pytest.raises(RepositoryError, match='Only your'):
+                await peer.edit_message(first['id'], 'Hijacked')
+            with pytest.raises(RepositoryError): await stranger.history(room['id'])
+            with pytest.raises(RepositoryError): await stranger.react(first['id'], '👍')
+            other = await own.create_circle('Another kitchen')
+            with pytest.raises(RepositoryError, match='another conversation'):
+                await own.send_message(other['id'], 'Wrong room', reply_to=first['id'])
+            older = await own.history(room['id'], limit=1)
+            later = await own.send_message(room['id'], 'New after paging')
+            page = await own.history(room['id'], limit=1, cursor=older['nextCursor'])
+            assert [item['id'] for item in page['items']] == [first['id']]
+            assert [item['id'] for item in (await own.history(room['id'], query='lunch', sender=users[0], kind='message'))['items']] == [first['id']]
+            notifications = await peer.repository.request('GET', 'notifications', params={'select': 'event_key', 'circle_id': f"eq.{room['id']}"})
+            assert all(later['id'] not in item['event_key'] for item in notifications)
+            recipe = await RecipePantryService(own.repository).save_recipe({'title': 'Chat rice', 'ingredients': []})
+            direct = await asyncio.gather(*(own.share_direct(emails[1], 'recipe', recipe_id=recipe['id']) for _ in range(2)))
+            assert direct[0]['circleId'] == direct[1]['circleId']
+            assert len([r for r in (await own.conversations())['items'] if r['roomType']=='direct']) == 1
+            await peer.send_message(direct[0]['circleId'], 'Thanks for the rice')
+            assert len((await own.history(direct[0]['circleId']))['items']) == 3
+            preview = next(r for r in (await own.conversations())['items'] if r['id']==direct[0]['circleId'])
+            assert preview['latest']['snapshot']['text'] == 'Thanks for the rice'
+            legacy_id = str(uuid4())
+            created = await client.post('/rest/v1/friend_circles', headers=admin, json={'id':legacy_id,'name':'Legacy direct','owner_id':users[0],'room_type':'direct'})
+            assert created.status_code in (200,201), created.text
+            created = await client.post('/rest/v1/circle_members', headers=admin, json=[{'circle_id':legacy_id,'user_id':user,'status':'accepted'} for user in users[:2]])
+            assert created.status_code in (200,201), created.text
+            legacy_post = await own.share_recipe(legacy_id, recipe['id'])
+            assert len([r for r in (await own.conversations())['items'] if r['roomType']=='direct']) == 1
+            assert legacy_post['id'] in [p['id'] for p in (await peer.history(direct[0]['circleId']))['items']]
+            await peer.update_conversation(legacy_id, legacy_post['id'], True)
+            assert next(r for r in (await peer.conversations())['items'] if r['id']==direct[0]['circleId'])['muted'] is True
+            rotated = await client.patch('/rest/v1/circle_members', headers=admin, params={'circle_id':f'eq.{legacy_id}','user_id':f'eq.{users[1]}'},json={'membership_id':str(uuid4())})
+            assert rotated.status_code in (200,204), rotated.text
+            assert legacy_post['id'] not in [p['id'] for p in (await peer.history(direct[0]['circleId']))['items']]
+            assert legacy_post['id'] in [p['id'] for p in (await own.history(direct[0]['circleId']))['items']]
+            assert 'ingredients' not in next(r for r in (await own.conversations())['items'] if r['id']==direct[0]['circleId'])['latest']['snapshot']['recipe']
+            await own.remove_friend(room['id'], users[1])
+            with pytest.raises(RepositoryError): await peer.history(room['id'])
+            assert (await own.history(room['id'], query='lunch'))['items'][0]['reactions'] == []
+            await own.invite_friend(room['id'], emails[1]); await peer.respond_invitation(room['id'], True)
+            assert (await peer.history(room['id']))['items'] == []
+            assert (await own.history(room['id'], query='lunch'))['items'][0]['seenBy'] == 0
+        finally:
+            for home in homes:
+                await client.delete('/rest/v1/households', headers=admin, params={'id': f'eq.{home}'})
+            for user in users:
+                deleted = await client.delete(f'/auth/v1/admin/users/{user}', headers=admin)
+                assert deleted.status_code in (200, 204), deleted.text

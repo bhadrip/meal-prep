@@ -526,3 +526,21 @@ def test_web_feedback_and_memory_lifecycle():
     assert all(item["id"] != memory_id for item in client.get("/api/memories").json()["items"])
     assert any(item["id"] == memory_id for item in client.get("/api/memories?include_inactive=true").json()["items"])
     demo_repository.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_chat_event_stream_emits_only_scoped_versions_and_requires_session(monkeypatch):
+    settings=Settings(supabase_url='https://example.supabase.co',supabase_anon_key='public-test-key',auth_required=True)
+    monkeypatch.setattr(http,'get_settings',lambda:settings)
+    verify=AsyncMock(return_value=None)
+    monkeypatch.setattr(http,'SupabaseTokenVerifier',lambda _:SimpleNamespace(verify_token=verify))
+    client=TestClient(app)
+    for endpoint in ('/api/chat-events','/api/chat-sync','/api/chats'):
+        assert client.get(endpoint).status_code==401
+        assert client.get(endpoint,headers={'Authorization':'Bearer expired'}).status_code==401
+    sync=AsyncMock(side_effect=[{'version':'7'}]+[{'version':'8'}]*19)
+    response=await http.chat_events(SimpleNamespace(circles=SimpleNamespace(sync=sync)),version='7')
+    assert await anext(response.body_iterator)==': heartbeat\n\n'
+    frame=await anext(response.body_iterator)
+    assert frame=='data: {"version": "8"}\n\n'
+    await response.body_iterator.aclose()

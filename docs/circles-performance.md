@@ -1,36 +1,35 @@
-# Circles responsiveness
+# Chat layout and delivery
 
-Research and implementation notes, October 3, 2026.
+The website uses a conversation list, chronological message viewport, persistent composer, and one panel for threads, members, food selection or review. Desktop panels sit beside the timeline; phones show one pane at a time. The layout follows the visible viewport when a keyboard opens.
 
-## What the published engineering work supports
+## Interaction and state
 
-Slack's [Making Slack Faster By Being Lazy](https://slack.engineering/making-slack-faster-by-being-lazy/) describes loading the active conversation first, fetching modest pages of history, caching recent conversations, and preparing likely next views. Its [incremental boot](https://slack.engineering/getting-to-slack-faster-with-incremental-boot/) work separates the initial usable interface from secondary data loading. These are historical engineering reports, not a claim about the exact current Slack client.
+Keyed DOM reconciliation retains message nodes, timeline scroll position, composer identity, drafts, mention instances, focus and selection during updates. Ten recently visited feeds are cached in memory and revalidated on opening. Drafts stay scoped to a conversation; household changes clear chat state. These caches are ephemeral and contain no disk persistence.
 
-Slack's [real-time messaging architecture](https://slack.engineering/real-time-messaging/) documents persistent WebSocket connections for receiving events, while sending messages uses its Webapp API. Meta's [WhatsApp multi-device architecture](https://engineering.fb.com/2021/07/14/security/whatsapp-multi-device/) describes companion devices reading synchronized history from their own local databases. The practical lesson for Circles is to keep an immediately usable local view and synchronize it separately from user interaction.
+Text sends clear the composer immediately and show a pending bubble. Failures keep the bubble with explicit retry/edit actions. Retries use the original UUID and identical payload; database locking prevents concurrent retries from publishing twice. Retrying an earlier failed message preserves a newer composer draft. Food and week sends still review their snapshot and audience before publication.
 
-Google's [INP guidance](https://web.dev/articles/optimize-inp) defines good responsiveness as INP at or below 200 ms. Our proposed product targets are feedback on send or cached navigation within 100 ms and field INP at or below 200 ms at the 75th percentile. These are targets, not production measurements or guarantees about server acknowledgement time.
+Room lists contain compact latest-message titles/captions, unread counts, names and mute state. Full snapshots load only in the conversation or thread. Food searches run on demand; they have loading, empty and failure states. Search runs against authorized history, not just the loaded viewport, and supports sender, date and type filters with cursor continuation.
 
-## Implemented in this change
+History starts with 50 posts. Cursor pages use creation time and UUID, so incoming posts do not shift an offset boundary. Loading older messages anchors the current reading position. Incoming messages scroll only when the reader is already at the bottom; otherwise a Jump to latest action appears. Read positions move forward only. Display names, quotes, text edits, reactions and read counts use the same services for HTTP and MCP.
 
-- One layout with a conversation list, bounded message viewport, visible composer, and one temporary detail panel. Members, share selection, review, and threads share the panel; mobile returns to the same conversation and draft.
-- Keyed DOM reconciliation preserves message nodes, scroll containers, the live composer, mention instances, focus, cursor selection, and drafts during incoming updates. Unchanged inputs do not get replaced by an entire-page render.
-- Up to ten recently visited group feeds are cached in memory. Switching renders that room immediately, then revalidates membership and history. Drafts are separate per circle. Feed caches are cleared on explicit refresh; drafts and pending state are cleared on a household change. Nothing is persisted to disk.
-- The active feed request starts alongside the circle list and optional thread detail. Direct shares, public links, and other circle previews load separately and cannot block the conversation.
-- Food autocomplete searches existing service endpoints on demand, debounces by 100 ms, limits results to twenty, and keeps at most forty query results in session memory. It does not preload every recipe to open a chat. Search caches are cleared when refreshing household data.
-- Plain text sends show a pending message before waiting for the POST. The server's acknowledgement supplies the actual published message; there is no second full reload. Failure removes the pending item and retains the draft. Newer typing is retained when an earlier send succeeds. No automatic resend occurs after an ambiguous network failure.
-- Active conversation updates run every three seconds, including while typing. They fetch only the active history and optional open thread. Membership and sharing lists refresh every thirty seconds. Hidden pages pause polling. Request generations discard stale room and household responses.
-- Existing service validation, frozen audiences, privacy boundaries, and explicit food/week reviews remain authoritative. These UI optimizations use the same API/application operations as direct MCP clients.
+## Live delivery
 
-## Next steps for true live delivery
+`/api/chat-events` is an authenticated, bounded SSE stream. It emits caller-scoped version invalidations, without private message bodies. A database trigger increments durable user versions for messages, replies, revocations, membership changes, profiles, reactions and read/mute state. The stream checks that lightweight version each second and expires after 20 seconds; reconnect validates the session again. This supports the existing serverless hosting model without opening private table access.
 
-The current implementation is polling, not a persistent event stream. Polling also rereads a bounded page rather than receiving only changed records. Three-second updates improve the existing twelve-second, typing-paused behavior but do not achieve Slack-like instant remote delivery.
+The client reconnects with exponential backoff, catches up from the durable version, stops while hidden or outside Chats, and restarts on connectivity or visibility changes. It refetches authorized conversation/history data when notified. The old three-second history polling and thirty-second full-list loops are removed. Direct MCP clients use `get_chat_sync` with the same scoped versions and the conversation/history tools.
 
-A follow-up should add authenticated, membership-scoped server events with reconnect and catch-up support, plus lightweight conversation summaries. Emit invalidation events for messages, replies, revocations, and membership changes; clients refetch through authorized services. Do not subscribe directly to private tables that currently have no client grants. Implement the capability in the backend and expose equivalent incremental reads or subscriptions through MCP as supported by its transport, with API/MCP authorization tests and rendered two-client tests. Start with scoped invalidation rather than duplicating the entire messaging architecture.
+This delivers near-live invalidation, with up to the version check interval plus network latency. It is not a websocket or a claim of measured production delivery latency. Very large loaded histories are not virtualized; add virtualization after profiling real conversation sizes. Initial histories and room previews remain bounded.
 
-Other measured follow-ups: cursor-based history pagination instead of offset drift during concurrent posts; virtualize history when actual DOM or memory profiles justify it; replace background full snapshots with compact room previews; add idempotency keys before automatic retry; collect real interaction, acknowledgement, and remote delivery latency under realistic network and CPU conditions. Account-scoped persistent storage would require a separate privacy and invalidation design; the present session cache is intentionally ephemeral.
+## Persistence and privacy
+
+Apply `backend/supabase/migrations/202610050001_chat_revamp.sql` after the existing migrations. It adds profiles, read/mute states, reactions, idempotent sends, versions and authorization RPCs. New private tables have RLS and no direct authenticated/anonymous grants. Existing MCP tools, food snapshots, notifications and publication reviews stay supported.
+
+Repeated direct shares reuse the earliest accepted two-person room. Legacy rooms are consolidated for display without rewriting posts or recipients. Every history result, quote, action, reaction and read position verifies the original post's captured membership epoch. Removing and re-inviting someone cannot restore old content or reactions. Muting suppresses future in-app chat notifications; it does not revoke membership.
 
 ## Verification
 
-`ui-tests/circles-performance.spec.js` tests preserved geometry and drafts on desktop/mobile, incoming messages while typing with the same DOM node and cursor selection, cached switching while network requests are held, pending sends and failed-send recovery without duplicate publication, and food requests that cannot block plain messages. Existing Circles and sharing-hub suites verify sharing review, exact thread scope, saved food, mobile navigation, and public/direct sharing.
+`ui-tests/chat-revamp.spec.js` covers quotes, reactions, editing and failed edit recovery, real server search and filters, mute/profile persistence, invitation failures, picker retry/removable attachments, cursor scroll anchoring, Jump to latest, persistent direct conversations, two-tab delivery/reconnect, mobile keyboard height, week navigation and pantry filter reset.
 
-`backend/tests/test_circles.py` tests that the send acknowledgement contains the complete displayable message, invalid and unauthorized sends leave history unchanged, member management leaves the owner's conversation intact, and removal immediately ends a friend's read access.
+`ui-tests/circles-performance.spec.js`, `ui-tests/circles.spec.js` and `ui-tests/sharing-hub.spec.js` cover composer identity, request races, retries, recipient review, frozen snapshots, exact threads and mobile return navigation. The full Playwright suite also checks the wider website and embedded MCP App in Chromium, Android and iPhone profiles.
+
+`backend/tests/test_chat_revamp.py`, `backend/tests/test_mcp.py` and `backend/tests/test_supabase_integration.py` verify shared service/transport behavior, invalid inputs, idempotency conflicts and concurrency, history cursors, author/member boundaries, legacy room consolidation, frozen audiences, unread/read state, notification muting and real database persistence.

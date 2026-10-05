@@ -1,3 +1,4 @@
+const {openConversationSettings,openMessageThread}=require('./navigation');
 const {test, expect} = require('@playwright/test');
 
 async function chooseFood(page, field, prefix, title) {
@@ -13,8 +14,8 @@ test('landing shows circles and direct shares, and @recipe attaches a snapshot t
   await page.goto('/app?view=circles');
   if (await page.locator('.mobile-nav').isVisible()) await page.getByRole('button', {name: '⌂ All activity', exact: true}).click();
   await expect(page.getByRole('heading', {name: 'All activity'})).toBeVisible();
-  await expect(page.locator('.circle-hub-groups')).toContainText('Supper club');
   if (await page.locator('.circle-rail').isHidden()) await page.getByRole('button', {name: '‹ Chats', exact: true}).click();
+  await expect(page.getByRole('navigation',{name:'Circle conversations',exact:true}).filter({hasText:'Supper club'})).toBeVisible();
   await page.getByRole('searchbox', {name: 'Search conversations'}).fill('Supper');
   await expect(page.locator('.circle-room').filter({hasText: 'Supper club'})).toBeVisible();
   await page.getByRole('searchbox', {name: 'Search conversations'}).fill('No matching conversation');
@@ -27,7 +28,7 @@ test('landing shows circles and direct shares, and @recipe attaches a snapshot t
   await expect(page.getByRole('region', {name: 'Review food share'})).toContainText('Ginger noodles');
   await expect(page.locator('.circle-post')).toHaveCount(0);
   await page.getByRole('button', {name: 'Confirm share'}).click();
-  await expect(page.locator('.circle-post').first()).toContainText('Ginger noodles');
+  await expect(page.locator('.circle-post').last()).toContainText('Ginger noodles');
   const feed = await (await page.request.get(`/api/circle-shares?circle_id=${circle.id}`)).json();
   expect(feed.items[0].snapshot.recipe.id).toBe(recipe.id);
   await page.request.put('/api/recipes', {data: {id: recipe.id, title: 'Changed noodles', servings: 2,
@@ -40,18 +41,17 @@ test('landing shows circles and direct shares, and @recipe attaches a snapshot t
   await page.getByLabel('Message Supper club').pressSequentially('@demo');
   await page.locator('.mention-item').filter({hasText: 'demo'}).click();
   await page.getByRole('button', {name: 'Send message'}).click();
-  await expect(page.locator('.circle-post').first()).toContainText('@demo');
-  await page.locator('.circle-post').first().getByRole('button', {name: /Reply in thread/}).click();
+  await expect(page.locator('.circle-post').last()).toContainText('@demo');
+  await openMessageThread(page.locator('.circle-post').last());
   await expect(page.locator('.circle-thread-panel')).toContainText('@demo');
   await page.getByRole('button', {name: 'Close thread'}).click();
   if (await page.locator('.circle-rail').isHidden()) await page.getByRole('button', {name: '‹ Chats', exact: true}).click();
   else await page.getByRole('button', {name: 'All activity'}).first().click();
-  if (await page.locator('.mobile-nav').isVisible()) await page.getByRole('button', {name: '⌂ All activity', exact: true}).click();
-  await expect(page.locator('.circle-hub-groups')).toBeVisible();
-  await expect(page.locator('.circle-hub-groups')).toContainText('@demo');
+  await expect(page.getByRole('navigation',{name:'Circle conversations',exact:true})).toBeVisible();
+  await expect(page.getByRole('navigation',{name:'Circle conversations',exact:true})).toContainText('@demo');
   await page.reload();
-  await expect(page.locator('.circle-hub-groups')).toBeVisible();
-  await expect(page.locator('.circle-hub-groups')).toContainText('@demo');
+  await expect(page.getByRole('navigation',{name:'Circle conversations',exact:true})).toBeVisible();
+  await expect(page.getByRole('navigation',{name:'Circle conversations',exact:true})).toContainText('@demo');
 });
 
 test('a direct @meal share opens its own private discussion without joining a circle', async ({page}) => {
@@ -63,19 +63,21 @@ test('a direct @meal share opens its own private discussion without joining a ci
   await chooseFood(page, page.getByLabel('Food to share'), 'mealChickpea', 'Chickpea supper');
   await page.getByRole('button', {name: 'Review share'}).click();
   await expect(page.getByRole('region', {name: 'Review food share'})).toContainText('friend@example.test');
-  expect((await (await page.request.get('/api/direct-shares')).json()).items).toHaveLength(0);
+  expect((await (await page.request.get('/api/direct-shares')).json()).items.filter(p=>p.snapshot.meal?.id===meal.id)).toHaveLength(0);
   await page.getByRole('button', {name: 'Confirm share'}).click();
-  await expect(page.locator('.circle-hub-groups')).toContainText('Chickpea supper');
+  await expect(page.locator('.direct-room').filter({hasText:'Chickpea supper'})).toBeVisible();
   const direct = await (await page.request.get('/api/direct-shares')).json();
   expect(direct.items[0].kind).toBe('meal');
   expect(direct.items[0].snapshot.meal.id).toBe(meal.id);
   await page.locator('.direct-room').first().click();
-  await expect(page.locator('.circle-direct-detail')).toContainText('Chickpea supper');
+  await expect(page.locator('.circle-feed')).toContainText('Chickpea supper');
+  await openMessageThread(page.locator('.circle-post').last());
   await page.getByLabel('Reply', {exact: true}).fill('Would this keep for lunch?');
   await page.getByRole('button', {name: 'Send reply'}).click();
-  await expect(page.locator('.circle-direct-detail')).toContainText('Would this keep for lunch?');
+  await expect(page.locator('.circle-thread-panel')).toContainText('Would this keep for lunch?');
   await page.getByRole('button', {name: 'Remove share'}).click();
-  await expect(page.locator('.direct-room')).toHaveCount(0);
+  await expect(page.locator('.circle-post')).toHaveCount(0);
+  await expect(page.locator(`.direct-room[data-id="${direct.items[0].circleId}"]`)).toHaveCount(1);
 });
 
 test('World manages recoverable read-only meal links and revocation', async ({page}) => {
@@ -84,7 +86,7 @@ test('World manages recoverable read-only meal links and revocation', async ({pa
   await page.request.put('/api/recipes', {data: {title: 'Weekend jam', servings: 2,
     ingredients: [{name: 'Berries'}], instructions: ['Simmer berries']}});
   await page.goto('/app?view=circles');
-  await page.getByRole('button', {name: /World is a circle/}).first().click();
+  await page.getByRole('button', {name: /Public links/}).first().click();
   await expect(page.locator('.circle-world')).toContainText('Public links do not have comments');
   const beforeLinks = (await (await page.request.get('/api/public-shares')).json()).items.length;
   await page.getByRole('button', {name: 'Share a meal'}).click();
@@ -172,7 +174,7 @@ test('mobile opens one chat from the conversation list and returns to the list',
   await expect(page.locator('.circle-rail')).toBeHidden();
   await page.getByLabel('Message Mobile supper').fill('Dinner is served');
   await page.getByRole('button', {name: 'Send message'}).click();
-  await expect(page.locator('.circle-post').first()).toContainText('Dinner is served');
+  await expect(page.locator('.circle-post').last()).toContainText('Dinner is served');
   await page.getByRole('button', {name: '‹ Chats'}).click();
   await expect(page.locator('.circle-rail')).toBeVisible();
   await expect(page.locator(`.circle-room[data-id="${circle.id}"]`)).toContainText('Dinner is served');
