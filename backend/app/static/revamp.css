@@ -1,0 +1,82 @@
+/* Shared product rhythm: readable controls, compact hierarchy, consistent surfaces. */
+:root { --ink:#202b3c; --muted:#5f6e80; --primary:#385b86; --iris:#385b86; --primary-soft:#e8eff8; --cream:#f5f7fa; --paper:#fff; --line:#dce3eb; --copper:#526c8b; --copper-soft:#eaf0f7; --shadow:0 8px 28px #263d5812; background:var(--cream); }
+body { color:var(--ink); }
+.shell { grid-template-columns:200px minmax(0,1fr); }
+.sidebar { background:#202d41; border-color:#2c3d57; padding:20px 14px; }
+.sidebar-head { margin-bottom:24px; }
+.brand,.brand-logo-frame { background:transparent; }
+.brand { font-size:1rem; }
+.nav-item { font-size:.9rem; }
+.nav-item.active { background:#354d6b; box-shadow:none; }
+.topbar { min-height:72px; padding:14px 28px; background:#ffffffed; }
+.topbar h1 { font-size:1.55rem; letter-spacing:-.035em; }
+.topbar .eyebrow { display:none; }
+.content { padding:24px 28px 40px; max-width:1280px; }
+.hero { min-height:170px; padding:24px; background:#e9eff7; }
+.hero h2 { font-size:clamp(1.8rem,3vw,2.7rem); line-height:1.12; letter-spacing:-.04em; }
+.hero-stat strong { font-size:3rem; }
+.button { border-radius:8px; font-size:.85rem; min-height:38px; }
+.button.small { font-size:.8rem; }
+.tiny { font-size:.8rem; line-height:1.5; }
+.eyebrow { font-family:var(--font-body); font-size:.7rem; letter-spacing:.06em; }
+.card { border-radius:12px; padding:20px; box-shadow:none; }
+.card-head { margin-bottom:14px; }
+.card-head h3 { font-size:1rem; }
+.row-copy strong { font-size:.9rem; }
+.row-copy small { font-size:.8rem; }
+.section-head { margin-top:24px; }
+.section-head h2 { font-size:1.3rem; }
+.today-heading { margin-bottom:18px; }
+.today-heading h2 { font-size:clamp(1.65rem,3vw,2.3rem); }
+.today-plan { background:var(--paper); padding:20px; }
+.today-meal { padding:12px 0; }
+.today-meal h3 { font-size:1.1rem; }
+.home-attention-grid { gap:16px; }
+.week-grid { gap:12px; }
+.day-card { border-radius:10px; padding:14px; }
+.day-card > b { font-family:var(--font-body); font-size:.8rem; }
+.day-card .mode { font-size:.75rem; }
+.plan-toolbar { gap:12px; }
+.week-navigation { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.plan-summary { margin-bottom:12px; font-size:.85rem; }
+.week-notes-row { margin-bottom:16px; }
+.rb-heading { margin:0 0 16px; }
+.rb-heading .rb-eyebrow { display:none; }
+.rb-heading h2 { font-size:1.4rem; }
+.rb-search-row { gap:10px; margin-bottom:12px; }
+.rb-facets { padding:10px 14px; }
+.rb-tabs { border-bottom:0; padding:0; }
+.rb-options-head { margin:10px 0; }
+.rb-card { box-shadow:none; }
+.rb-card-copy h3 { font-size:1.15rem; }
+.rb-art { min-height:90px; }
+.shopping-store { padding:14px 18px; }
+.shopping-store .card-head { margin-bottom:6px; }
+.shopping-store .check-row { padding:10px 0; }
+.shopping-state { display:inline-block; font-size:.75rem; padding:3px 7px; border-radius:6px; color:var(--muted); background:var(--primary-soft); }
+.pantry-filters { gap:8px; }
+.pantry-filter-summary { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+.pantry-more-filters { border:1px solid var(--line); border-radius:10px; padding:8px 12px; background:var(--paper); margin-block:12px; }
+.pantry-more-filters summary { font-size:.85rem; }
+.pantry-more-filters[open] summary { margin-bottom:12px; }
+.form-error,[role=alert] { line-height:1.5; }
+@media(max-width:780px) {
+ .shell { grid-template-columns:1fr; }
+ .topbar { min-height:64px; padding:12px 16px; }
+ .topbar h1 { font-size:1.35rem; }
+ .content { padding:18px 16px 100px; }
+ .today-heading { align-items:start; }
+ .today-heading h2 { font-size:1.6rem; }
+ .card { padding:16px; }
+ .plan-toolbar { align-items:start; }
+ .week-navigation { width:100%; }
+ .week-navigation .field { flex:1; }
+ .rb-search-row { flex-wrap:wrap; }
+ .rb-search-row > input { flex-basis:100%; }
+ .rb-search-row label { flex:1; }
+ .rb-facets { padding:8px; }
+}
+
+.preferences-grid {display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.5fr);gap:16px;align-items:start;}
+.planning-rules-page .section-head {margin-top:20px;}
+@media(max-width:780px){.preferences-grid {grid-template-columns:1fr;}}

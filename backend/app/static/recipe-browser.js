@@ -80,7 +80,7 @@
     onClick(event){
       const button=event.target.closest('button');if(!button)return;
       if(button.hasAttribute('data-rb-result-explore')){event.stopPropagation();if(this.ui.exploreOpen){this.destroyGraph();this.ui.exploreOpen=false;this.changed();this.renderExploration();}else this.openExplore();return;}
-      if(button.hasAttribute('data-rb-tab')){event.stopPropagation();this.ui.tab=button.dataset.rbTab;this.find='';this.changed();this.renderFilters();return;}
+      if(button.hasAttribute('data-rb-tab')){event.stopPropagation();this.ui.filterOpen=true;this.ui.tab=button.dataset.rbTab;this.find='';this.changed();this.renderFilters();return;}
       if(button.hasAttribute('data-rb-filter')){event.stopPropagation();this.toggle(button.dataset.rbKind,button.dataset.rbFilter);return;}
       if(button.hasAttribute('data-rb-clear')){event.stopPropagation();this.ui.filters={};this.ui.query='';this.ui.maxMinutes=null;this.ui.itemType=this.adapter.mealCard?'all':'recipes';if(this.root.querySelector('.rb-type select'))this.root.querySelector('.rb-type select').value=this.ui.itemType;this.root.querySelector('#recipe-search').value='';this.root.querySelector('.rb-time select').value='';this.renderFilters();this.load();return;}
       if(button.hasAttribute('data-rb-type-clear')){event.stopPropagation();this.ui.itemType='all';this.root.querySelector('.rb-type select').value='all';this.renderFilters();this.load();return;}
@@ -102,9 +102,14 @@
       this.renderExploration();
     }
     renderFilters(){
-      const tab=this.ui.tab,focused=document.activeElement;
+      const focused=document.activeElement;
+      const available=Object.keys(names).filter(key=>this.data?.facets[key]?.length || this.ui.filters[key]?.length);
+      if(this.data && available.length && !available.includes(this.ui.tab))this.ui.tab=available[0];
+      const tab=this.ui.tab;
+      const expanded=this.ui.filterOpen || Object.keys(this.ui.filters).length>0;
       const active=this.root.contains(focused)?{tab:focused.dataset.rbTab,kind:focused.dataset.rbKind,filter:focused.dataset.rbFilter,clear:focused.hasAttribute('data-rb-clear')}:null;
-      this.root.querySelector('.rb-facets').innerHTML=`<div class="rb-tabs" role="group" aria-label="Browse recipes by">${Object.entries(names).map(([key,name])=>`<button type="button" data-rb-tab="${key}" aria-pressed="${tab===key}">${name}${this.ui.filters[key]?.length?` <span>${this.ui.filters[key].length}</span>`:''}</button>`).join('')}</div><div class="rb-options-head"><span>${tab==='goal'?'Household goals':`Choose ${names[tab].toLowerCase()}`}</span><input type="search" data-rb-find aria-label="Find ${tab==='goal'?'an eating goal':'a '+(tab==='tag'?'recipe tag':names[tab].toLowerCase())}" placeholder="Find ${names[tab].toLowerCase()}" value="${esc(this.find||'')}"></div><div class="rb-options" role="group" aria-label="${tab==='tag'?'Recipe tag filters':names[tab]+' filters'}"></div>`;
+      this.root.querySelector('.rb-facets').innerHTML=`<div class="rb-tabs" role="group" aria-label="Browse recipes by">${Object.entries(names).filter(([key])=>!this.data||available.includes(key)).map(([key,name])=>`<button type="button" data-rb-tab="${key}" aria-pressed="${tab===key}">${name}${this.ui.filters[key]?.length?` <span>${this.ui.filters[key].length}</span>`:''}</button>`).join('')}</div><div class="rb-options-head" ${expanded ? '' : 'hidden'}><span>${tab==='goal'?'Household goals':`Choose ${names[tab].toLowerCase()}`}</span><input type="search" data-rb-find aria-label="Find ${tab==='goal'?'an eating goal':'a '+(tab==='tag'?'recipe tag':names[tab].toLowerCase())}" placeholder="Find ${names[tab].toLowerCase()}" value="${esc(this.find||'')}"></div><div class="rb-options" ${expanded ? '' : 'hidden'} role="group" aria-label="${tab==='tag'?'Recipe tag filters':names[tab]+' filters'}"></div>`;
+      this.root.querySelector('.rb-facets').hidden=Boolean(this.data&&!available.length);
       this.renderOptions();
       const selected=Object.entries(this.ui.filters).flatMap(([kind,values])=>values.map(label=>`<button type="button" class="rb-chip" data-rb-kind="${kind}" data-rb-filter="${esc(label)}" aria-label="${kind==='tag'?'Clear tag':'Remove '+label+' filter'}">${esc(label)} <span aria-hidden="true">×</span></button>`));
       if(this.adapter.mealCard&&this.ui.itemType!=='all')selected.push(`<button type="button" class="rb-chip" data-rb-type-clear aria-label="Remove type filter">${{recipes:'Recipes',ready_food:'Ready food',meals:'Meals'}[this.ui.itemType]} ×</button>`);

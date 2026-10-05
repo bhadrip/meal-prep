@@ -25,7 +25,7 @@ async function tapVisible(page, target) {
 test('touch navigation reaches every section, dismisses safely, and survives rotation', async ({ page }, info) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/app');
-  for (const [view, title] of Object.entries({ overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', circles: 'Circles', settings: 'Settings' })) {
+  for (const [view, title] of Object.entries({ overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping', reviews: 'Reviews', circles: 'Chats', settings: 'Settings' })) {
     if (['reviews', 'circles', 'settings'].includes(view)) {
       await page.locator('#mobile-more').tap();
       await page.locator(`#mobile-menu-dialog [data-view="${view}"]`).tap();

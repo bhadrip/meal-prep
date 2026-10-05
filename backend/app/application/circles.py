@@ -1,7 +1,9 @@
 """Private friend circles. Sharing and discovery are deterministic, with no AI path."""
 
 from typing import Any
-from datetime import date
+from datetime import date, datetime
+from uuid import UUID
+import base64
 
 from .errors import ApplicationError, RepositoryError
 
@@ -87,7 +89,8 @@ class CircleService:
 
     async def send_message(self, circle_id: str, body: str, attachment_kind: str | None = None,
                            attachment_id: str | None = None, mention_ids: list[str] | None = None,
-                           expected_audience: list[str] | None = None) -> dict:
+                           expected_audience: list[str] | None = None, client_id: str | None = None,
+                           reply_to: str | None = None) -> dict:
         clean = (body or "").strip()
         if len(clean) > 2000 or (not clean and not attachment_kind):
             raise ApplicationError("Enter a message of 1 to 2000 characters")
@@ -96,8 +99,12 @@ class CircleService:
         if len(mention_ids or []) > 25:
             raise ApplicationError("Mention at most 25 friends")
         try:
-            return await self.repository.circle_send_message(circle_id, clean, attachment_kind, attachment_id,
-                mention_ids or [], expected_audience)
+            if client_id is not None:
+                self._uuid(client_id)
+            if reply_to is not None:
+                self._uuid(reply_to)
+            return await self.repository.chat_send(circle_id, clean, attachment_kind, attachment_id,
+                mention_ids or [], expected_audience, client_id, reply_to)
         except RepositoryError as exc:
             self._raise_known_limit(exc)
 
@@ -159,3 +166,68 @@ class CircleService:
             if str(exc) == "Existing friend account was not found":
                 raise ApplicationError(str(exc)) from exc
             self._raise_known_limit(exc)
+
+    @staticmethod
+    def _uuid(value):
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError, AttributeError):
+            raise ApplicationError("Choose a valid identifier") from None
+
+    async def conversations(self) -> dict:
+        return {"items": await self.repository.chat_rooms()}
+
+    async def history(self, circle_id: str, limit: int = 50, cursor: str | None = None,
+                      query: str = "", sender: str | None = None, date_from: str | None = None,
+                      kind: str | None = None) -> dict:
+        self._uuid(circle_id)
+        if not 1 <= limit <= 100 or len(query) > 120 or kind not in (None, "message", "recipe", "meal", "week"):
+            raise ApplicationError("Choose valid history filters")
+        if sender and not (hasattr(self.repository, "_chat")): self._uuid(sender)
+        if date_from:
+            try: date.fromisoformat(date_from)
+            except ValueError: raise ApplicationError("Choose a valid date") from None
+        boundary = None
+        if cursor:
+            try:
+                boundary = base64.urlsafe_b64decode(cursor.encode()).decode()
+                stamp, post_id = boundary.rsplit("|", 1)
+                datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                UUID(post_id)
+            except (ValueError, UnicodeError, TypeError):
+                raise ApplicationError("History cursor is invalid") from None
+        rows = await self.repository.chat_history(circle_id, limit + 1, boundary, query.strip(), sender, date_from, kind)
+        items = rows[:limit]
+        next_cursor = base64.urlsafe_b64encode(f"{items[-1]['createdAt']}|{items[-1]['id']}".encode()).decode() if len(rows)>limit else None
+        return {"items": items, "nextCursor": next_cursor}
+
+    async def update_conversation(self, circle_id: str, last_read_id: str | None = None,
+                                  muted: bool | None = None) -> dict:
+        self._uuid(circle_id)
+        if muted is not None and not isinstance(muted, bool): raise ApplicationError("Choose a valid mute setting")
+        if last_read_id: self._uuid(last_read_id)
+        if last_read_id is None and muted is None:
+            raise ApplicationError("Choose a read position or mute setting")
+        return await self.repository.chat_action("state", circle_id, {"lastReadId": last_read_id, "muted": muted})
+
+    async def edit_message(self, message_id: str, body: str) -> dict:
+        self._uuid(message_id)
+        if not isinstance(body, str): raise ApplicationError("Enter a text message")
+        body = body.strip()
+        if not 1 <= len(body) <= 2000: raise ApplicationError("Enter a message of 1 to 2000 characters")
+        return await self.repository.chat_action("edit", message_id, {"body": body})
+
+    async def react(self, message_id: str, emoji: str, active: bool = True) -> dict:
+        self._uuid(message_id)
+        if not isinstance(active, bool): raise ApplicationError("Choose a valid reaction state")
+        if emoji not in ("👍", "❤️", "😋", "🎉"):
+            raise ApplicationError("Choose a supported reaction")
+        return await self.repository.chat_action("reaction", message_id, {"emoji": emoji, "active": active})
+
+    async def profile(self, name: str | None = None) -> dict:
+        if name is not None and (not isinstance(name, str) or not 1 <= len(name.strip()) <= 60):
+            raise ApplicationError("Enter a display name of 1 to 60 characters")
+        return await self.repository.chat_profile(name.strip() if name is not None else None)
+
+    async def sync(self) -> dict:
+        return await self.repository.chat_sync()

@@ -327,8 +327,8 @@ remain connected to the meal, recipe, variant, and week it describes.
   circle's `audience` as `expected_audience` when publishing; the server
   rejects a changed audience instead of adding recipients silently.
 - For a one-to-one share, use `share_direct` with an existing friend's account
-  email and a recipe, saved meal, or Monday week start. The recipient can see
-  only that share and reply in its thread; no group invitation is needed.
+  email and a recipe, saved meal, or Monday week start. The recipient can open
+  the direct conversation and reply in the share’s thread; no group invitation is needed.
   `list_direct_shares` returns these items. Do not infer an email address.
 - A circle message can attach one recipe or saved meal with
   `send_circle_message(attachment_kind, attachment_id)`. Use
@@ -338,7 +338,7 @@ remain connected to the meal, recipe, variant, and week it describes.
   shared as a snapshot when posted.
 - Use `comment_on_circle_share` for private threads and
   `save_circle_recipe` when a recipient wants an independent recipe copy.
-  World broadcasts are read-only and have no comments.
+  Public links are read-only and have no comments.
 
 ## Public links
 
@@ -465,3 +465,13 @@ The website's Weekly plan → Preferences area groups household food restriction
 The existing Planning rules area is named Preferences in the website; it uses the same rules and revision history. The weekly plan opens Meals by default. Meals and Tasks are display views only: switching them does not change preferences, saved meals, or tasks, and task creation remains available through the API and MCP regardless of the selected view. Every planned-meal card has a Meal details action for that occurrence; linked food names open their recipes or ready food. Meal cards use saved component/task recipe IDs for links and omit description paragraphs and remove/eaten actions. Do not invent recipe IDs or turn unlinked meal names into fabricated links. Actual inventory completion remains available through MCP when requested.
 
 Use `list_notifications` for the caller's personal inbox, or `archived=true` for the archive. `set_notification_read` marks an item read or unread without navigation. `archive_notification` clears an item from the inbox without deleting it; `archived=false` restores it. Archived items do not contribute to the unread badge. These operations retain recipient and current household/circle access checks.
+
+## Conversation history and chat actions
+
+`list_chat_conversations` lists accepted group and direct conversations with lightweight latest-message previews, unread counts and mute state. Direct shares with the same friend use one persistent conversation. Legacy direct rooms are presented together without widening any post's frozen audience. Use the returned conversation `id` for new messages and history.
+
+Use `search_chat_history` to search all authorized messages and shared food, including replies, with optional sender, date and content-type filters. Continue with its opaque `nextCursor`; keep filters unchanged while paging. Existing circle-feed tools remain supported.
+
+For a text send, supply a fresh UUID `client_id` to `send_circle_message`. Retry an uncertain send with exactly the same identifier and content; a changed body, attachment, audience, mentions or quoted post requires a new identifier. `reply_to` quotes a readable post in the same conversation. Food publication still requires the recipient/content review described above. Display names from `get_chat_profile`/`update_chat_profile` identify presentation only; resolve actual recipients through their account or member identifiers.
+
+`update_chat_state` records the newest actually read message or changes mute state. Muting suppresses future in-app chat notifications, while leaving the conversation accessible. `edit_chat_message` changes only the caller's own text messages. `react_to_chat_message` sets or removes one supported reaction (👍, ❤️, 😋, 🎉) idempotently. `get_chat_sync` returns an opaque caller-scoped version for detecting changes; fetch authorized history again when it changes. All actions retain membership and frozen-audience authorization.
