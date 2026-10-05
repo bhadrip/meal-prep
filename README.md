@@ -1,5 +1,59 @@
 # Meal Prep
 
+## Household signal capture
+
+Audit baseline: `origin/main` at `2186324` (2026-10-05). This is a code/schema audit,
+not a count of actual customer submissions or verification of production migrations.
+
+| Existing input or action | Already persisted in the backend | Limit for learning |
+| --- | --- | --- |
+| Household setup and preferences | Household size, dietary restrictions, store priorities, cooking-time ceiling, leftovers preference, planning areas; confirmed/suggested memories | Preferences describe intentions; household size is not who ate a particular meal |
+| Weekly context | Seven-day schedule, week notes, normal-week/remember-rhythm flags; versioned meal rules | Free text can describe guests, illness or late pickup; there is no automatic calendar/weather/health feed |
+| Plans and prep | Dated meal slots, servings, components, recipe/pantry/task references and recipe snapshots; prep tasks, plan status/version and completion | Plan changes formerly replaced mutable rows; completion time is the time recorded, not measured cooking duration |
+| Stock and shopping | Quantity/unit/confidence, storage, purchase/use-by dates and provenance; actual pantry-use ledger, completion inputs/outputs; purchased/received quantity and time | Stock changes are not proof of consumption or waste; receipts here are received shopping lines, not a normalized Costco price ledger |
+| Photos | Compact private pantry/photo evidence, observed items, notes, captured/applied status and item links | Only explicitly saved attachments are stored; no automatic fridge camera input or assistant-conversation archive |
+| Meal/week feedback | Original note, worked-well/problem/change-next-time/preference-signal type, rating, reusable tags, variant/adaptations, next-time note and occurrence/week links | Optional reports have no denominator; no report is unknown, and a broad rating does not identify time/stress/child response |
+| Sharing and engagement | Saved/shared recipes and plans, circle messages/comments, replies, message edits, reactions, conversation read/mute state; notification creation/read/archive timestamps | These are social activity, not private household outcome reports; no durable page/click analytics, experiment exposure/assignment, push-delivery or watch/phone sensor stream |
+
+This increment extends the single feedback model with optional reported `signals`:
+goal (including a custom goal), actual kitchen minutes, effort, stress before/after,
+plan status, actual meal, who cooked, reason for change, food response per audience/
+person, household context, leftovers, discarded quantity/unit, actual cost/currency,
+and exact reported start/finish times with timezone offsets. `occurredOn` is distinct
+from recording time; input source is set by the transport. Missing values stay
+unknown and explicit zero values survive. Adherence and goal outcomes stay separate.
+
+Reviews keep their short-note path. **What’s changed at home?** saves an observation
+without inventing an outcome. Optional details stay collapsed. Meal feedback can
+link to a specific planned meal and freeze that intention when the report is saved.
+One stable report UUID survives an acknowledgement failure and retry.
+
+The additive `202610050002_household_signals.sql` migration adds a household-scoped
+change history for 12 domain tables, with schema version, source ID, operation,
+recorded time, explicit reported date, actor/source and before/after snapshots.
+Database triggers capture writes atomically through HTTP, MCP and direct supported
+database clients; a rolled-back write leaves no event. Ordinary clients can read
+their own history but cannot forge/edit history rows. No historical timeline is
+invented for changes made before installation; existing rows remain available.
+Photo object paths and source file IDs are excluded from journal snapshots.
+
+MCP exposes `get_signal_capture_contract`, the extended `save_feedback`, and
+`get_household_signal_history`. HTTP exposes `/api/signals/contract`,
+`/api/feedback`, and `/api/signals/history`. History has cursor pagination for later
+analysis. Shared capture guidance lives in the MCP server, not a plugin skill.
+The backend uses the versioned `save_reported_feedback` RPC: when the migration is
+missing, it fails explicitly rather than silently dropping new fields.
+
+Apply the migration before deploying the backend. No LLM, Bayesian analysis,
+experiment generator, sensor integration or customer-data backfill is included.
+Future experiments still need their own suggestion/exposure/acceptance IDs and
+reported outcomes; this capture layer provides household context and observations.
+
+Validation: `backend/.venv/bin/pytest backend/tests/test_signals.py backend/tests/test_mcp.py`;
+`MEAL_PREP_TEST_SQL_CONTAINER=supabase_db_meal-prep backend/.venv/bin/pytest backend/tests/test_signal_sql.py`;
+`pnpm test:ui ui-tests/household-signals.spec.js`. The SQL test copies schema only
+into a disposable database and uses synthetic households, without copying customer data.
+
 Meal Prep is a household food-planning app available as a website and a hosted MCP service. It coordinates breakfasts, lunches, dinners, snacks, weekend prep, pantry inventory, and store-prioritized shopping around a family’s actual week.
 
 The website offers direct, manual access to household setup, planning, meals, recipes, pantry, shopping, and feedback. The installable plugin supplies workflow guidance and the MCP connection. Both use the same application services and Supabase household data. The website has no AI features.

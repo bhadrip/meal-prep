@@ -597,7 +597,19 @@ async def get_feedback(
 
 @router.post("/api/feedback")
 async def save_feedback(feedback: dict[str, Any], services: WebServices) -> dict:
-    return await services.feedback.save(feedback)
+    return await services.feedback.save(feedback, input_source="website")
+
+
+@router.get("/api/signals/contract")
+async def get_signal_contract(services: WebServices) -> dict:
+    from ..application.signals import capture_contract
+    return capture_contract()
+
+
+@router.get("/api/signals/history")
+async def get_signal_history(services: WebServices, before_id: str | None = None,
+                             source_table: str | None = None, limit: int = Query(50, ge=1, le=100)) -> dict:
+    return await services.feedback.history(before_id, source_table, limit)
 
 
 @router.get("/api/what-worked")

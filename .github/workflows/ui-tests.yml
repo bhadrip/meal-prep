@@ -73,3 +73,5 @@ jobs:
           supabase migration up --local --workdir backend
       - name: Test authenticated plan and weekly rhythm roundtrip
         run: backend/.venv/bin/python backend/scripts/test-local-supabase.py
+      - name: Verify signal capture, rollback and household isolation
+        run: MEAL_PREP_TEST_SQL_CONTAINER=supabase_db_meal-prep backend/.venv/bin/pytest backend/tests/test_signal_sql.py -q

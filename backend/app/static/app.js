@@ -1062,13 +1062,69 @@ function renderShopping() {
   return html;
 }
 
+const SIGNAL_GOALS = [['time','Less cooking time'],['stress','Less stress'],['kids_enjoyment','Food the kids enjoy'],['waste','Less waste'],['cost','Lower cost'],['shared_work','Share the work'],['variety','More variety'],['other','Another goal']];
+function signalFields() {
+  const unknown = [{value:'',label:'Unknown / not reported'}];
+  const choices = values => [...unknown,...values.map(([value,label])=>({value,label}))];
+  return `<details class="wide signal-details"><summary>Add details, if useful</summary><p class="muted tiny">Only add what you know. Kitchen time includes preparation, cooking and cleanup; effort and stress run from 1 (low) to 5 (high).</p><div class="form-grid">`
+    + field('signalGoal','What mattered for this experience?','',{choices:choices(SIGNAL_GOALS),wide:true})
+    + field('goalNote','Your goal in your own words (optional)','',{wide:true})
+    + field('occurredOn','When did it happen? (optional)','',{type:'date'})
+    + field('actualMinutes','Actual kitchen time (minutes) — optional','',{type:'number',min:0,max:1440,step:1})
+    + field('effort','Effort (1–5) — optional','',{type:'number',min:1,max:5,step:1})
+    + field('stressBefore','Stress before (1–5) — optional','',{type:'number',min:1,max:5,step:1})
+    + field('stressAfter','Stress after (1–5) — optional','',{type:'number',min:1,max:5,step:1})
+    + field('planStatus','What happened to the plan?','',{choices:choices([['followed','Followed it'],['changed','Changed it'],['skipped','Skipped it'],['not_planned','There was no plan']])})
+    + field('actualMeal','What was actually served? (optional)','',{wide:true})
+    + field('whoCooked','Who did the kitchen work? (optional)','',{wide:true})
+    + field('changeReason','What caused the change? (optional)','',{wide:true})
+    + ['kids','adults'].map(audience=>field(audience+'Response',audience==='kids'?"Kids’ response":"Adults’ response",'',{choices:choices([['liked','Liked it'],['mixed','Mixed response'],['disliked','Did not like it'],['not_tried','Did not try it']])})).join('')
+    + field('signalContext','Anything affecting this experience?','',{choices:choices([['guests','Guests'],['illness','Illness reported at home'],['late_schedule','Running late'],['travel','Travel'],['school_break','School break'],['missing_ingredient','Missing ingredient'],['equipment_problem','Equipment problem'],['other','Something else']])})
+    + field('leftovers','What happened to leftovers?','',{choices:choices([['none','None'],['saved','Saved'],['discarded','Discarded']])})
+    + field('wasteQuantity','Food discarded (amount) — optional','',{type:'number',min:0,max:100000,step:0.001})
+    + field('wasteUnit','Unit for discarded food','',{choices:choices([['g','Grams'],['kg','Kilograms'],['ml','Milliliters'],['l','Liters'],['portion','Portions'],['item','Items']])})
+    + field('actualCost','Actual cost (optional)','',{type:'number',min:0,max:100000,step:0.01})
+    + field('currency','Currency for reported cost (e.g. USD)','',{})
+    + '</div></details>';
+}
+function readSignals(data) {
+  const s = {}, value = name=>String(data.get(name)||'').trim();
+  for(const name of ['goalNote','planStatus','actualMeal','whoCooked','changeReason','leftovers','wasteUnit','currency']) if(value(name))s[name]=value(name);
+  if(value('signalGoal'))s.goal=value('signalGoal');
+  for(const name of ['actualMinutes','effort','stressBefore','stressAfter','wasteQuantity','actualCost']) if(value(name)!=='')s[name]=Number(value(name));
+  if(value('signalContext'))s.context=[value('signalContext')];
+  const responses=['kids','adults'].filter(audience=>value(audience+'Response')).map(audience=>({audience,response:value(audience+'Response')}));
+  if(responses.length)s.responses=responses;
+  return s;
+}
+function signalSummary(item) {
+  const s=item.signals||{}, parts=[];
+  if(s.goal)parts.push(SIGNAL_GOALS.find(([key])=>key===s.goal)?.[1]||s.goal);
+  if(s.goalNote)parts.push(s.goalNote);
+  if(item.occurred_on)parts.push(item.occurred_on);
+  if(s.actualMinutes!==undefined)parts.push(`${s.actualMinutes} kitchen minutes reported`);
+  if(s.effort!==undefined)parts.push(`Effort ${s.effort}/5`);
+  if(s.stressBefore!==undefined)parts.push(`Stress before ${s.stressBefore}/5`);
+  if(s.stressAfter!==undefined)parts.push(`Stress after ${s.stressAfter}/5`);
+  if(s.planStatus)parts.push(`Plan: ${label(s.planStatus)}`);
+  if(s.actualMeal)parts.push(`Served: ${s.actualMeal}`);
+  if(s.whoCooked)parts.push(`Kitchen work: ${s.whoCooked}`);
+  if(s.changeReason)parts.push(`Change: ${s.changeReason}`);
+  for(const r of arr(s.responses))parts.push(`${r.audience}: ${label(r.response)}`);
+  if(s.context?.length)parts.push(s.context.map(label).join(', '));
+  if(s.leftovers)parts.push(`Leftovers: ${label(s.leftovers)}`);
+  if(s.wasteQuantity!==undefined)parts.push(`Discarded: ${s.wasteQuantity} ${s.wasteUnit}`);
+  if(s.actualCost!==undefined)parts.push(`Cost: ${s.actualCost} ${s.currency}`);
+  return parts.length?`<p class="muted tiny reported-signals">${esc(parts.join(' · '))}</p>`:'';
+}
+
 function renderReviews() {
   const feedback = arr(section('feedback'));
   const memories = arr(section('memories'));
   const feedbackUnavailable = sectionStatus('feedback') === 'unavailable';
-  let html = `<div class="toolbar review-toolbar"><p class="muted tiny">Capture what went well, what was difficult, and lessons for next time.</p>${feedbackUnavailable ? '' : `<div class="review-actions">${action('Review this week', 'review-week', '', 'primary')}${action('Review a meal', 'add-feedback')}</div>`}</div>`;
+  let html = `<div class="toolbar review-toolbar"><p class="muted tiny">Capture what went well, what was difficult, and lessons for next time.</p>${feedbackUnavailable ? '' : `<div class="review-actions">${action('Review this week', 'review-week', '', 'primary')}${action('Review a meal', 'add-feedback')}${action('What’s changed at home?', 'add-context-update')}</div>`}</div>`;
   html += `<div class="review-grid"><div class="stack">`;
-  html += card('Meal and week reviews', '♡', feedbackUnavailable ? '<p class="muted tiny">Reviews are temporarily unavailable.</p>' : feedback.length ? feedback.map((item) => `<div class="feedback"><div class="feedback-head"><strong>${esc(item.occurrence?.title || item.meal_title || (item.week_start ? `Week of ${item.week_start}` : 'Weekly review'))}</strong><span class="pill">${esc(label(item.feedback_type || item.feedbackType || 'review'))}</span></div><p>${esc(item.note)}</p>${item.next_time ? `<p class="next">Lesson for next time: ${esc(item.next_time)}</p>` : ''}</div>`).join('') : '<p class="muted tiny">No reviews saved yet. Start with something that worked this week.</p>');
+  html += card('Meal and week reviews', '♡', feedbackUnavailable ? '<p class="muted tiny">Reviews are temporarily unavailable.</p>' : feedback.length ? feedback.map((item) => `<div class="feedback"><div class="feedback-head"><strong>${esc(item.occurrence?.title || item.meal_title || (item.week_start ? `Week of ${item.week_start}` : 'Weekly review'))}</strong><span class="pill">${esc(label(item.feedback_type || item.feedbackType || 'review'))}</span></div><p>${esc(item.note)}</p>${signalSummary(item)}${item.next_time ? `<p class="next">Lesson for next time: ${esc(item.next_time)}</p>` : ''}</div>`).join('') : '<p class="muted tiny">No reviews saved yet. Start with something that worked this week.</p>');
   html += `</div><div class="stack">`;
   html += card('Household memory', '✦', memories.length ? `<div class="stack">${memories.map((item) => `<div class="row"><div class="row-copy"><strong>${esc(item.content)}</strong><small>${esc(label(item.status))} · ${esc(label(item.scope || 'persistent'))}</small></div><div style="display:flex;gap:4px">${item.status === 'suggested' ? action('Confirm', 'confirm-memory', item.id) : ''}${action('Edit', 'edit-memory', item.id)}</div></div>`).join('')}</div>` : '<p class="muted tiny">No saved memories.</p>', `<div style="margin-top:16px">${action('Add memory', 'add-memory')}</div>`);
   html += `<div class="callout"><b>How memory works</b>Meal feedback is evidence from one experience. A household memory becomes a planning default only after you confirm it.</div></div></div>`;
@@ -1447,7 +1503,7 @@ fields.addEventListener('change', (event) => {
 
 function openEditor(kind, item = null, selectedDate = null) {
   if (state.editor?.searchTimer) clearTimeout(state.editor.searchTimer);
-  state.editor = { kind, item };
+  state.editor = { kind, item, feedbackId: crypto.randomUUID() };
   errorBox.hidden = true;
   let title, markup;
   if (kind === 'recipe') {
@@ -1525,6 +1581,9 @@ function openEditor(kind, item = null, selectedDate = null) {
   } else if (kind === 'weekly-review') {
     title = 'Review this week';
     markup = field('weekStart', 'Week of', state.weekStart || monday(), { type: 'date', required: true }) + field('feedbackType', 'How did it go?', 'worked_well', { choices: [{ value: 'worked_well', label: 'Worked well' }, { value: 'problem', label: 'Did not work' }, { value: 'change_next_time', label: 'Change next time' }] }) + field('note', 'What happened?', '', { type: 'textarea', required: true, wide: true, placeholder: 'For example, prepping vegetables on Sunday saved time.' }) + field('nextTime', 'Lesson learned or change for next time (optional)', '', { type: 'textarea', wide: true });
+  } else if (kind === 'context-update') {
+    title = 'What’s changed at home?';
+    markup = field('weekStart', 'Week of', state.weekStart || monday(), {type:'date',required:true}) + field('note', 'What should we know?', '', {type:'textarea',required:true,wide:true,placeholder:'Guests on Friday, late pickup, someone can help with dinner…'}) + signalFields();
   } else if (kind === 'feedback') {
     title = 'Add meal feedback';
     markup = field('recipeId', 'Saved recipe', item?.id || '', { choices: [{ value: '', label: 'No saved recipe' }, ...arr(section('recipes')).map((recipe) => ({ value: recipe.id, label: recipe.title }))] }) + field('weekStart', 'Week of', state.weekStart || monday(), { type: 'date' }) + field('feedbackType', 'How did it go?', 'worked_well', { choices: [{ value: 'worked_well', label: 'Worked well' }, { value: 'problem', label: 'Did not work' }, { value: 'change_next_time', label: 'Change next time' }, { value: 'preference_signal', label: 'Preference signal' }] }) + field('rating', 'Rating (1–5, optional)', '', { type: 'number', min: 1, max: 5 }) + field('note', 'What happened?', '', { type: 'textarea', required: true, wide: true }) + field('nextTime', 'Lesson learned or change for next time (optional)', '', { type: 'textarea', wide: true }) + field('tags', 'Reusable tags, separated by commas', '', { wide: true }) + field('variantName', 'Preparation variant (optional)', '', { wide: true }) + field('adaptations', 'What changed — one per line', '', { type: 'textarea', wide: true });
@@ -1534,6 +1593,8 @@ function openEditor(kind, item = null, selectedDate = null) {
   }
   document.querySelector('#dialog-title').textContent = title;
   document.querySelector('#dialog-save').textContent = kind === 'pantry-use' ? 'Record use' : kind === 'activity' ? 'Record completion' : kind === 'receive' ? 'Record received' : kind === 'shopping-preview' ? 'Update shopping list' : kind === 'library-combine' ? 'Save combination' : 'Save';
+  if (kind === 'feedback') markup += field('mealPlanEntryId','Planned meal (optional)','',{choices:[{value:'',label:'No specific planned meal'},...arr(state.plan?.entries).map(entry=>({value:entry.id,label:`${entry.date} · ${entry.meal}`}))],wide:true});
+  if (['weekly-review','feedback'].includes(kind)) markup += signalFields();
   fields.innerHTML = markup;
   if (!dialog.open) dialog.showModal();
   fields.querySelector('input,textarea,select')?.focus();
@@ -1650,11 +1711,13 @@ async function submitEditor(data) {
     await save('/api/schedule', 'PUT', { weekStart: state.weekStart, days: item?.days || DAYS.map((day) => ({ day, mode: 'flexible' })), notes: value('notes'), isNormalWeek: item?.is_normal_week ?? true, rememberRhythm: item?.remember_rhythm ?? true });
   } else if (kind === 'planning-rules') {
     await save('/api/meal-plan-rules', 'PUT', { text: value('text'), expectedRevision: item?.revision || 0 });
+  } else if (kind === 'context-update') {
+    await save('/api/feedback','POST',{id:state.editor.feedbackId,weekStart:monday(`${value('weekStart')}T12:00:00`),feedbackType:'context_update',note:value('note'),occurredOn:value('occurredOn')||null,signals:readSignals(data)});
   } else if (kind === 'weekly-review') {
-    await save('/api/feedback', 'POST', { weekStart: monday(`${value('weekStart')}T12:00:00`), feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: ['weekly-check-in'] });
+    await save('/api/feedback', 'POST', { weekStart: monday(`${value('weekStart')}T12:00:00`), feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: ['weekly-check-in'], id: state.editor.feedbackId, occurredOn: value('occurredOn') || null, signals: readSignals(data) });
   } else if (kind === 'feedback') {
     if (!value('recipeId') && !value('weekStart')) throw new Error('Choose a recipe or a week.');
-    await save('/api/feedback', 'POST', { recipeId: value('recipeId') || null, weekStart: value('weekStart') || null, feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: comma('tags'), rating: numberOrNull(value('rating')), variantName: value('variantName'), adaptations: lines('adaptations') });
+    await save('/api/feedback', 'POST', { recipeId: value('recipeId') || null, mealPlanEntryId: value('mealPlanEntryId') || null, weekStart: value('weekStart') || null, feedbackType: value('feedbackType'), note: value('note'), nextTime: value('nextTime'), tags: comma('tags'), rating: numberOrNull(value('rating')), variantName: value('variantName'), adaptations: lines('adaptations'), id: state.editor.feedbackId, occurredOn: value('occurredOn') || null, signals: readSignals(data) });
     if (state.recipe?.id) state.recipe = await api(`/api/recipes/${encodeURIComponent(state.recipe.id)}`);
   } else if (kind === 'memory') {
     if (item) await save(`/api/memories/${encodeURIComponent(item.id)}`, 'PATCH', { action: value('action'), content: value('content') });
@@ -2130,7 +2193,8 @@ async function handleAction(actionName, id) {
     return render();
   }
   if (actionName === 'review-week') return openEditor('weekly-review');
-  if (actionName === 'add-feedback') return openEditor('feedback', recipes.find((item) => item.id === id));
+  if (actionName === 'add-context-update') return openEditor('context-update');
+  if (actionName === 'add-feedback') { await loadSection('mealPlan'); return openEditor('feedback', recipes.find((item) => item.id === id)); }
   if (actionName === 'add-memory') return openEditor('memory');
   if (actionName === 'edit-memory') return openEditor('memory', arr(section('memories')).find((item) => item.id === id));
   if (actionName === 'card-up' || actionName === 'card-down') {
