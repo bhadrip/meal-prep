@@ -19,8 +19,8 @@ def test_mobile_chat_header_assets_and_message_failure_preserve_history():
     demo_repository.cache_clear()
     client = TestClient(app)
     html = client.get('/app').text
-    assert '/static/circles.css?v=4' in html
-    assert client.get('/static/circles.css?v=4').status_code == 200
+    assert '/static/circles.css?v=5' in html
+    assert client.get('/static/circles.css?v=5').status_code == 200
     assert client.get('/static/missing-chat-header.css').status_code == 404
     room = client.post('/api/circles', json={'name': 'Mobile header'}).json()
     sent = client.post(f"/api/circles/{room['id']}/messages", json={'body': 'Mobile message'})

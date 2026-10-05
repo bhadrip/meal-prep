@@ -13,17 +13,18 @@ test('signed-in mobile household header never overlaps conversation controls',as
     await route.fulfill({json:data});
   });
   const r=await room(page,'redmond');await page.setViewportSize({width:390,height:750});await page.goto(`/app?view=circles&circle=${r.id}`);
-  const picker=page.locator('#household-picker .choice-trigger');await expect(picker).toContainText('My household');
+  const indicator=page.locator('#account-label');await expect(indicator).toContainText('My household');await expect(page.locator('.topbar .choice-trigger')).toHaveCount(0);
   for(const size of [{width:390,height:750},{width:320,height:568},{width:390,height:360},{width:740,height:360}]){
     await page.setViewportSize(size);
-    const top=await page.locator('.topbar').boundingBox(),head=await page.locator('.circle-pane-head').boundingBox(),choice=await picker.boundingBox();
+    const top=await page.locator('.topbar').boundingBox(),head=await page.locator('.circle-pane-head').boundingBox(),choice=await indicator.boundingBox();
     expect(choice.y+choice.height).toBeLessThanOrEqual(top.y+top.height+1);expect(top.y+top.height).toBeLessThanOrEqual(head.y+1);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-    for(const target of [picker,page.getByRole('button',{name:'Notifications',exact:true}),page.getByRole('button',{name:'Refresh data',exact:true}),page.getByRole('button',{name:'Account settings',exact:true}),page.getByRole('button',{name:'Search messages',exact:true}),page.getByLabel('Conversation settings',{exact:true}),page.getByRole('button',{name:'Send message',exact:true})]){
+    expect(top.height).toBeLessThanOrEqual(65);
+    for(const target of [page.getByRole('button',{name:'Notifications',exact:true}),page.getByRole('button',{name:'Refresh data',exact:true}),page.getByRole('button',{name:'Account settings',exact:true}),page.getByRole('button',{name:'Search messages',exact:true}),page.getByLabel('Conversation settings',{exact:true}),page.getByRole('button',{name:'Send message',exact:true})]){
       await expect(target).toBeInViewport();expect(await target.evaluate(el=>{const b=el.getBoundingClientRect(),hit=document.elementFromPoint(b.x+b.width/2,b.y+b.height/2);return el===hit||el.contains(hit);})).toBe(true);
     }
   }
-  await page.setViewportSize({width:390,height:750});await picker.click();await expect(page.getByRole('listbox')).toBeVisible();await page.keyboard.press('Escape');
+  await page.setViewportSize({width:390,height:750});await page.locator('#circle-message').fill('Kept through account menu');await page.locator('#account-button').click();await expect(page.locator('#account-menu-household')).toContainText('My household');await page.keyboard.press('Escape');await expect(page.locator('#account-button')).toBeFocused();await expect(page.locator('#circle-message')).toHaveValue('Kept through account menu');
   await page.getByRole('button',{name:'Search messages',exact:true}).click();await expect(page.getByRole('searchbox',{name:'Search messages',exact:true})).toBeVisible();await page.getByRole('button',{name:'Search messages',exact:true}).click();
   await send(page,'Aligned mobile message');await page.reload();await expect(page.locator('.circle-message-body')).toContainText('Aligned mobile message');await page.screenshot({path:info.outputPath('signed-in-mobile-chat.png')});
 });

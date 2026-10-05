@@ -59,6 +59,7 @@ test('navigation, sidebar, refresh, account, and mobile navigation', async ({ pa
   await page.getByRole('button', { name: 'Refresh data' }).click();
   await expect(page.locator('#toast')).toContainText('Up to date.');
   await page.getByRole('button', { name: 'Account settings' }).click();
+  await page.locator('#account-open-settings').click();
   await expect(page.locator('#view-title')).toHaveText('Settings');
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [view, title] of Object.entries({ overview: 'Overview', plan: 'Weekly plan', recipes: 'Recipes', pantry: 'Pantry', shopping: 'Shopping' })) {
@@ -577,8 +578,9 @@ test('sign-in code, email change, error, and sign-out UI with a mocked auth prov
   await expect(page.locator('#message')).toHaveText('Invalid code');
   await page.locator('#code').fill('12345678');
   await page.getByRole('button', { name: 'Verify code' }).click();
-  await expect(page.locator('#account-label')).toHaveText('second@example.com');
+  await expect(page.locator('#account-avatar')).toHaveText('SE');
   await page.getByRole('button', { name: 'Account settings' }).click();
+  await page.locator('#account-open-settings').click();
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login\?next=/);
   await expect(page.locator('#login-form')).toBeVisible();

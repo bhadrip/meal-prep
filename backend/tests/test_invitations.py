@@ -74,7 +74,10 @@ def test_household_dropdown_selection_persists_and_rejects_unavailable_membershi
                 if selected not in (first, second):
                     raise RepositoryError("Household is not available")
                 self.active = selected
-            return {"activeHouseholdId": self.active, "households": [{"id": first}, {"id": second}]}
+            return {"activeHouseholdId": self.active, "households": [
+                {"id": first, "name": "Home", "role": "owner"},
+                {"id": second, "name": "Weekend kitchen", "role": "member"},
+            ]}
 
     repository = Repository()
 
@@ -87,9 +90,12 @@ def test_household_dropdown_selection_persists_and_rejects_unavailable_membershi
         assert client.get("/api/households").json()["activeHouseholdId"] == first
         assert client.post(f"/api/households/{second}/activate").status_code == 200
         assert client.get("/api/households").json()["activeHouseholdId"] == second
+        memberships = client.get("/api/households").json()["households"]
+        assert next(item for item in memberships if item["id"] == second) == {"id": second, "name": "Weekend kitchen", "role": "member"}
         rejected = client.post("/api/households/00000000-0000-0000-0000-000000000044/activate")
         assert rejected.status_code == 404
         assert client.get("/api/households").json()["activeHouseholdId"] == second
+        assert client.get("/api/households").json()["households"] == memberships
         assert client.post("/api/households/invalid/activate").status_code == 422
         assert repository.active == second
     finally:
