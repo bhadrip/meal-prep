@@ -7,11 +7,9 @@ const errorBox = document.querySelector('#dialog-error');
 const toastBox = document.querySelector('#toast');
 const shell = document.querySelector('.shell');
 const sidebarToggle = document.querySelector('#sidebar-toggle');
-const householdPicker = document.querySelector('#household-picker');
-const householdChoice = document.querySelector('#household-choice');
+const accountMenu = document.querySelector('#account-menu');
 const mobileMenu = document.querySelector('#mobile-menu-dialog');
 const mobileMore = document.querySelector('#mobile-more');
-let householdSelect;
 
 mobileMore.addEventListener('click', () => {
   mobileMenu.showModal();
@@ -256,9 +254,10 @@ async function refresh(message) {
       state.browserUi = {}; state.recipe = null;
     }
     state.activeHouseholdId = nextHouseholdId;
-    householdPicker.hidden = false;
-    householdChoice.innerHTML = MealPrepChoices.markup({ name: 'householdId', inputId: 'household-select', labelId: 'household-choice-label', value: state.activeHouseholdId, choices: state.households.map((item) => ({ value: item.id, label: `${item.name} · ${label(item.role)}` })) });
-    householdSelect = document.querySelector('#household-select');
+    const activeHousehold = state.households.find(item => item.id === state.activeHouseholdId);
+    document.querySelector('#account-label').textContent = activeHousehold?.name || 'Account';
+    document.querySelector('#account-button').dataset.household = 'true';
+    document.querySelector('#account-button').title = `Account options · ${activeHousehold?.name || 'Choose household'}`;
   }
   if (previousHouseholdId !== state.activeHouseholdId) {
     state.mealRecipes = [];
@@ -1121,8 +1120,9 @@ function renderSettings() {
     ${owner ? `<form id="invite-form" class="invite-form"><label for="invite-email">Share with an existing account</label><input id="invite-email" name="email" type="email" autocomplete="email" placeholder="name@example.com" required /><button class="button primary" type="submit">Create invitation</button></form>` : ''}
     ${inviteRows ? `<p class="muted tiny" style="margin:20px 0 10px">Pending invitations</p><div class="stack">${inviteRows}</div>` : ''}
   </article>` : '';
-  const householdsCard = state.client ? `<article class="card"><div class="card-head"><h3>Your households</h3><span class="card-icon">⌂</span></div>
-    <p class="muted tiny">Choose a household above to switch what you see here and in MCP.</p>
+  const householdsCard = state.client ? `<article class="card" id="settings-households"><div class="card-head"><h3>Your households</h3><span class="card-icon">⌂</span></div>
+    <p class="muted tiny">Switch the household used for planning, pantry and shopping here and in MCP.</p>
+    <div class="household-picker"><span id="household-choice-label">Active household</span><div id="household-choice">${MealPrepChoices.markup({name:'householdId',inputId:'household-select',labelId:'household-choice-label',value:state.activeHouseholdId,choices:state.households.map(item=>({value:item.id,label:`${item.name} · ${label(item.role)}`}))})}</div></div>
     <div class="stack" style="margin:16px 0">${state.households.map((item) => row(item.name, `${label(item.role)}${item.id === state.activeHouseholdId ? ' · Active' : ''}`)).join('')}</div>
     <form id="create-household-form" class="invite-form"><label for="new-household-name">Create another household</label><input id="new-household-name" name="name" maxlength="120" required placeholder="Household name" /><button class="button primary" type="submit">Create household</button></form>
     ${state.access?.role && state.access.role !== 'owner' ? `<div style="margin-top:16px">${action('Leave this household', 'leave-household', '', 'danger')}</div>` : ''}
@@ -2412,8 +2412,31 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && state.snapshot) loadNotifications(state.dataGeneration);
 });
 setInterval(() => { if (!document.hidden && state.snapshot) loadNotifications(state.dataGeneration); }, 60000);
-document.querySelector('#account-button').addEventListener('click', () => view('settings'));
-householdChoice.addEventListener('change', async () => {
+document.querySelector('#account-button').addEventListener('click', () => {
+  document.querySelector('#account-menu-email').textContent = state.session?.user?.email || 'Local demo';
+  document.querySelector('#account-menu-household').textContent = state.households.find(item => item.id === state.activeHouseholdId)?.name || 'Demo household';
+  document.querySelector('#account-switch-household').hidden = !state.client;
+  accountMenu.showModal();
+  document.querySelector('#account-button').setAttribute('aria-expanded','true');
+});
+document.querySelector('#account-menu-close').addEventListener('click',()=>accountMenu.close());
+accountMenu.addEventListener('close',()=>{
+  const button=document.querySelector('#account-button');button.setAttribute('aria-expanded','false');
+  if(!accountMenu.dataset.navigating)button.focus({preventScroll:true});
+  delete accountMenu.dataset.navigating;
+});
+accountMenu.addEventListener('click',event=>{if(event.target===accountMenu){const b=accountMenu.getBoundingClientRect();if(event.clientX<b.left||event.clientX>b.right||event.clientY<b.top||event.clientY>b.bottom)accountMenu.close();}});
+async function openAccountSettings(switchHousehold=false){
+  accountMenu.dataset.navigating='true';accountMenu.close();view('settings');await loadViewData();if(state.view!=='settings')return;render();
+  const target=switchHousehold?document.querySelector('#household-choice .choice-trigger'):null;
+  target?.scrollIntoView({block:'center'});target?.focus({preventScroll:true});
+}
+document.querySelector('#account-open-settings').addEventListener('click',()=>openAccountSettings());
+document.querySelector('#account-switch-household').addEventListener('click',()=>openAccountSettings(true));
+content.addEventListener('change', async event => {
+  const householdChoice=event.target.closest('#household-choice');
+  if(!householdChoice)return;
+  const householdSelect=householdChoice.querySelector('#household-select');
   MealPrepChoices.setDisabled(householdChoice.querySelector('[data-choice-control]'), true);
   try {
     await api(`/api/households/${encodeURIComponent(householdSelect.value)}/activate`, { method: 'POST' });
@@ -2431,7 +2454,7 @@ householdChoice.addEventListener('change', async () => {
   } catch (error) {
     MealPrepChoices.setValue(householdChoice.querySelector('[data-choice-control]'), state.activeHouseholdId || '');
     showToast(error.message);
-  } finally { MealPrepChoices.setDisabled(householdChoice.querySelector('[data-choice-control]'), false); }
+  } finally { if(householdChoice.isConnected)MealPrepChoices.setDisabled(householdChoice.querySelector('[data-choice-control]'), false); }
 });
 
 async function start() {
