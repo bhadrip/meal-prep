@@ -55,3 +55,5 @@ The chat test names referring to stale reads now exercise SSE-driven history ref
 `backend/tests/test_web.py::test_chat_event_stream_emits_only_scoped_versions_and_requires_session` verifies stream/sync/room authentication failures and version-only heartbeat/change events. Cursor UI coverage also checks searching and quoting a post outside the loaded page, plus live removal of a revoked older post.
 
 `ui-tests/chat-revamp.spec.js` also covers a delayed display-name fetch and rejected save preserving the typed profile draft, followed by successful save and reload.
+
+The signed-in mobile header regression in `ui-tests/chat-revamp.spec.js` renders the actual household selector through an authenticated bootstrap, verifies header/selector/conversation bounds and action hit targets at 320px, 390px, keyboard height and short landscape, opens household/search controls, and sends/reloads a persisted message. `backend/tests/test_web.py::test_mobile_chat_header_assets_and_message_failure_preserve_history` verifies the versioned header stylesheet is served, missing assets fail, and a rejected mobile send leaves the saved history intact.

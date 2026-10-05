@@ -4,6 +4,30 @@ async function room(page,name){const r=await page.request.post('/api/circles',{d
 async function messageAction(post,name){await expect(post.locator('.circle-send-state')).toHaveCount(0);await post.getByLabel('Message actions',{exact:true}).click();await post.getByRole('button',{name,exact:true}).click();}
 async function send(page,text){const field=page.locator('#circle-message');await field.fill(text);await field.press('Enter');await expect(field).toHaveValue('');await expect(page.locator('.circle-send-state')).toHaveCount(0);}
 
+test('signed-in mobile household header never overlaps conversation controls',async({page},info)=>{
+  await page.route('**/api/auth/config',route=>route.fulfill({json:{supabaseUrl:'https://example.supabase.co',supabaseAnonKey:'test-key',authRequired:true}}));
+  await page.route('**/static/vendor/supabase.js',route=>route.fulfill({contentType:'application/javascript',body:`window.supabase={createClient:()=>({auth:{getSession:async()=>({data:{session:{access_token:'test-token',user:{id:'demo',email:'bh@example.test'}}}}),onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}})}})};`}));
+  await page.route('**/api/app/bootstrap?*',async route=>{
+    const response=await route.fetch();const data=await response.json();
+    data.memberships={activeHouseholdId:'mobile-home',households:[{id:'mobile-home',name:'My household with a long name',role:'owner'}]};data.access={role:'owner'};
+    await route.fulfill({json:data});
+  });
+  const r=await room(page,'redmond');await page.setViewportSize({width:390,height:750});await page.goto(`/app?view=circles&circle=${r.id}`);
+  const picker=page.locator('#household-picker .choice-trigger');await expect(picker).toContainText('My household');
+  for(const size of [{width:390,height:750},{width:320,height:568},{width:390,height:360},{width:740,height:360}]){
+    await page.setViewportSize(size);
+    const top=await page.locator('.topbar').boundingBox(),head=await page.locator('.circle-pane-head').boundingBox(),choice=await picker.boundingBox();
+    expect(choice.y+choice.height).toBeLessThanOrEqual(top.y+top.height+1);expect(top.y+top.height).toBeLessThanOrEqual(head.y+1);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    for(const target of [picker,page.getByRole('button',{name:'Notifications',exact:true}),page.getByRole('button',{name:'Refresh data',exact:true}),page.getByRole('button',{name:'Account settings',exact:true}),page.getByRole('button',{name:'Search messages',exact:true}),page.getByLabel('Conversation settings',{exact:true}),page.getByRole('button',{name:'Send message',exact:true})]){
+      await expect(target).toBeInViewport();expect(await target.evaluate(el=>{const b=el.getBoundingClientRect(),hit=document.elementFromPoint(b.x+b.width/2,b.y+b.height/2);return el===hit||el.contains(hit);})).toBe(true);
+    }
+  }
+  await page.setViewportSize({width:390,height:750});await picker.click();await expect(page.getByRole('listbox')).toBeVisible();await page.keyboard.press('Escape');
+  await page.getByRole('button',{name:'Search messages',exact:true}).click();await expect(page.getByRole('searchbox',{name:'Search messages',exact:true})).toBeVisible();await page.getByRole('button',{name:'Search messages',exact:true}).click();
+  await send(page,'Aligned mobile message');await page.reload();await expect(page.locator('.circle-message-body')).toContainText('Aligned mobile message');await page.screenshot({path:info.outputPath('signed-in-mobile-chat.png')});
+});
+
 test('quotes, reactions, editing, filtered server history and mute persist after reload',async({page},info)=>{
   const r=await room(page,'Revamped dinner');await page.goto(`/app?view=circles&circle=${r.id}`);
   await send(page,'Sunday dinner');const first=page.locator('.circle-post').first();

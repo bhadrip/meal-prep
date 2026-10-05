@@ -15,6 +15,22 @@ from app.main import app
 from app.transports import http
 
 
+def test_mobile_chat_header_assets_and_message_failure_preserve_history():
+    demo_repository.cache_clear()
+    client = TestClient(app)
+    html = client.get('/app').text
+    assert '/static/circles.css?v=4' in html
+    assert client.get('/static/circles.css?v=4').status_code == 200
+    assert client.get('/static/missing-chat-header.css').status_code == 404
+    room = client.post('/api/circles', json={'name': 'Mobile header'}).json()
+    sent = client.post(f"/api/circles/{room['id']}/messages", json={'body': 'Mobile message'})
+    assert sent.status_code == 200
+    assert client.post(f"/api/circles/{room['id']}/messages", json={'body': ''}).status_code == 422
+    history = client.get(f"/api/chats/{room['id']}/history").json()['items']
+    assert [post['id'] for post in history] == [sent.json()['id']]
+    demo_repository.cache_clear()
+
+
 @pytest.mark.asyncio
 async def test_bootstrap_reviews_invitation_before_loading_household(monkeypatch):
     repository = SupabaseRepository(
