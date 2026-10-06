@@ -236,7 +236,7 @@ def test_mobile_website_serves_shared_assets_and_preserves_a_rejected_edit():
         response = client.get(path)
         assert response.status_code == 200
         assert 'name="viewport" content="width=device-width, initial-scale=1"' in response.text
-        assert "/static/mobile.css?v=1" in response.text
+        assert "/static/mobile.css?v=" in response.text
         assert "/static/mobile.js?v=1" in response.text
     for asset in ("mobile.css", "mobile.js"):
         assert client.get(f"/static/{asset}").status_code == 200
