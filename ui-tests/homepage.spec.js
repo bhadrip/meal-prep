@@ -145,6 +145,45 @@ test('home actions save today’s prep and shopping progress to the backend', as
   expect(savedShopping.items.find((entry) => entry.id === item.id).purchased).toBe(true);
 });
 
+test('mobile shopping checkbox has a compact mark, a full tap target, and recovers from a failed save', async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const grocery = `Mobile checkbox apples ${Date.now()}`;
+  const list = (await (await page.request.post('/api/shopping-list/items', { data: { item: { name: grocery } } })).json());
+  const item = list.items.find((entry) => entry.name === grocery);
+  await page.route(snapshotRoute, async (route) => {
+    if (new URL(route.request().url()).searchParams.get('sections') !== 'shoppingList') return route.continue();
+    const data = await (await route.fetch()).json();
+    data.sections.shoppingList.value.items.sort((a, b) => Number(b.id === item.id) - Number(a.id === item.id));
+    return route.fulfill({ json: data });
+  });
+  await page.goto('/app');
+  const row = home(page, 'shoppingList').locator('.check-row').filter({ hasText: grocery });
+  const checkbox = row.getByRole('checkbox');
+  await expect(checkbox).toBeVisible();
+  const size = await checkbox.evaluate((element) => ({
+    target: element.getBoundingClientRect().width,
+    mark: Number.parseFloat(getComputedStyle(element, '::before').width),
+    appearance: getComputedStyle(element).appearance,
+  }));
+  expect(size).toEqual({ target: 44, mark: 22, appearance: 'none' });
+  await row.screenshot({ path: info.outputPath('mobile-shopping-checkbox.png') });
+
+  const patch = `**/api/shopping-list/items/${item.id}`;
+  await page.route(patch, (route) => route.fulfill({ status: 503, json: { detail: 'Temporary failure' } }));
+  await checkbox.click({ position: { x: 39, y: 22 } });
+  await expect(checkbox).not.toBeChecked();
+  await expect(row).toBeVisible();
+  await expect(page.locator('#toast')).toHaveText('Temporary failure');
+  const afterFailure = (await (await page.request.get('/api/shopping-list')).json()).shoppingList;
+  expect(afterFailure.items.find((entry) => entry.id === item.id).purchased).toBe(false);
+
+  await page.unroute(patch);
+  await checkbox.click({ position: { x: 39, y: 22 } });
+  await expect(row).toHaveCount(0);
+  const saved = (await (await page.request.get('/api/shopping-list')).json()).shoppingList;
+  expect(saved.items.find((entry) => entry.id === item.id).purchased).toBe(true);
+});
+
 test('a response from before refresh cannot replace the new household’s pantry', async ({ page }) => {
   await freezeToday(page);
   let householdVersion = 0;
