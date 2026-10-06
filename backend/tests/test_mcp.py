@@ -14,6 +14,24 @@ HEADERS = {"Accept": "application/json, text/event-stream"}
 DEFAULT_DEMO_CONTEXT = deepcopy(DemoRepository._context)
 
 
+def test_direct_mcp_captures_reported_signals_and_shares_history_with_the_website(client):
+    from uuid import uuid4
+    def call(name, arguments):
+        return rpc(client, "tools/call", {"name": name, "arguments": arguments})
+    contract=call("get_signal_capture_contract",{})["structuredContent"]
+    assert contract["schemaVersion"]==1
+    args={"id":str(uuid4()),"weekStart":"2030-02-04","feedbackType":"context_update","note":"Guests Friday; Arjun can cook.","signals":{"goal":"shared_work","whoCooked":"Arjun","context":["guests"]},"inputSource":"forged"}
+    saved=call("save_feedback",{"feedback":args})["structuredContent"]
+    assert saved["input_source"]=="mcp" and saved["signals"]==args["signals"]
+    events=call("get_household_signal_history",{"source_table":"feedback_entries"})["structuredContent"]
+    assert next(row for row in events["items"] if row["sourceId"]==saved["id"])["after"]["signals"]==args["signals"]
+    rejected=call("save_feedback",{"feedback":{**args,"signals":{"actualMinutes":True}}})
+    assert rejected["isError"]
+    assert call("save_feedback",{"feedback":args})["structuredContent"]==saved
+    assert len([row for row in call("get_household_signal_history",{"source_table":"feedback_entries"})["structuredContent"]["items"] if row["sourceId"]==saved["id"]])==1
+    assert client.get("/api/signals/history?source_table=feedback_entries").json()==call("get_household_signal_history",{"source_table":"feedback_entries"})["structuredContent"]
+
+
 def test_mcp_recipe_dropdown_selection_records_use_and_rejects_missing_recipe(client):
     def call(name, arguments, request_id):
         return rpc(client, "tools/call", {"name": name, "arguments": arguments}, request_id)

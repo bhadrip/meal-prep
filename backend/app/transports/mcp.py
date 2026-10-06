@@ -638,8 +638,21 @@ async def get_feedback(
 
 @mcp.tool(annotations=WRITE, structured_output=True)
 async def save_feedback(feedback: dict[str, Any]) -> dict[str, Any]:
-    """Save one piece of feedback about a meal, recipe or variant, or week."""
-    return await services_for_request().feedback.save(feedback)
+    """Save reported meal/week feedback or feedbackType=context_update. Optional signals record goal, actual time, effort/stress, adherence, actual food, cook, responses, waste/cost and context. Use get_signal_capture_contract for fields; omit unknowns. A stable feedback id makes retries update the same report."""
+    return await services_for_request().feedback.save(feedback, input_source="mcp")
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_signal_capture_contract() -> dict[str, Any]:
+    """Get the input schema and shared workflow for reported household signals; performs no analysis."""
+    from ..application.signals import capture_contract
+    return capture_contract()
+
+
+@mcp.tool(annotations=READ_ONLY, structured_output=True)
+async def get_household_signal_history(before_id: str | None = None, source_table: str | None = None, limit: int = 50) -> dict[str, Any]:
+    """Read changes in this household's plans, stock, shopping, photos, schedule, preferences and feedback. Follow nextCursor as before_id for older events. A saved action is not proof of goal success."""
+    return await services_for_request().feedback.history(before_id, source_table, limit)
 
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)

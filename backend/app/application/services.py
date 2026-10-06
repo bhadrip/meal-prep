@@ -18,6 +18,7 @@ from .planning_model import meal_slots, validate_slots, component, identifier, t
 from .meal_library import MealLibrary, copy_components, components_from_plan
 from .circles import CircleService
 from .nutrition import normalize_nutrition, weekly_nutrition, with_weekly_nutrition, select_variation
+from .signals import normalize_signals, occurred_on
 
 
 DASHBOARD_CARD_IDS = (
@@ -117,6 +118,7 @@ class MealPrepRepository(Protocol):
         limit: int = 20,
     ) -> list[dict[str, Any]]: ...
     async def save_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]: ...
+    async def get_signal_history(self, before_id: str | None, source_table: str | None, limit: int) -> list[dict]: ...
     async def get_household_memory(
         self,
         include_inactive: bool = False,
@@ -933,7 +935,7 @@ class PlanningService:
 
 
 class FeedbackService:
-    FEEDBACK_TYPES = {"worked_well", "change_next_time", "problem", "preference_signal"}
+    FEEDBACK_TYPES = {"worked_well", "change_next_time", "problem", "preference_signal", "context_update"}
     TAG_ALIASES = {
         "very-good": "worked-well",
         "great": "worked-well",
@@ -968,6 +970,7 @@ class FeedbackService:
         "change_next_time": "change-next-time",
         "problem": "did-not-work",
         "preference_signal": "preference-signal",
+        "context_update": "context-update",
     }
 
     def __init__(self, repository: MealPrepRepository):
@@ -985,7 +988,7 @@ class FeedbackService:
             feedback_type = "preference_signal"
         if feedback_type not in self.FEEDBACK_TYPES | {None}:
             raise ApplicationError(
-                "feedback_type must be worked_well, change_next_time, problem, or preference_signal"
+                "feedback_type must be worked_well, change_next_time, problem, preference_signal, or context_update"
             )
         normalized_tags = [tag["slug"] for tag in self._tag_records(tags or [])]
         return await self.repository.get_feedback(
@@ -996,7 +999,7 @@ class FeedbackService:
             limit=min(max(limit, 1), 100),
         )
 
-    async def save(self, feedback: dict[str, Any]) -> dict[str, Any]:
+    async def save(self, feedback: dict[str, Any], input_source: str = "api") -> dict[str, Any]:
         note = str(feedback.get("note", "")).strip()
         if not note:
             raise ApplicationError("feedback.note is required")
@@ -1028,7 +1031,7 @@ class FeedbackService:
                 feedback_type = "change_next_time"
         if feedback_type not in self.FEEDBACK_TYPES:
             raise ApplicationError(
-                "feedback.feedbackType must be worked_well, change_next_time, problem, or preference_signal"
+                "feedback.feedbackType must be worked_well, change_next_time, problem, preference_signal, or context_update"
             )
         outcome_tag = self.FEEDBACK_TYPE_TAG[feedback_type]
         if outcome_tag not in tag_slugs:
@@ -1065,8 +1068,34 @@ class FeedbackService:
             "nextTime": next_time,
             "variantName": variant_name,
             "adaptations": adaptations,
+            "inputSource": input_source,
         }
+        if "signals" in feedback:
+            normalized["signals"] = normalize_signals(feedback["signals"])
+        if "occurredOn" in feedback:
+            normalized["occurredOn"] = occurred_on(feedback["occurredOn"])
+        if feedback.get("id"):
+            try:
+                UUID(feedback["id"])
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise ApplicationError("feedback.id must be a UUID") from exc
         return await self.repository.save_feedback(normalized)
+
+    async def history(self, before_id=None, source_table=None, limit=50):
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ApplicationError("limit must be from 1 to 100")
+        if before_id is not None:
+            try:
+                UUID(before_id)
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise ApplicationError("before_id must be a saved history event UUID") from exc
+        allowed = {"feedback_entries", "meal_plans", "meal_plan_entries", "weekly_schedules", "pantry_items", "pantry_uses", "plan_activities", "shopping_items", "pantry_photo_evidence", "household_preferences", "household_memories", "recipes"}
+        if source_table is not None and source_table not in allowed:
+            raise ApplicationError("Choose a supported household signal source")
+        rows = await self.repository.get_signal_history(before_id, source_table, limit + 1)
+        items = rows[:limit]
+        return {"items": items, "count": len(items), "hasMore": len(rows) > limit,
+                "nextCursor": items[-1]["id"] if len(rows) > limit else None}
 
     async def what_worked(
         self,

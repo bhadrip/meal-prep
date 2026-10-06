@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
-from functools import lru_cache
+from functools import lru_cache, wraps
 from secrets import token_hex
 from typing import Any
 from urllib.parse import quote
@@ -29,7 +29,9 @@ PLANNING_FUNCTIONS = {
     "rpc/save_recipe_relationship": "recipe relationships",
     "rpc/delete_recipe_relationship": "recipe relationships",
     "rpc/get_experience_feedback": "feedback",
+    "rpc/get_household_signal_history": "household signal history",
     "rpc/save_experience_feedback": "feedback",
+    "rpc/save_reported_feedback": "household signals",
     "rpc/record_pantry_use": "pantry use",
     "rpc/save_meal_plan_rules": "meal plan rules",
     "rpc/get_recent_meal_plans": "planning history",
@@ -635,10 +637,14 @@ class SupabaseRepository(SupabaseChat):
         return value if isinstance(value, list) else []
 
     async def save_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]:
-        value = await self.rpc("save_experience_feedback", {"feedback": feedback})
+        value = await self.rpc("save_reported_feedback", {"feedback": feedback})
         if not isinstance(value, dict):
             raise RepositoryError("Feedback could not be saved")
         return value
+
+    async def get_signal_history(self, before_id=None, source_table=None, limit=50):
+        return await self.rpc("get_household_signal_history", {"before_id": before_id,
+            "requested_source": source_table, "result_limit": limit}) or []
 
     async def get_household_memory(
         self,
@@ -1003,6 +1009,8 @@ class DemoRepository(DemoChat):
         return deepcopy(row)
 
     def __init__(self) -> None:
+        self._signal_history = []
+        self._pantry_uses = []
         self._circles = {}
         self._circle_posts = {}
         self._circle_comments = {}
@@ -1339,13 +1347,15 @@ class DemoRepository(DemoChat):
         before = float(item["quantity"])
         item["reference_quantity"] = item.get("reference_quantity") or before
         item["quantity"] = round(before - quantity, 3)
-        return {
+        result = {
             "id": str(uuid4()), "itemId": item_id, "name": item["name"],
             "quantityUsed": quantity, "quantityBefore": before,
             "quantityRemaining": item["quantity"], "unit": item.get("unit"),
             "recipeId": recipe_id, "recipeTitle": recipe["title"] if recipe else None,
             "mealTitle": meal_title, "item": deepcopy(item),
         }
+        self._pantry_uses.append(deepcopy(result))
+        return result
 
     async def save_pantry_photo(
         self, *, image: bytes, width: int, height: int,
@@ -1564,6 +1574,17 @@ class DemoRepository(DemoChat):
 
     async def save_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]:
         week_start = feedback.get("weekStart")
+        existing = next((row for row in type(self)._feedback if row["id"] == feedback.get("id")), {})
+        planned = None
+        if feedback.get("mealPlanEntryId"):
+            linked = [(plan,entry) for plan in self._meal_plans.values() for entry in plan.get("entries", [])
+                      if entry["id"] == feedback["mealPlanEntryId"]]
+            if not linked:
+                raise RepositoryError("Meal-plan entry was not found")
+            plan, planned = linked[0]
+            if week_start and week_start != plan["weekStart"]:
+                raise RepositoryError("Week does not match planned meal")
+            week_start = plan["weekStart"]
         schedule = await self.get_weekly_schedule(week_start) if week_start else None
         occurrence_id = feedback.get("occurrenceId")
         if not occurrence_id and feedback.get("id"):
@@ -1580,7 +1601,13 @@ class DemoRepository(DemoChat):
             )
             if not occurrence:
                 raise RepositoryError("Meal occurrence was not found")
-        recipe_id = feedback.get("recipeId") or (occurrence or {}).get("recipe_id")
+            if planned and occurrence.get("meal_plan_entry_id") != planned["id"]:
+                raise RepositoryError("Planned meal does not match meal occurrence")
+        elif planned:
+            occurrence = next((item for item in type(self)._occurrences
+                               if item.get("meal_plan_entry_id") == planned["id"]), None)
+        recipe_ids = {part.get("recipeId") for part in (planned or {}).get("components", []) if part.get("recipeId")}
+        recipe_id = feedback.get("recipeId") or (occurrence or {}).get("recipe_id") or (next(iter(recipe_ids)) if len(recipe_ids) == 1 else None)
         recipe = await self.get_recipe(recipe_id) if recipe_id else None
         if recipe_id and not recipe:
             raise RepositoryError("Recipe was not found")
@@ -1617,15 +1644,15 @@ class DemoRepository(DemoChat):
                     "variant": deepcopy(variant),
                 }
             )
-        elif not occurrence and recipe_id:
+        elif not occurrence and (recipe_id or planned):
             occurrence = {
                 "id": str(uuid4()),
                 "meal_plan_entry_id": feedback.get("mealPlanEntryId"),
                 "weekly_schedule_id": schedule.get("id") if schedule else None,
                 "week_start": week_start,
-                "occurred_on": feedback.get("occurredOn"),
-                "slot": feedback.get("slot"),
-                "title": feedback.get("mealTitle") or (recipe or {}).get("title") or "Meal",
+                "occurred_on": feedback.get("occurredOn") or (planned or {}).get("date"),
+                "slot": feedback.get("slot") or (planned or {}).get("slot"),
+                "title": feedback.get("mealTitle") or (planned or {}).get("meal") or (recipe or {}).get("title") or "Meal",
                 "recipe_id": recipe_id,
                 "recipe_variant_id": variant.get("id") if variant else None,
                 "variation_snapshot": {
@@ -1661,7 +1688,11 @@ class DemoRepository(DemoChat):
             "next_time": feedback.get("nextTime", ""),
             "tags": canonical_tags,
             "rating": feedback.get("rating"),
-            "created_at": datetime.now(UTC).isoformat(),
+            "created_at": existing.get("created_at") or datetime.now(UTC).isoformat(),
+            "occurred_on": feedback.get("occurredOn", existing.get("occurred_on")),
+            "input_source": feedback.get("inputSource", "unknown"),
+            "signals": deepcopy(feedback.get("signals", existing.get("signals", {}))),
+            "plan_snapshot": deepcopy(existing.get("plan_snapshot", planned or {})),
             "occurrence": deepcopy(occurrence),
         }
         type(self)._feedback = [
@@ -1669,6 +1700,43 @@ class DemoRepository(DemoChat):
         ] + [value]
         type(self)._feedback.sort(key=lambda item: item["created_at"], reverse=True)
         return deepcopy(value)
+
+    async def get_signal_history(self, before_id=None, source_table=None, limit=50):
+        rows = sorted(self._signal_history, key=lambda row:(row["recordedAt"],row["id"]), reverse=True)
+        if before_id:
+            anchor = next((row for row in rows if row["id"] == before_id), None)
+            if not anchor:
+                raise RepositoryError("History cursor was not found in this household")
+            rows = [row for row in rows if (row["recordedAt"],row["id"]) < (anchor["recordedAt"],anchor["id"])]
+        return deepcopy([row for row in rows if source_table is None or row["sourceTable"] == source_table][:limit])
+
+    def _signal_state(self):
+        collections = {
+            "feedback_entries": type(self)._feedback, "meal_plans": list(self._meal_plans.values()),
+            "meal_plan_entries": [entry for plan in self._meal_plans.values() for entry in plan.get("entries", [])],
+            "weekly_schedules": list(self._weekly_schedules.values()), "pantry_items": self._pantry,
+            "pantry_uses": self._pantry_uses, "plan_activities": list(self._activities.values()),
+            "shopping_items": self._shopping_list.get("items", []), "pantry_photo_evidence": type(self)._pantry_photos,
+            "household_preferences": [{"id": self._context["householdId"], **self._context}],
+            "household_memories": type(self)._memories, "recipes": self._recipes,
+        }
+        excluded = {"updated_at", "created_by", "object_path", "source_file_id", "household_id"}
+        return {table: {row.get("id") or row.get("itemId"): deepcopy({key: value for key,value in row.items() if key not in excluded})
+                        for row in rows} for table,rows in collections.items()}
+
+    def _capture_signal_state(self, before):
+        after = self._signal_state()
+        for table in before:
+            for sid in before[table].keys() | after[table].keys():
+                b, a = before[table].get(sid), after[table].get(sid)
+                if a == b:
+                    continue
+                row = a or b
+                self._signal_history.append({"id": str(uuid4()), "schemaVersion": 1, "sourceTable": table,
+                    "sourceId": sid, "operation": "insert" if b is None else "delete" if a is None else "update",
+                    "recordedAt": datetime.now(UTC).isoformat(), "occurredOn": row.get("occurred_on") if table == "feedback_entries" else None,
+                    "actorId": self.user_id, "inputSource": row.get("input_source", "backend"),
+                    "before": b, "after": a})
 
     async def get_household_memory(
         self,
@@ -1710,6 +1778,30 @@ class DemoRepository(DemoChat):
         else:
             raise RepositoryError("Unsupported memory review")
         return deepcopy(item)
+
+
+def _capture_demo_write(method):
+    @wraps(method)
+    async def wrapped(self, *args, **kwargs):
+        outer = not getattr(self, "_signal_depth", 0)
+        before = self._signal_state() if outer else None
+        self._signal_depth = getattr(self, "_signal_depth", 0) + 1
+        try:
+            result = await method(self, *args, **kwargs)
+        finally:
+            self._signal_depth -= 1
+        if outer:
+            self._capture_signal_state(before)
+        return result
+    return wrapped
+
+
+# The production equivalent is a database trigger in the domain transaction.
+for _write_name in ("update_household_preferences", "save_recipe", "archive_recipe", "update_pantry_item",
+    "record_pantry_use", "save_pantry_photo", "apply_pantry_photo", "save_meal_plan", "complete_plan_item",
+    "receive_shopping_item", "save_shopping_list", "add_shopping_item", "mark_item_purchased",
+    "save_weekly_schedule", "save_feedback", "save_household_memory", "review_household_memory"):
+    setattr(DemoRepository, _write_name, _capture_demo_write(getattr(DemoRepository, _write_name)))
 
 
 @lru_cache(maxsize=1)
