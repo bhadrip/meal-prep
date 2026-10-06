@@ -809,7 +809,7 @@ def _ui_resource() -> str:
     css = (STATIC_DIR / "mobile.css").read_text(encoding="utf-8")
     script = (STATIC_DIR / "mobile.js").read_text(encoding="utf-8")
     return html.replace(
-        '<link rel="stylesheet" href="/static/mobile.css?v=1" />', f"<style>{css}</style>",
+        '<link rel="stylesheet" href="/static/mobile.css?v=2" />', f"<style>{css}</style>",
     ).replace('<script src="/static/mobile.js?v=1" defer></script>', f"<script>{script}</script>")
 
 

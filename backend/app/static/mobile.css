@@ -18,6 +18,48 @@
   label, fieldset, form, main { min-width: 0; }
   input { width: 100%; }
   input[type="checkbox"], input[type="radio"], input[type="hidden"] { width: auto; }
+  .check-row input[type="checkbox"], .groups .items label > input[type="checkbox"] {
+    appearance: none;
+    position: relative;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .check-row input[type="checkbox"]::before, .groups .items label > input[type="checkbox"]::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 22px;
+    height: 22px;
+    transform: translate(-50%, -50%);
+    border: 2px solid var(--muted);
+    border-radius: 6px;
+    background: var(--paper, var(--surface, white));
+  }
+  .check-row input[type="checkbox"]:checked::before, .groups .items label > input[type="checkbox"]:checked::before {
+    border-color: var(--primary, var(--accent));
+    background: var(--primary, var(--accent));
+  }
+  .check-row input[type="checkbox"]:checked::after, .groups .items label > input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    top: 19px;
+    left: 17px;
+    width: 10px;
+    height: 6px;
+    transform: rotate(-45deg);
+    border-bottom: 2px solid white;
+    border-left: 2px solid white;
+  }
+  .check-row input[type="checkbox"]:focus-visible::before, .groups .items label > input[type="checkbox"]:focus-visible::before {
+    outline: 2px solid var(--primary, var(--accent));
+    outline-offset: 3px;
+  }
+  .check-row input[type="checkbox"]:disabled, .groups .items label > input[type="checkbox"]:disabled { opacity: .55; cursor: default; }
   h1, h2, h3, p, li, label { overflow-wrap: anywhere; }
   button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 }

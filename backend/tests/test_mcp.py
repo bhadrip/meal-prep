@@ -39,6 +39,7 @@ def test_mcp_dropdown_assets_are_embedded_for_hosts_without_static_asset_access(
         assert '/static/mobile.js' not in html
         assert '/static/mobile.css' not in html
         assert 'min-height: 44px !important' in html
+        assert 'width: 22px;' in html
         assert '--visible-height' in html
         markup = re.sub(r'<script\b[^>]*>.*?</script>', '', html, flags=re.S)
         assert '<select' not in markup

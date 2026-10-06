@@ -236,7 +236,7 @@ def test_mobile_website_serves_shared_assets_and_preserves_a_rejected_edit():
         response = client.get(path)
         assert response.status_code == 200
         assert 'name="viewport" content="width=device-width, initial-scale=1"' in response.text
-        assert "/static/mobile.css?v=1" in response.text
+        assert "/static/mobile.css?v=" in response.text
         assert "/static/mobile.js?v=1" in response.text
     for asset in ("mobile.css", "mobile.js"):
         assert client.get(f"/static/{asset}").status_code == 200
@@ -500,6 +500,9 @@ def test_web_shopping_list_create_progress_edit_and_remove():
     purchased = client.patch(f"/api/shopping-list/items/{item_id}", json={"purchased": True})
     assert purchased.status_code == 200
     assert purchased.json()["purchased"] is True
+    missing = client.patch(f"/api/shopping-list/items/{uuid4()}", json={"purchased": True})
+    assert missing.status_code == 503
+    assert next(item for item in client.get("/api/shopping-list").json()["shoppingList"]["items"] if item["id"] == item_id)["purchased"] is True
     updated_items = [{**item, "quantity": 5} if item["id"] == item_id else item for item in items]
     assert client.put("/api/shopping-list", json={**current, "items": updated_items}).status_code == 200
     assert next(item for item in client.get("/api/shopping-list").json()["shoppingList"]["items"] if item["id"] == item_id)["quantity"] == 5
