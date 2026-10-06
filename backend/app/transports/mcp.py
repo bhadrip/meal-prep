@@ -5,12 +5,12 @@ from typing import Any
 from urllib.parse import urlparse
 
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict
 
 from ..application.notifications import list_inbox, update_inbox
+from ..analytics import TrackedFastMCP
 from ..application.nutrition import weekly_nutrition, with_weekly_nutrition
 from ..auth import SupabaseTokenVerifier
 from ..config import MCP_AUTH_SCOPES, get_settings
@@ -60,7 +60,7 @@ if settings.auth_required and settings.supabase_configured:
     )
     token_verifier = SupabaseTokenVerifier(settings)
 
-mcp = FastMCP(
+mcp = TrackedFastMCP(
     "meal-prep",
     instructions=Path(__file__).with_name("meal-prep-instructions.md").read_text(encoding="utf-8"),
     stateless_http=True,

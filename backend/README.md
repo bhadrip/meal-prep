@@ -206,7 +206,42 @@ APP_BASE_URL=https://meal-prep.madhavan-padmaja.dev
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_ANON_KEY=YOUR_ANON_KEY
 AUTH_REQUIRED=true
+POSTHOG_PROJECT_TOKEN=YOUR_POSTHOG_PROJECT_TOKEN
+POSTHOG_HOST=https://us.i.posthog.com
 ```
+
+Set `POSTHOG_PROJECT_TOKEN` in the Vercel project’s Environment Variables for
+Production (and Preview if desired), then redeploy. The US ingestion host is
+the default, so `POSTHOG_HOST` is optional for a US project. Use the PostHog
+project token, never a personal API key. The project token is sent to the web
+client by `/api/auth/config`, as required for browser event capture. If the
+token is unset, analytics is disabled and product actions continue normally.
+
+PostHog uses the verified Supabase Auth user UUID as its `distinct_id` for both
+web and MCP activity. The website records sign-in steps and app views, and
+records masked session replays. The shared services record completed household,
+planning, shopping, feedback, and memory actions from either entry point.
+The MCP server also records tool listings and tool calls, including success and
+duration. Every authenticated API write also records its route template,
+method, status, and duration, including failed writes. Event properties exclude email, recipe, pantry, feedback, memory,
+tool arguments, tool responses, and error messages. Session replay masks all
+page text and inputs, blocks images and canvas content, and omits DOM attributes
+and network bodies; navigation events provide the readable view names.
+
+In PostHog, open **MCP analytics** for tool usage (`$mcp_tool_call` and
+`$mcp_tools_list`); those events use PostHog's MCP event names without sending
+tool arguments or results. Open **Activity** and filter by `entry_point` (`web`,
+`mcp`, or future `ios`), then
+open a person using the Supabase user UUID to see their cross-entry-point
+timeline. Web actions and server events from that browser session share
+`$session_id`; MCP requests with a transport session ID share a separate
+hashed `$session_id`. Stateless MCP clients without a stable session header
+still group by user but cannot be stitched into one conversation. Use
+`request_id` to locate the corresponding MCP `mcp_response` record in Vercel
+Logs. Vercel logs remain the source for HTTP status and server errors; PostHog
+is for behavior and browser replay. A future iOS client should identify with
+the same Supabase UUID, set `X-Meal-Prep-Client: ios`, and send its PostHog
+session UUID as `X-PostHog-Session-Id` with API requests.
 
 `APP_BASE_URL` is the public origin advertised by OAuth protected-resource
 metadata and the landing page's MCP copy button. Use the same origin as

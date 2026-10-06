@@ -16,6 +16,7 @@ function continuationPath() {
 async function setup() {
   message.textContent = 'Preparing sign-in…';
   const config = await fetch('/api/auth/config').then((response) => response.json());
+  window.MealPrepAnalytics?.init(config);
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
     message.textContent = 'Supabase is not configured yet. The app is currently using demo mode.';
     form.hidden = true;
@@ -30,6 +31,8 @@ async function setup() {
   function completeSignIn(session) {
     if (!session?.access_token || completing) return;
     completing = true;
+    window.MealPrepAnalytics?.identify(session.user?.id);
+    window.MealPrepAnalytics?.capture('sign_in_completed', {}, { send_instantly: true });
     sessionStorage.setItem('meal-prep-access-token', session.access_token);
     location.replace(next || '/app');
   }
@@ -52,10 +55,12 @@ async function setup() {
     });
     submit.disabled = false;
     if (error) {
+      window.MealPrepAnalytics?.capture('sign_in_failed', { stage: 'send_code' });
       message.textContent = error.message;
       return;
     }
     pendingEmail = email;
+    window.MealPrepAnalytics?.capture('sign_in_started');
     codeEmail.textContent = email;
     form.hidden = true;
     codeForm.hidden = false;
@@ -75,6 +80,7 @@ async function setup() {
     });
     submit.disabled = false;
     if (error) {
+      window.MealPrepAnalytics?.capture('sign_in_failed', { stage: 'verify_code' });
       message.textContent = error.message;
       return;
     }

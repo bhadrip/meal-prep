@@ -197,6 +197,8 @@ function showToast(message) {
 async function api(path, options = {}) {
   const headers = { Accept: 'application/json', ...options.headers };
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  const analyticsSession = window.MealPrepAnalytics?.sessionId();
+  if (analyticsSession) headers['X-PostHog-Session-Id'] = analyticsSession;
   if (state.client) {
     const { data, error } = await state.client.auth.getSession();
     if (error || !data.session?.access_token) {
@@ -1205,6 +1207,7 @@ function view(name, historyMode = 'push') {
   state.circleDetail = null;
   if (name === 'circles') { state.circleId = null; state.circleHub = 'home'; }
   writeRoute(historyMode);
+  window.MealPrepAnalytics?.capture('app_viewed', { view: name });
   loadViewData().catch((error) => showToast(error.message));
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -2154,6 +2157,8 @@ async function handleAction(actionName, id) {
   }
   if (actionName === 'sign-out' && state.client) {
     await state.client.auth.signOut();
+    window.MealPrepAnalytics?.capture('sign_out_completed', {}, { send_instantly: true });
+    window.MealPrepAnalytics?.reset();
     location.assign(loginPath());
   }
 }
@@ -2470,12 +2475,14 @@ async function start() {
   state.circleShareId = route.circleShareId;
   state.circleHub = route.circleHub;
   state.config = await fetch('/api/auth/config').then((response) => response.json());
+  window.MealPrepAnalytics?.init(state.config);
   if (state.config.supabaseUrl && state.config.supabaseAnonKey) {
     if (!window.supabase?.createClient) throw new Error('Sign in is unavailable. Check your connection and reload.');
     state.client = window.supabase.createClient(state.config.supabaseUrl, state.config.supabaseAnonKey);
     const { data, error } = await state.client.auth.getSession();
     if (error || !data.session) { location.replace(loginPath()); return; }
     state.session = data.session;
+    window.MealPrepAnalytics?.identify(data.session.user?.id);
     const email = data.session.user?.email || 'Account';
     document.querySelector('#account-label').textContent = email;
     document.querySelector('#account-avatar').textContent = email.slice(0, 2).toUpperCase();
@@ -2489,6 +2496,7 @@ async function start() {
     return;
   }
   if (route.recipeId) { await loadRecipe(route.recipeId); render(); }
+  window.MealPrepAnalytics?.capture('app_viewed', { view: state.view });
 }
 
 window.addEventListener('popstate', async () => {
@@ -2514,6 +2522,7 @@ window.addEventListener('popstate', async () => {
   try {
     await Promise.all([loadViewData(), ...(route.ruleRevisionId ? [loadRulePreview(route.ruleRevisionId)] : [])]);
     render();
+    window.MealPrepAnalytics?.capture('app_viewed', { view: state.view });
     if (route.recipeId) { await loadRecipe(route.recipeId); render(); }
     if (route.view === 'pantry' && route.pantrySection === 'photos') await loadPantryPhotos();
   } catch (error) { showToast(error.message || 'Could not open this page.'); }
