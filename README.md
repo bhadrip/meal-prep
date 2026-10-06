@@ -2,7 +2,7 @@
 
 ## Household signal capture
 
-Audit baseline: `origin/main` at `2186324` (2026-10-05). This is a code/schema audit,
+Audit baseline: `origin/main` at `1b97b2b` (2026-10-05). This is a code/schema audit,
 not a count of actual customer submissions or verification of production migrations.
 
 | Existing input or action | Already persisted in the backend | Limit for learning |
