@@ -172,7 +172,7 @@ test('signed-in recipe links retain filters and start Explore collapsed on first
   });
   await page.goto(`/app?view=recipes&mode=explore&query=${encodeURIComponent(tofu.title)}&goal=protein+rich&meal=dinner&max_minutes=20`);
   for(let load=0;load<2;load++){
-    await expect(page.locator('#account-label')).toHaveText('cook@example.com');
+    await expect(page.locator('#account-label')).toHaveText('Home');
     await expect(browse(page).locator('.recipe-card')).toHaveCount(1);
     await expect(page.locator('#recipe-search')).toHaveValue(tofu.title);
     const toggle=browse(page).getByRole('button',{name:'Explore these results',exact:true});

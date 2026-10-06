@@ -153,8 +153,9 @@ test('household settings create, revoke, remove, switch, and leave through the U
     return route.fulfill({ json: {} });
   });
   await page.goto('/app');
-  await expect(page.locator('#household-select')).toHaveValue('home-1');
+  await expect(page.locator('#account-label')).toContainText('Home');
   await page.getByRole('button', { name: 'Account settings' }).click();
+  await page.locator('#account-open-settings').click();
   await page.locator('#invite-email').fill('guest@example.com');
   await page.getByRole('button', { name: 'Create invitation' }).click();
   await expect(page.locator('#app-content')).toContainText('guest@example.com');

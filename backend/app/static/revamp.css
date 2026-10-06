@@ -1,6 +1,21 @@
 /* Shared product rhythm: readable controls, compact hierarchy, consistent surfaces. */
 :root { --ink:#202b3c; --muted:#5f6e80; --primary:#385b86; --iris:#385b86; --primary-soft:#e8eff8; --cream:#f5f7fa; --paper:#fff; --line:#dce3eb; --copper:#526c8b; --copper-soft:#eaf0f7; --shadow:0 8px 28px #263d5812; background:var(--cream); }
 body { color:var(--ink); }
+.account-button { min-width:44px; flex-shrink:0; }
+.account-button #account-label { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#account-menu { position:fixed; inset:70px 16px auto auto; margin:0; width:min(320px,calc(100% - 32px)); max-height:calc(100dvh - 100px); overflow:auto; border:1px solid var(--line); border-radius:12px; padding:16px; background:var(--paper); color:var(--ink); box-shadow:var(--shadow); }
+#account-menu::backdrop { background:#17243b20; }
+.account-menu-body { display:grid; gap:12px; }
+.account-menu-body h2 { font-size:1.1rem; }
+.account-menu-body p { overflow-wrap:anywhere; }
+.account-menu-body .button { min-height:44px; text-align:left; }
+#settings-households .household-picker { max-width:none; margin-top:16px; }
+@media(max-width:780px) {
+ .top-actions { gap:6px; min-width:0; }
+ .account-button[data-household=true] #account-label { display:block; max-width:88px; font-size:.7rem; }
+ .chat-view .topbar > div:first-child { flex-shrink:0; }
+}
+@media(max-width:360px) { .account-button[data-household=true] #account-label { max-width:60px; } }
 .shell { grid-template-columns:200px minmax(0,1fr); }
 .sidebar { background:#202d41; border-color:#2c3d57; padding:20px 14px; }
 .sidebar-head { margin-bottom:24px; }

@@ -39,7 +39,7 @@ test('editor dropdowns support keyboard selection, cancel, Tab, and saved values
   expect(saved).toMatchObject({ category: 'frozen', storageLocation: 'fridge', quantityConfidence: 'exact', quantity: 2 });
 });
 
-test('household dropdown fits mobile, restores a failed switch, and persists selection', async ({ page }) => {
+test('account menu opens settings household switcher, restores failure, and persists selection', async ({ page }) => {
   const first = '00000000-0000-0000-0000-000000000042';
   const second = '00000000-0000-0000-0000-000000000043';
   let active = first;
@@ -63,18 +63,24 @@ test('household dropdown fits mobile, restores a failed switch, and persists sel
   });
   await page.setViewportSize({ width: 1360, height: 950 });
   await page.goto('/app');
+  await expect(page.locator('#account-label')).toHaveText('My household');
+  await expect(page.locator('.topbar .choice-trigger')).toHaveCount(0);
+  await page.locator('#account-button').click();
+  await page.locator('#account-switch-household').click();
+  await expect(page.locator('#view-title')).toHaveText('Settings');
   const picker = page.locator('#household-choice');
+  await expect(picker.locator('.choice-trigger')).toBeFocused();
   await expect(picker.locator('.choice-trigger')).toContainText('My household · Owner');
   await picker.locator('.choice-trigger').click();
   await expect(picker.getByRole('option', { name: 'My household · Owner', exact: true })).toHaveAttribute('aria-selected', 'true');
-  await page.screenshot({ path: 'test-results/dropdown-household.png', clip: { x: 650, y: 0, width: 710, height: 310 } });
-  await page.getByRole('heading', { name: 'Overview', exact: true }).click();
+  await page.screenshot({ path: 'test-results/dropdown-household.png' });
+  await page.getByRole('heading', { name: 'Your households', exact: true }).click();
   await expect(picker.getByRole('listbox')).toBeHidden();
 
   await page.setViewportSize({ width: 390, height: 844 });
   const triggerBox = await picker.locator('.choice-trigger').boundingBox();
-  const nextButton = await page.locator('#notifications-button').boundingBox();
-  expect(triggerBox.x + triggerBox.width).toBeLessThan(nextButton.x);
+  expect(triggerBox.x).toBeGreaterThanOrEqual(0);
+  expect(triggerBox.x + triggerBox.width).toBeLessThanOrEqual(390);
   expect(triggerBox.width).toBeGreaterThan(100);
   await picker.locator('.choice-trigger').click();
   const box = await picker.getByRole('listbox').boundingBox();
@@ -91,6 +97,7 @@ test('household dropdown fits mobile, restores a failed switch, and persists sel
   await page.keyboard.press('End');
   await picker.getByRole('option', { name: /Weekend kitchen/ }).press('Enter');
   await expect(page.locator('#household-select')).toHaveValue(second);
+  await expect(page.locator('#account-label')).toContainText('Weekend kitchen');
   await expect(picker.locator('.choice-trigger')).toContainText('Weekend kitchen');
   await page.reload();
   await expect(page.locator('#household-select')).toHaveValue(second);

@@ -8,7 +8,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/meal-prep-icon.svg" />
     <link rel="stylesheet" href="/static/typography.css?v=1" />
     <link rel="stylesheet" href="/static/app.css?v=34" />
-    <link rel="stylesheet" href="/static/circles.css?v=3" />
+    <link rel="stylesheet" href="/static/circles.css?v=5" />
     <link rel="stylesheet" href="/static/vendor/mention.min.css" />
     <link rel="stylesheet" href="/static/choices.css?v=1" />
     <script src="/static/vendor/supabase.js" defer></script>
@@ -25,7 +25,7 @@
     <script src="/static/app.js?v=56" defer></script>
     <link rel="stylesheet" href="/static/mobile.css?v=1" />
     <script src="/static/mobile.js?v=1" defer></script>
-    <link rel="stylesheet" href="/static/revamp.css?v=1" />
+    <link rel="stylesheet" href="/static/revamp.css?v=2" />
   </head>
   <body>
     <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -70,10 +70,9 @@
           </div>
           <div class="top-actions">
             <span class="mode-badge" id="mode-badge" hidden>Demo data</span>
-            <div class="household-picker" id="household-picker" hidden><span id="household-choice-label">Household</span><div id="household-choice"></div></div>
             <button class="icon-button notification-button" id="notifications-button" type="button" aria-label="Notifications" title="Notifications"><svg class="nav-svg" aria-hidden="true"><use href="#icon-bell" /></svg><span id="notification-count" class="notification-count" hidden></span></button>
             <button class="icon-button" id="refresh-button" aria-label="Refresh data">↻</button>
-            <button class="account-button" id="account-button" aria-label="Account settings"><span id="account-avatar">MP</span><span id="account-label">Account</span></button>
+            <button class="account-button" id="account-button" aria-label="Account settings" aria-haspopup="dialog" aria-controls="account-menu" aria-expanded="false"><span id="account-avatar">MP</span><span id="account-label">Account</span></button>
           </div>
         </header>
         <section id="app-content" class="content" aria-live="polite">
@@ -81,6 +80,8 @@
         </section>
       </main>
     </div>
+
+    <dialog id="account-menu" aria-labelledby="account-menu-title"><div class="account-menu-body"><h2 id="account-menu-title">Your account</h2><p id="account-menu-email" class="muted tiny"></p><p id="account-menu-household" class="tiny"></p><button class="button" id="account-switch-household" type="button">Switch household</button><button class="button" id="account-open-settings" type="button">Settings</button><button class="button ghost" id="account-menu-close" type="button">Close account menu</button></div></dialog>
 
     <nav class="mobile-nav" aria-label="Mobile navigation">
       <button class="active" data-view="overview"><svg class="nav-svg" aria-hidden="true"><use href="#icon-home" /></svg>Home</button>
