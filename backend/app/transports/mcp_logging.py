@@ -57,7 +57,7 @@ class MCPResponseLoggingMiddleware:
             await self.app(scope, receive, send)
             return
 
-        request_id = str(uuid4())
+        request_id = scope.get("analytics_request_id") or str(uuid4())
         started = perf_counter()
         request = BodyCapture(REQUEST_CAPTURE_LIMIT)
         response = BodyCapture(RESPONSE_CAPTURE_LIMIT)

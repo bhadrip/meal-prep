@@ -380,14 +380,14 @@ def test_web_api_requires_and_checks_supabase_session(monkeypatch):
     assert client.get("/api/household", headers={"Authorization": "Bearer bad"}).status_code == 401
     verify.assert_awaited_once_with("bad")
 
-    verify.return_value = SimpleNamespace(token="valid")
+    verify.return_value = SimpleNamespace(token="valid", subject="verified-user-id")
     household = SimpleNamespace(get_context=AsyncMock(return_value={"householdId": "test"}))
     captured = []
-    monkeypatch.setattr(http, "services_for_request", lambda token: captured.append(token) or SimpleNamespace(household=household))
+    monkeypatch.setattr(http, "services_for_request", lambda token, user_id: captured.append((token, user_id)) or SimpleNamespace(household=household))
     response = client.get("/api/household", headers={"Authorization": "Bearer valid"})
     assert response.status_code == 200
     assert response.json() == {"householdId": "test"}
-    assert captured == ["valid"]
+    assert captured == [("valid", "verified-user-id")]
 
 
 def test_repository_details_are_not_sent_to_browser(monkeypatch):

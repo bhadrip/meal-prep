@@ -18,6 +18,7 @@ from .planning_model import meal_slots, validate_slots, component, identifier, t
 from .meal_library import MealLibrary, copy_components, components_from_plan
 from .circles import CircleService
 from .nutrition import normalize_nutrition, weekly_nutrition, with_weekly_nutrition, select_variation
+from ..analytics import Analytics
 
 
 DASHBOARD_CARD_IDS = (
@@ -134,8 +135,9 @@ class MealPrepRepository(Protocol):
 
 
 class HouseholdService:
-    def __init__(self, repository: MealPrepRepository):
+    def __init__(self, repository: MealPrepRepository, analytics: Analytics | None = None):
         self.repository = repository
+        self.analytics = analytics
 
     async def get_context(self) -> dict[str, Any]:
         household = await self.repository.get_household_context()
@@ -200,7 +202,12 @@ class HouseholdService:
         }
         if complete_onboarding:
             patch["onboardingCompletedAt"] = datetime.now(UTC).isoformat()
-        return await self.repository.update_household_preferences(patch)
+        saved = await self.repository.update_household_preferences(patch)
+        if self.analytics:
+            await self.analytics.capture(
+                "household_configured" if complete_onboarding else "household_preferences_updated",
+            )
+        return saved
 
     async def get_dashboard_layout(self) -> dict[str, Any]:
         household = await self.repository.get_household_context()
@@ -571,8 +578,9 @@ class RecipePantryService:
 
 
 class PlanningService:
-    def __init__(self, repository: MealPrepRepository):
+    def __init__(self, repository: MealPrepRepository, analytics: Analytics | None = None):
         self.repository = repository
+        self.analytics = analytics
         self.meals = MealLibrary(repository)
 
     async def plan_saved_meal(self, week_start: str, meal_id: str, planned_date: str, slot: str,
@@ -849,7 +857,11 @@ class PlanningService:
             raise ApplicationError("Completed plan items cannot be removed")
         if plan.get("ruleRevisionId"):
             await self.get_rules(plan["ruleRevisionId"])
-        return await self.repository.save_meal_plan({**plan, "entries": entries, "tasks": tasks})
+        saved = await self.repository.save_meal_plan({**plan, "entries": entries, "tasks": tasks})
+        if self.analytics:
+            await self.analytics.capture("plan_saved", first_plan=not bool(existing),
+                                         meal_count=len(entries), task_count=len(tasks))
+        return saved
 
     async def update_plan_item(self, week_start: str, kind: str, item: dict) -> dict:
         self._week(week_start)
@@ -910,7 +922,10 @@ class PlanningService:
                                     "unit": text(row.get("unit"), "Output unit", 40),
                                     "storageLocation": location,
                                     "category": row.get("category") or "uncategorized"})
-        return await self.repository.complete_plan_item(week_start, kind, item_id, cleaned_inputs, cleaned_outputs)
+        completed = await self.repository.complete_plan_item(week_start, kind, item_id, cleaned_inputs, cleaned_outputs)
+        if self.analytics:
+            await self.analytics.capture("plan_item_completed", kind=kind)
+        return completed
 
     async def preview_shopping(self, week_start: str) -> dict:
         from .planning_demand import shopping_demand
@@ -929,6 +944,9 @@ class PlanningService:
         saved = await self.repository.save_shopping_list({"id": existing.get("id"),
             "name": existing.get("name", "Weekly groceries"), "status": existing.get("status", "draft"),
             "mealPlanId": preview["mealPlanId"], "items": keep + preview["items"]})
+        if self.analytics:
+            await self.analytics.capture("shopping_list_saved", generated_from_plan=True,
+                                         item_count=len(saved.get("items", [])))
         return {"shoppingList": saved, "warnings": preview["warnings"]}
 
 
@@ -970,8 +988,9 @@ class FeedbackService:
         "preference_signal": "preference-signal",
     }
 
-    def __init__(self, repository: MealPrepRepository):
+    def __init__(self, repository: MealPrepRepository, analytics: Analytics | None = None):
         self.repository = repository
+        self.analytics = analytics
 
     async def list(
         self,
@@ -1066,7 +1085,10 @@ class FeedbackService:
             "variantName": variant_name,
             "adaptations": adaptations,
         }
-        return await self.repository.save_feedback(normalized)
+        saved = await self.repository.save_feedback(normalized)
+        if self.analytics:
+            await self.analytics.capture("feedback_saved", feedback_type=feedback_type)
+        return saved
 
     async def what_worked(
         self,
@@ -1162,8 +1184,9 @@ class FeedbackService:
 
 
 class MemoryService:
-    def __init__(self, repository: MealPrepRepository):
+    def __init__(self, repository: MealPrepRepository, analytics: Analytics | None = None):
         self.repository = repository
+        self.analytics = analytics
 
     async def list(
         self,
@@ -1181,22 +1204,35 @@ class MemoryService:
     async def save(self, memory: dict[str, Any]) -> dict[str, Any]:
         if not str(memory.get("content", "")).strip():
             raise ApplicationError("memory.content is required")
-        return await self.repository.save_household_memory(memory)
+        saved = await self.repository.save_household_memory(memory)
+        if self.analytics:
+            status = saved.get("status")
+            await self.analytics.capture("household_memory_saved",
+                                         status=status if status in {"suggested", "confirmed", "forgotten"} else "unknown")
+        return saved
 
     async def review(self, memory_id: str, action: str, content: str | None = None) -> dict[str, Any]:
         if action not in {"confirm", "update", "forget"}:
             raise ApplicationError("action must be confirm, update, or forget")
-        return await self.repository.review_household_memory(memory_id, action, content)
+        reviewed = await self.repository.review_household_memory(memory_id, action, content)
+        if self.analytics:
+            await self.analytics.capture("household_memory_reviewed", action=action)
+        return reviewed
 
 
 class ShoppingService:
-    def __init__(self, repository: MealPrepRepository):
+    def __init__(self, repository: MealPrepRepository, analytics: Analytics | None = None):
         self.repository = repository
+        self.analytics = analytics
 
     async def save(self, shopping_list: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(shopping_list.get("items"), list):
             raise ApplicationError("shopping_list.items is required")
-        return await self.repository.save_shopping_list(shopping_list)
+        saved = await self.repository.save_shopping_list(shopping_list)
+        if self.analytics:
+            await self.analytics.capture("shopping_list_saved", generated_from_plan=False,
+                                         item_count=len(saved.get("items", [])))
+        return saved
 
     async def get(self, list_id: str | None = None) -> dict[str, Any] | None:
         return await self.repository.get_shopping_list(list_id)

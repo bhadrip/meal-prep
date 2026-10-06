@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..application import MealPrepServices
+from ..analytics import set_verified_user
 from ..application.notifications import list_inbox, update_inbox
 from ..application.nutrition import weekly_nutrition, with_weekly_nutrition
 from ..auth import SupabaseTokenVerifier
@@ -48,7 +49,8 @@ async def web_services(
             detail="Your session is invalid or expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return services_for_request(access.token)
+    set_verified_user(access.subject)
+    return services_for_request(access.token, user_id=access.subject)
 
 
 WebServices = Annotated[MealPrepServices, Depends(web_services)]
@@ -87,6 +89,8 @@ async def auth_config() -> dict:
         "supabaseUrl": settings.supabase_url,
         "supabaseAnonKey": settings.supabase_anon_key,
         "authRequired": settings.auth_required,
+        "posthogProjectToken": settings.posthog_project_token,
+        "posthogHost": settings.posthog_host,
         "redirectUrl": f"{settings.app_base_url.rstrip('/')}/login",
     }
 

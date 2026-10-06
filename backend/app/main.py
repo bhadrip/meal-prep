@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .analytics import AnalyticsRequestMiddleware
 from .application.errors import ApplicationError, RepositoryError, RevisionConflictError
 from .invitations import router as invitations_router
 from .transports.http import router as http_router
@@ -31,6 +32,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_middleware(MCPResponseLoggingMiddleware)
+app.add_middleware(AnalyticsRequestMiddleware)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(http_router)
 app.include_router(invitations_router)

@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     auth_required: bool = False
     demo_user_id: str = "00000000-0000-0000-0000-000000000001"
     demo_household_id: str = "00000000-0000-0000-0000-000000000010"
+    posthog_project_token: str = ""
+    posthog_host: str = "https://us.i.posthog.com"
 
     @property
     def supabase_auth_issuer(self) -> str:
