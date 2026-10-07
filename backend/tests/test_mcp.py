@@ -768,6 +768,22 @@ def test_mcp_browses_typed_categories_and_rejects_unknown_filters(client):
     assert call('get_recipe', {"recipe_id": recipe["id"]})["structuredContent"]["meal_types"] == ["dinner"]
 
 
+def test_mcp_food_search_matches_partial_names_across_types(client):
+    def call(name, arguments):
+        return rpc(client, 'tools/call', {"name": name, "arguments": arguments})["structuredContent"]
+
+    recipe = call('save_recipe', {"recipe": {"title": "Quinoa herb bowls"}})
+    ready = call('save_recipe', {"recipe": {"title": "Quinoa snack cup", "kind": "ready_food"}})
+    meal = call('save_meal', {"meal": {"name": "Quinoa family supper", "servings": 2,
+        "components": [{"name": recipe["title"], "source": "cook", "recipeId": recipe["id"]}]}})
+    found = call('browse_recipe_library', {"query": "quino", "item_type": "all", "limit": 25})
+    assert {recipe["id"], ready["id"], meal["id"]} <= {item["id"] for item in found["items"]}
+    assert {item["id"]: item["itemType"] for item in found["items"] if item["id"] in {recipe["id"], ready["id"], meal["id"]}} == {
+        recipe["id"]: "recipes", ready["id"]: "ready_food", meal["id"]: "meals"}
+    assert call('browse_recipe_library', {"query": "no-such-quinoa-food-927", "item_type": "all"})["items"] == []
+    assert client.get('/api/recipe-library', params={"query": "quino", "item_type": "all"}).json()["count"] >= 3
+
+
 def test_mcp_and_http_share_custom_slots_components_tasks_and_failures(client):
     WEEK = "2030-02-04"
     demo_repository.cache_clear()

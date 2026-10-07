@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.application.errors import ApplicationError
-from app.application.services import RecipePantryService
+from app.application.services import PlanningService, RecipePantryService
 from app.infrastructure.repositories import DemoRepository, demo_repository
 from app.main import app
 
@@ -43,6 +43,29 @@ async def test_browse_combines_facets_counts_other_options_and_searches_full_lib
     assert (await service.browse_recipe_library(filters={"cuisine": ["imagined"]}))["count"] == 0
     await service.archive_recipe(paneer["id"])
     assert (await service.browse_recipe_library(filters={"goal": ["protein rich"]}))["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_partial_food_search_pages_through_hundreds_of_names_and_excludes_archived_food():
+    repository = DemoRepository()
+    repository._recipes = []
+    service = RecipePantryService(repository)
+    recipes = [await service.save_recipe({"title": f"Quinoa {index:03}"}) for index in range(110)]
+    ready = await service.save_recipe({"title": "Quinoa snack cup", "kind": "ready_food"})
+    meal = await PlanningService(repository).meals.save({"name": "Quinoa family dinner", "servings": 2,
+        "components": [{"name": "Quinoa", "source": "external"}]})
+    pages = [await service.browse_recipe_library(query="quino", item_type="all", limit=25, offset=offset)
+             for offset in range(0, 125, 25)]
+    found = [item for page in pages for item in page["items"]]
+    assert pages[0]["count"] == 112
+    assert [page["hasMore"] for page in pages] == [True, True, True, True, False]
+    assert len(found) == len({item["id"] for item in found}) == 112
+    assert {item["id"]: item["itemType"] for item in found if item["id"] in {ready["id"], meal["id"]}} == {
+        ready["id"]: "ready_food", meal["id"]: "meals"}
+    assert recipes[-1]["id"] in {item["id"] for item in found}
+    assert (await service.browse_recipe_library(query="no-such-food", item_type="all"))["items"] == []
+    await service.archive_recipe(recipes[-1]["id"])
+    assert (await service.browse_recipe_library(query="Quinoa 109", item_type="all"))["items"] == []
 
 
 @pytest.mark.asyncio
