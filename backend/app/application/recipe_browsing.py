@@ -17,7 +17,8 @@ def normalize_categories(values, field: str) -> list[str]:
 
 
 def browse(data: dict, query: str = "", filters: dict | None = None,
-           max_minutes: int | None = None, limit: int = 25, offset: int = 0) -> dict:
+           max_minutes: int | None = None, limit: int = 25, offset: int = 0,
+           search_scope: str = "all") -> dict:
     if not isinstance(query, str) or len(query) > 80:
         raise ApplicationError("Search must be text of at most 80 characters")
     if filters is not None and (not isinstance(filters, dict) or any(key not in CATEGORY_FIELDS for key in filters)):
@@ -28,6 +29,8 @@ def browse(data: dict, query: str = "", filters: dict | None = None,
         raise ApplicationError("Use a limit of 1–50 and a nonnegative offset")
     if max_minutes is not None and (type(max_minutes) is not int or not 1 <= max_minutes <= 1440):
         raise ApplicationError("Cooking time must be 1–1440 minutes")
+    if not isinstance(search_scope, str) or search_scope not in {"all", "name"}:
+        raise ApplicationError("Search scope must be all or name")
     needle = query.strip().lower()
     recipes = sorted(data["recipes"], key=lambda r: (r["title"].lower(), r["id"]))
 
@@ -38,9 +41,11 @@ def browse(data: dict, query: str = "", filters: dict | None = None,
         minutes = recipe.get("total_minutes", recipe.get("totalMinutes"))
         if max_minutes is not None and (not isinstance(minutes, (int, float)) or minutes > max_minutes):
             return False
-        text = [str(recipe.get("title") or ""), str(recipe.get("description") or "")]
-        text.extend(str(i.get("name", "")) if isinstance(i, dict) else str(i) for i in (recipe.get("ingredients") or []))
-        text.extend(label for field in CATEGORY_FIELDS.values() for label in (recipe.get(field) or []))
+        text = [str(recipe.get("title") or "")]
+        if search_scope == "all":
+            text.append(str(recipe.get("description") or ""))
+            text.extend(str(i.get("name", "")) if isinstance(i, dict) else str(i) for i in (recipe.get("ingredients") or []))
+            text.extend(label for field in CATEGORY_FIELDS.values() for label in (recipe.get(field) or []))
         if needle and not any(needle in value.lower() for value in text):
             return False
         return all(key == excluding or labels(recipe, key).intersection(values) for key, values in selected.items())

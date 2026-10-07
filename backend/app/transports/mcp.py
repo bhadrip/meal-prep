@@ -705,14 +705,16 @@ async def render_meal_library(query: str = "", limit: int = 50, offset: int = 0)
     structured_output=True,
 )
 async def render_recipe_library(query: str = "", limit: int = 50, tag: str = "", filters: dict[str, list[str]] | None = None,
-                                max_minutes: int | None = None, item_type: str = "all", offset: int = 0) -> dict[str, Any]:
+                                max_minutes: int | None = None, item_type: str = "all", offset: int = 0,
+                                search_scope: str = "all") -> dict[str, Any]:
     """Search recipes and reusable meals together. Filter item_type by all, recipes, ready_food, or meals.
-    Recipe filters match recipes inside meals. Open component recipes with get_recipe.
+    Recipe filters match recipes inside meals. Use search_scope=name to match food names only.
+    Open component recipes with get_recipe.
     """
     service = services_for_request().food
     selected = {**(filters or {})}
     if tag: selected["tag"] = [tag]
-    data = await service.browse_recipe_library(query, selected, max_minutes, limit, offset, item_type)
+    data = await service.browse_recipe_library(query, selected, max_minutes, limit, offset, item_type, search_scope)
     return {"kind": "recipe_library", **data, "exploreOpen": False, "recipes": data["items"], "tag": tag,
             "tags": [{"tag": item["label"], "recipe_count": item["count"]} for item in data["facets"]["tag"]],
             "household": await services_for_request().household.get_context()}
@@ -720,11 +722,13 @@ async def render_recipe_library(query: str = "", limit: int = 50, tag: str = "",
 
 @mcp.tool(annotations=READ_ONLY, structured_output=True)
 async def browse_recipe_library(query: str = "", filters: dict[str, list[str]] | None = None,
-                                max_minutes: int | None = None, limit: int = 25, offset: int = 0, item_type: str = "recipes") -> dict[str, Any]:
+                                max_minutes: int | None = None, limit: int = 25, offset: int = 0,
+                                item_type: str = "recipes", search_scope: str = "all") -> dict[str, Any]:
     """Filter active household recipes and meals (item_type: all, recipes, ready_food, meals). Filter keys: cuisine, goal, meal, diet, tag. OR within a key, AND across keys.
+    Use search_scope=name to match only recipe and meal names; all also searches ingredients, descriptions, and categories.
     Categories are household-entered labels, not verified nutrition. Use get_recipe_graph for variations and serving pairings.
     """
-    return await services_for_request().food.browse_recipe_library(query, filters, max_minutes, limit, offset, item_type)
+    return await services_for_request().food.browse_recipe_library(query, filters, max_minutes, limit, offset, item_type, search_scope)
 
 
 @mcp.tool(

@@ -52,18 +52,26 @@ async def test_partial_food_search_pages_through_hundreds_of_names_and_excludes_
     service = RecipePantryService(repository)
     recipes = [await service.save_recipe({"title": f"Quinoa {index:03}"}) for index in range(110)]
     ready = await service.save_recipe({"title": "Quinoa snack cup", "kind": "ready_food"})
+    described = await service.save_recipe({"title": "Korean tofu rice bowls", "description": "Serve with quinoa"})
+    ingredient = await service.save_recipe({"title": "No-cook couscous bowls", "ingredients": [{"name": "quinoa"}]})
     meal = await PlanningService(repository).meals.save({"name": "Quinoa family dinner", "servings": 2,
         "components": [{"name": "Quinoa", "source": "external"}]})
-    pages = [await service.browse_recipe_library(query="quino", item_type="all", limit=25, offset=offset)
+    other_meal = await PlanningService(repository).meals.save({"name": "Rice family dinner", "servings": 2,
+        "components": [{"name": "Quinoa", "source": "external"}]})
+    broad = await service.browse_recipe_library(query="quino", item_type="all", limit=25)
+    assert broad["count"] == 115
+    pages = [await service.browse_recipe_library(query="quino", item_type="all", search_scope="name", limit=25, offset=offset)
              for offset in range(0, 125, 25)]
     found = [item for page in pages for item in page["items"]]
     assert pages[0]["count"] == 112
     assert [page["hasMore"] for page in pages] == [True, True, True, True, False]
     assert len(found) == len({item["id"] for item in found}) == 112
+    assert {described["id"], ingredient["id"], other_meal["id"]}.isdisjoint({item["id"] for item in found})
     assert {item["id"]: item["itemType"] for item in found if item["id"] in {ready["id"], meal["id"]}} == {
         ready["id"]: "ready_food", meal["id"]: "meals"}
     assert recipes[-1]["id"] in {item["id"] for item in found}
     assert (await service.browse_recipe_library(query="no-such-food", item_type="all"))["items"] == []
+    assert (await service.browse_recipe_library(query="no-such-food", item_type="all", search_scope="name"))["items"] == []
     await service.archive_recipe(recipes[-1]["id"])
     assert (await service.browse_recipe_library(query="Quinoa 109", item_type="all"))["items"] == []
 
@@ -93,6 +101,7 @@ async def test_categories_are_editable_in_graph_and_preserved_by_older_recipe_up
     {"filters": {"healthy": ["yes"]}}, {"filters": {"meal": "dinner"}},
     {"filters": {"diet": ["x" * 49]}}, {"filters": {"diet": None}},
     {"filters": []}, {"max_minutes": -1}, {"limit": 51}, {"offset": -1}, {"query": "x" * 81},
+    {"search_scope": "unknown"},
 ])
 async def test_invalid_filters_fail_without_changing_saved_data(arguments):
     repository = DemoRepository()
@@ -100,7 +109,7 @@ async def test_invalid_filters_fail_without_changing_saved_data(arguments):
     before = await service.get_recipe_graph()
     with pytest.raises(ApplicationError):
         await service.browse_recipe_library(**arguments)
-    if not any(key in arguments for key in ("limit", "offset")):
+    if not any(key in arguments for key in ("limit", "offset", "search_scope")):
         with pytest.raises(ApplicationError):
             await service.get_recipe_graph(**arguments)
     assert await service.get_recipe_graph() == before

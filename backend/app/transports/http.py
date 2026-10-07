@@ -403,11 +403,11 @@ async def browse_recipe_library(
     services: WebServices, query: str = "", cuisine: list[str] = Query([]),
     goal: list[str] = Query([]), meal: list[str] = Query([]), diet: list[str] = Query([]),
     tag: list[str] = Query([]), max_minutes: int | None = None,
-    limit: int = 25, offset: int = 0, item_type: str = "recipes",
+    limit: int = 25, offset: int = 0, item_type: str = "recipes", search_scope: str = "all",
 ) -> dict:
     return await services.food.browse_recipe_library(query, {
         "cuisine": cuisine, "goal": goal, "meal": meal, "diet": diet, "tag": tag,
-    }, max_minutes, limit, offset, item_type)
+    }, max_minutes, limit, offset, item_type, search_scope)
 
 
 @router.put("/api/recipe-relationships")

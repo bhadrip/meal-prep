@@ -11,7 +11,11 @@ test('chat searches people before food and scrolls through a large food library'
     }
     const recipe = await (await page.request.put('/api/recipes', {data: {title: 'Quinoa herb bowls'}})).json();
     const ready = await (await page.request.put('/api/recipes', {data: {title: 'Quinoa snack cup', kind: 'ready_food'}})).json();
-    recipeIds.push(recipe.id, ready.id);
+    const described = await (await page.request.put('/api/recipes', {data: {
+      title: 'Korean tofu rice bowls', description: 'Serve with quinoa'}})).json();
+    const ingredient = await (await page.request.put('/api/recipes', {data: {
+      title: 'No-cook couscous bowls', ingredients: [{name: 'quinoa'}]}})).json();
+    recipeIds.push(recipe.id, ready.id, described.id, ingredient.id);
     const meal = await (await page.request.put('/api/meals', {data: {name: 'Quinoa family supper', servings: 2,
       components: [{name: recipe.title, source: 'cook', recipeId: recipe.id}]}})).json();
 
@@ -25,7 +29,11 @@ test('chat searches people before food and scrolls through a large food library'
     for (const name of [recipe.title, ready.title, meal.name]) {
       await expect(dropdown.locator('.mention-item').filter({hasText: name})).toBeVisible();
     }
-    await message.pressSequentially('no');
+    await message.pressSequentially('noa');
+    await expect(dropdown.locator('.mention-item').filter({hasText: recipe.title})).toBeVisible();
+    for (const name of [described.title, ingredient.title]) {
+      await expect(dropdown.locator('.mention-item').filter({hasText: name})).toHaveCount(0);
+    }
     await dropdown.locator('.mention-item').filter({hasText: ready.title}).click();
     await expect(page.locator('#circle-message-form .circle-attachment')).toContainText('Ready food attached: Quinoa snack cup');
     await page.getByRole('button', {name: 'Send message'}).click();
@@ -53,8 +61,13 @@ test('chat searches people before food and scrolls through a large food library'
     await page.getByRole('button', {name: '+ Share', exact: true}).click();
     await page.getByRole('button', {name: 'Share a recipe', exact: true}).click();
     const search = page.getByRole('searchbox', {name: 'Search your food library'});
-    await search.fill('Bulk recipe');
+    await search.fill('quinoa');
     const panel = page.getByRole('region', {name: 'Food suggestions'});
+    await expect(panel.locator('.chat-food-option').filter({hasText: recipe.title})).toBeVisible();
+    for (const name of [described.title, ingredient.title]) {
+      await expect(panel.locator('.chat-food-option').filter({hasText: name})).toHaveCount(0);
+    }
+    await search.fill('Bulk recipe');
     await expect(panel.locator('.chat-food-option')).toHaveCount(25);
     expect(await panel.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     for (const count of [50, 75, 100, 110]) {

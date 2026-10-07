@@ -774,14 +774,22 @@ def test_mcp_food_search_matches_partial_names_across_types(client):
 
     recipe = call('save_recipe', {"recipe": {"title": "Quinoa herb bowls"}})
     ready = call('save_recipe', {"recipe": {"title": "Quinoa snack cup", "kind": "ready_food"}})
+    described = call('save_recipe', {"recipe": {"title": "Korean tofu rice bowls", "description": "Serve with quinoa"}})
+    ingredient = call('save_recipe', {"recipe": {"title": "No-cook couscous bowls", "ingredients": [{"name": "quinoa"}]}})
     meal = call('save_meal', {"meal": {"name": "Quinoa family supper", "servings": 2,
         "components": [{"name": recipe["title"], "source": "cook", "recipeId": recipe["id"]}]}})
-    found = call('browse_recipe_library', {"query": "quino", "item_type": "all", "limit": 25})
+    found = call('browse_recipe_library', {"query": "quino", "item_type": "all", "search_scope": "name", "limit": 25})
     assert {recipe["id"], ready["id"], meal["id"]} <= {item["id"] for item in found["items"]}
+    assert {described["id"], ingredient["id"]}.isdisjoint({item["id"] for item in found["items"]})
     assert {item["id"]: item["itemType"] for item in found["items"] if item["id"] in {recipe["id"], ready["id"], meal["id"]}} == {
         recipe["id"]: "recipes", ready["id"]: "ready_food", meal["id"]: "meals"}
     assert call('browse_recipe_library', {"query": "no-such-quinoa-food-927", "item_type": "all"})["items"] == []
-    assert client.get('/api/recipe-library', params={"query": "quino", "item_type": "all"}).json()["count"] >= 3
+    params = {"query": "quino", "item_type": "all", "search_scope": "name"}
+    assert {item["id"] for item in client.get('/api/recipe-library', params=params).json()["items"]} == {
+        item["id"] for item in found["items"]}
+    assert client.get('/api/recipe-library', params={**params, "search_scope": "unknown"}).status_code == 422
+    assert {described["id"], ingredient["id"]} <= {item["id"] for item in
+        call('browse_recipe_library', {"query": "quino", "item_type": "all"})["items"]}
 
 
 def test_mcp_and_http_share_custom_slots_components_tasks_and_failures(client):
