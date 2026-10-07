@@ -309,7 +309,7 @@ class RecipePantryService:
 
     async def browse_recipe_library(self, query: str = "", filters: dict | None = None,
                                    max_minutes: int | None = None, limit: int = 25, offset: int = 0,
-                                   item_type: str = "recipes") -> dict:
+                                   item_type: str = "recipes", search_scope: str = "all") -> dict:
         from .recipe_browsing import browse
         if item_type not in {"all", "recipes", "ready_food", "meals"}:
             raise ApplicationError("Library type must be all, recipes, ready_food, or meals")
@@ -317,7 +317,7 @@ class RecipePantryService:
         recipe_graph = {**graph, "recipes": [
             r for r in graph["recipes"] if item_type not in {"recipes", "ready_food"}
             or (r.get("kind", "recipe") == "ready_food") == (item_type == "ready_food")]}
-        recipes = browse(recipe_graph, query, filters, max_minutes, limit, offset)
+        recipes = browse(recipe_graph, query, filters, max_minutes, limit, offset, search_scope)
         if item_type in {"recipes", "ready_food"}:
             return {**recipes, "itemType": item_type}
         # Meal search remains household scoped and covers every page, including
@@ -328,6 +328,9 @@ class RecipePantryService:
             meals.extend(page["items"])
             if len(meals) >= page["total"]:
                 break
+        if search_scope == "name" and query.strip():
+            needle = query.strip().casefold()
+            meals = [meal for meal in meals if needle in meal["name"].casefold()]
         # Recipe facets also count matching meals through their linked dishes.
         # Otherwise a search for a meal's name would disable all its recipe filters.
         from .recipe_graph import CATEGORY_FIELDS

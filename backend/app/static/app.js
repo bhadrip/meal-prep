@@ -541,7 +541,7 @@ async function searchCircleFood(kind, query, offset = 0) {
   const itemType = kind === 'recipe' ? 'recipes' : kind === 'meal' ? 'meals' : 'all';
   const key = `${itemType}:${query}:${offset}`;
   if (!state.circleFoodSearches.has(key)) {
-    const request = api(`/api/recipe-library?item_type=${itemType}&query=${encodeURIComponent(query)}&limit=25&offset=${offset}`);
+    const request = api(`/api/recipe-library?item_type=${itemType}&search_scope=name&query=${encodeURIComponent(query)}&limit=25&offset=${offset}`);
     state.circleFoodSearches.set(key, request);
     if (state.circleFoodSearches.size > 40) state.circleFoodSearches.delete(state.circleFoodSearches.keys().next().value);
   }
@@ -2549,7 +2549,7 @@ async function loadChatPicker(query) {
   state.chatPickerQuery=query;const request=++state.chatPickerRequest,generation=state.dataGeneration;
   state.chatPickerStatus='loading';state.chatPickerHasMore=false;state.chatPickerLoadingMore=false;state.chatPickerMoreError=false;render();clearTimeout(pickerTimer);
   pickerTimer=setTimeout(async()=>{
-    try{const data=await api(`/api/recipe-library?item_type=all&query=${encodeURIComponent(query)}&limit=25&offset=0`);
+    try{const data=await api(`/api/recipe-library?item_type=all&search_scope=name&query=${encodeURIComponent(query)}&limit=25&offset=0`);
       if(request!==state.chatPickerRequest||generation!==state.dataGeneration)return;
       state.chatPicker=data.items;state.chatPickerHasMore=data.hasMore;state.chatPickerStatus='ready';
     }catch{if(request!==state.chatPickerRequest||generation!==state.dataGeneration)return;state.chatPickerStatus='error';}
@@ -2562,7 +2562,7 @@ async function loadMoreChatPicker() {
   const request=state.chatPickerRequest,generation=state.dataGeneration,query=state.chatPickerQuery;
   state.chatPickerLoadingMore=true;state.chatPickerMoreError=false;render();
   try {
-    const data=await api(`/api/recipe-library?item_type=all&query=${encodeURIComponent(query)}&limit=25&offset=${state.chatPicker.length}`);
+    const data=await api(`/api/recipe-library?item_type=all&search_scope=name&query=${encodeURIComponent(query)}&limit=25&offset=${state.chatPicker.length}`);
     if(request!==state.chatPickerRequest||generation!==state.dataGeneration)return;
     state.chatPicker.push(...data.items);state.chatPickerHasMore=data.hasMore;
   } catch {
