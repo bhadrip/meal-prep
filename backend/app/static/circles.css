@@ -122,7 +122,7 @@
 .circle-public-row span, .circle-public-row small { color: var(--chat-muted); font-size: .7rem; }
 .circle-public-row input { width: min(30vw,250px); min-width: 160px; max-width: 100%; border: 1px solid var(--chat-line); border-radius: 7px; padding: 8px; font-size: .65rem; }
 .circle-direct-detail .circle-detail { max-width: 780px; margin: auto; }
-.mention-dropdown { z-index: 20; border-radius: 8px; box-shadow: 0 12px 30px rgba(30,45,35,.15); }
+.mention-dropdown { z-index: 20; border-radius: 8px; box-shadow: 0 12px 30px rgba(30,45,35,.15); max-height: min(45dvh, 360px); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .mention-item { font-size: .76rem; }
 @media (max-width: 1000px) { .circle-layout { grid-template-columns: 210px minmax(0,1fr); } .circle-panel-layer { left: 211px; } .circle-hub-groups { grid-template-columns: 1fr; } }
 @media (max-width: 780px) {
@@ -216,7 +216,7 @@
 .circle-detail .circle-message-body { font-size:.9rem; }
 .chat-food-picker { display:grid; gap:12px; padding-block:18px; }
 .chat-food-picker input,.chat-history-search input,.chat-history-search select { border:1px solid var(--line); border-radius:8px; padding:9px; background:var(--paper); width:100%; }
-.chat-food-results { display:grid; gap:8px; font-size:.85rem; }
+.chat-food-results { display:grid; gap:8px; font-size:.85rem; max-height:min(50dvh, 420px); overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
 .chat-food-option { display:grid; gap:5px; padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--paper); text-align:left; }
 .chat-food-option small { color:var(--muted); }
 .chat-history-search { display:flex; flex-wrap:wrap; gap:8px; align-items:end; padding:12px 16px; border-bottom:1px solid var(--line); }

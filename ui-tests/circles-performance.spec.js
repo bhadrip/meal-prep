@@ -116,7 +116,7 @@ test('food search is deferred and a slow picker does not block plain chat', asyn
   let release;
   let foodRequests = 0;
   const held = new Promise(resolve => { release = resolve; });
-  await page.route('**/api/recipes?*', async route => { foodRequests += 1; await held; await route.continue(); });
+  await page.route('**/api/recipe-library?*', async route => { foodRequests += 1; await held; await route.continue(); });
   await page.goto(`/app?view=circles&circle=${room.id}`, {waitUntil: 'domcontentloaded'});
   const composer = page.getByLabel('Message Fast plain chat');
   await composer.fill('No need to wait for recipes');
